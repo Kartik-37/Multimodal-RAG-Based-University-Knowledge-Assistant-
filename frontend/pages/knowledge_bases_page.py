@@ -25,6 +25,44 @@ def register_knowledge_bases_page() -> None:
             # Container that can be refreshed when a KB is added or selected
             content_container = ui.column().classes("w-full gap-4")
 
+            # Dialog for creating a new Knowledge Base
+            with ui.dialog() as create_dialog, ui.card().classes("w-full max-w-md p-6"):
+                ui.label("Create New Knowledge Base").classes("text-lg font-bold text-gray-900 mb-1")
+                ui.label("Group related reference material under a specific subject.").classes(
+                    "text-xs text-gray-500 mb-4"
+                )
+
+                name_input = ui.input(
+                    label="Knowledge Base Name *",
+                    placeholder="e.g. BCA Semester 5 Syllabus",
+                ).classes("w-full mb-2")
+
+                desc_input = ui.textarea(
+                    label="Description",
+                    placeholder="Brief description of the documents contained in this corpus.",
+                ).classes("w-full mb-4")
+
+                def handle_create() -> None:
+                    name = (name_input.value or "").strip()
+                    desc = (desc_input.value or "").strip()
+                    try:
+                        new_kb = api_client.create_knowledge_base(name, desc)
+                        state.active_kb = new_kb
+                        ui.notify(f"Created knowledge base '{new_kb.name}'", type="positive")
+                        create_dialog.close()
+                        name_input.value = ""
+                        desc_input.value = ""
+                        refresh_view()
+                    except ValueError as err:
+                        ui.notify(str(err), type="negative")
+
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("Cancel", on_click=create_dialog.close).props("flat")
+                    ui.button("Create", icon="check", on_click=handle_create).props("color=primary")
+
+            def open_create_dialog() -> None:
+                create_dialog.open()
+
             def refresh_view() -> None:
                 content_container.clear()
                 with content_container:
@@ -111,44 +149,6 @@ def register_knowledge_bases_page() -> None:
                                     ui.button("Query", icon="chat", on_click=start_chat).props(
                                         "flat dense color=primary"
                                     ).classes("text-xs")
-
-            # Dialog for creating a new Knowledge Base
-            with ui.dialog() as create_dialog, ui.card().classes("w-full max-w-md p-6"):
-                ui.label("Create New Knowledge Base").classes("text-lg font-bold text-gray-900 mb-1")
-                ui.label("Group related reference material under a specific subject.").classes(
-                    "text-xs text-gray-500 mb-4"
-                )
-
-                name_input = ui.input(
-                    label="Knowledge Base Name *",
-                    placeholder="e.g. BCA Semester 5 Syllabus",
-                ).classes("w-full mb-2")
-
-                desc_input = ui.textarea(
-                    label="Description",
-                    placeholder="Brief description of the documents contained in this corpus.",
-                ).classes("w-full mb-4")
-
-                def handle_create() -> None:
-                    name = (name_input.value or "").strip()
-                    desc = (desc_input.value or "").strip()
-                    try:
-                        new_kb = api_client.create_knowledge_base(name, desc)
-                        state.active_kb = new_kb
-                        ui.notify(f"Created knowledge base '{new_kb.name}'", type="positive")
-                        create_dialog.close()
-                        name_input.value = ""
-                        desc_input.value = ""
-                        refresh_view()
-                    except ValueError as err:
-                        ui.notify(str(err), type="negative")
-
-                with ui.row().classes("w-full justify-end gap-2"):
-                    ui.button("Cancel", on_click=create_dialog.close).props("flat")
-                    ui.button("Create", icon="check", on_click=handle_create).props("color=primary")
-
-            def open_create_dialog() -> None:
-                create_dialog.open()
 
             # Initial render
             render_content()

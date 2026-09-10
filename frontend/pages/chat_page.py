@@ -9,6 +9,7 @@ All interactions route strictly through FrontendAPIClient.
 from nicegui import ui
 
 from frontend.client.api_client import api_client
+from frontend.client.models import CitationDTO
 from frontend.components.evidence_panel import render_evidence_panel
 from frontend.components.layout import page_layout
 from frontend.state.app_state import state
@@ -27,15 +28,19 @@ def register_chat_page() -> None:
             active_kb = state.active_kb
 
             if not active_kb:
-                with ui.card().classes("w-full p-8 items-center justify-center text-center border-dashed border-2 border-gray-300"):
+                with ui.card().classes(
+                    "w-full p-8 items-center justify-center text-center border-dashed border-2 border-gray-300"
+                ):
                     ui.icon("folder_off", size="lg").classes("text-gray-400 mb-2")
                     ui.label("No Active Knowledge Base").classes("text-lg font-bold text-gray-800")
                     ui.label("Select a knowledge base to begin conversational question answering.").classes(
                         "text-sm text-gray-500 mb-4"
                     )
-                    ui.button("Select Knowledge Base", icon="arrow_forward", on_click=lambda: ui.navigate.to("/knowledge-bases")).props(
-                        "color=primary"
-                    )
+                    ui.button(
+                        "Select Knowledge Base",
+                        icon="arrow_forward",
+                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
+                    ).props("color=primary")
                 return
 
             # Top Context Bar
@@ -43,14 +48,17 @@ def register_chat_page() -> None:
                 with ui.row().classes("w-full justify-between items-center"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("psychology", size="sm").classes("text-blue-600")
-                        ui.label("Querying Knowledge Base:").classes("text-xs font-semibold text-gray-500 uppercase")
+                        ui.label("Querying Knowledge Base:").classes(
+                            "text-xs font-semibold text-gray-500 uppercase"
+                        )
                         ui.label(active_kb.name).classes("text-sm font-bold text-gray-900")
                         ui.badge(f"{active_kb.document_count} doc(s)", color="blue-grey").classes("text-xs")
 
                     def clear_session() -> None:
                         state.clear_chat()
                         ui.notify("Conversation cleared.", type="info")
-                        refresh_chat_view()
+                        render_messages()
+                        render_evidence()
 
                     ui.button("Clear Conversation", icon="delete_outline", on_click=clear_session).props(
                         "flat dense"
@@ -59,37 +67,101 @@ def register_chat_page() -> None:
             # Main Two-Column Layout: Chat on Left, Evidence Panel on Right
             with ui.row().classes("w-full gap-6 items-start"):
                 # Left Column: Conversation Thread and Input (approx 62% width)
-                chat_col = ui.column().classes("flex-1 min-w-[320px] gap-4")
+                with ui.column().classes("flex-1 min-w-[320px] gap-4"):
+                    # Message History Container
+                    message_container = ui.column().classes(
+                        "w-full min-h-[360px] p-4 bg-white border border-gray-200 rounded gap-3"
+                    )
+
+                    # Loading Indicator Row (hidden by default)
+                    loading_row = ui.row().classes(
+                        "w-full items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded"
+                    )
+                    with loading_row:
+                        ui.spinner(size="sm")
+                        ui.label(
+                            "Retrieving hybrid context, reranking passages, and generating response..."
+                        ).classes("text-xs text-blue-700")
+                    loading_row.visible = False
+
+                    # Input Row
+                    with ui.row().classes("w-full items-center gap-2 mt-1"):
+                        input_box = ui.input(
+                            placeholder="Ask a question about documents in this knowledge base...",
+                        ).classes("flex-1")
+                        send_btn = ui.button(icon="send").props("color=primary")
 
                 # Right Column: Evidence / Citation Inspection (approx 38% width)
-                evidence_col = ui.column().classes("w-96 min-w-[300px] gap-2")
+                evidence_container = ui.column().classes("w-96 min-w-[300px] gap-2")
 
-            def refresh_chat_view() -> None:
-                chat_col.clear()
-                evidence_col.clear()
-                with chat_col:
-                    render_chat_column()
-                with evidence_col:
-                    render_evidence_column()
+            # Controller functions in proper lexical scope
+            async def send_message(question_text: str) -> None:
+                """Send a question through the API client boundary and update UI."""
+                q = question_text.strip()
+                if not q:
+                    ui.notify("Please enter a question.", type="warning")
+                    return
 
-            def render_evidence_column() -> None:
-                # Get citations from the latest assistant message, if any
-                assistant_msgs = [m for m in state.chat_history if m.role == "assistant"]
-                citations = assistant_msgs[-1].citations if assistant_msgs else []
+                # Append user question
+                state.add_user_message(q)
+                render_messages()
+                render_evidence()
 
-                def on_select_citation(c) -> None:
-                    state.selected_citation = c
-                    refresh_chat_view()
+                # Enable loading state
+                loading_row.visible = True
+                send_btn.disable()
 
-                render_evidence_panel(
-                    citations=citations,
-                    selected_citation=state.selected_citation,
-                    on_select=on_select_citation,
-                )
+                try:
+                    # Route through the centralized API client boundary
+                    assistant_response = api_client.send_chat_message(
+                        kb_id=active_kb.id,
+                        question=q,
+                    )
+                    state.add_assistant_message(assistant_response)
+                    if assistant_response.citations:
+                        state.selected_citation = assistant_response.citations[0]
+                except ValueError as err:
+                    ui.notify(f"Query error: {err}", type="negative")
+                finally:
+                    loading_row.visible = False
+                    send_btn.enable()
+                    render_messages()
+                    render_evidence()
 
-            def render_chat_column() -> None:
-                # Message History Container
-                with ui.column().classes("w-full min-h-[360px] p-4 bg-white border border-gray-200 rounded gap-3"):
+            async def handle_submit() -> None:
+                """Handle user submission from input box or Enter key."""
+                q = (input_box.value or "").strip()
+                if not q:
+                    ui.notify("Please enter a question.", type="warning")
+                    return
+                input_box.value = ""
+                await send_message(q)
+
+            send_btn.on("click", handle_submit)
+            input_box.on("keydown.enter", handle_submit)
+
+            def select_citation(cit: CitationDTO) -> None:
+                """Select citation for detailed provenance display in the evidence panel."""
+                state.selected_citation = cit
+                render_messages()
+                render_evidence()
+
+            def render_evidence() -> None:
+                """Render the evidence panel with citations from the latest response."""
+                evidence_container.clear()
+                with evidence_container:
+                    assistant_msgs = [m for m in state.chat_history if m.role == "assistant"]
+                    citations = assistant_msgs[-1].citations if assistant_msgs else []
+                    render_evidence_panel(
+                        citations=citations,
+                        selected_citation=state.selected_citation,
+                        on_select=select_citation,
+                    )
+
+            def render_messages() -> None:
+                """Render conversational message history or starter prompt empty state."""
+                message_container.clear()
+                with message_container:
                     if not state.chat_history:
                         with ui.column().classes("w-full py-16 items-center justify-center text-center"):
                             ui.icon("chat_bubble_outline", size="xl").classes("text-gray-300 mb-2")
@@ -106,91 +178,55 @@ def register_chat_page() -> None:
                                     "What is the curriculum approval process?",
                                 ]
                                 for p in prompts:
-                                    def use_prompt(prompt_text=p) -> None:
-                                        send_message(prompt_text)
+                                    async def on_prompt_click(prompt_text: str = p) -> None:
+                                        await send_message(prompt_text)
 
-                                    ui.button(p, on_click=use_prompt).props("outline dense").classes("text-xs text-blue-700")
+                                    ui.button(p, on_click=on_prompt_click).props("outline dense").classes(
+                                        "text-xs text-blue-700"
+                                    )
                     else:
                         for msg in state.chat_history:
                             if msg.role == "user":
                                 with ui.row().classes("w-full justify-end"):
-                                    with ui.column().classes("max-w-xl bg-blue-600 text-white p-3 rounded-lg shadow-sm"):
+                                    with ui.column().classes(
+                                        "max-w-xl bg-blue-600 text-white p-3 rounded-lg shadow-sm"
+                                    ):
                                         ui.label(msg.content).classes("text-sm")
                                         if msg.created_at:
-                                            ui.label(msg.created_at).classes("text-[10px] text-blue-200 self-end mt-1")
+                                            ui.label(msg.created_at).classes(
+                                                "text-[10px] text-blue-200 self-end mt-1"
+                                            )
                             else:
                                 with ui.row().classes("w-full justify-start"):
-                                    with ui.column().classes("w-full max-w-2xl bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-sm gap-2"):
+                                    with ui.column().classes(
+                                        "w-full max-w-2xl bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-sm gap-2"
+                                    ):
                                         with ui.row().classes("items-center gap-2 mb-1"):
                                             ui.icon("psychology", size="xs").classes("text-blue-600")
                                             ui.label("Assistant").classes("text-xs font-bold text-gray-800")
                                             if msg.created_at:
-                                                ui.label(msg.created_at).classes("text-[10px] text-gray-400 font-mono")
+                                                ui.label(msg.created_at).classes(
+                                                    "text-[10px] text-gray-400 font-mono"
+                                                )
 
                                         ui.markdown(msg.content).classes("text-sm text-gray-800 leading-relaxed")
 
                                         # Citation Pills
                                         if msg.citations:
-                                            with ui.row().classes("items-center gap-1 mt-2 pt-2 border-t border-gray-200"):
+                                            with ui.row().classes(
+                                                "items-center gap-1 mt-2 pt-2 border-t border-gray-200"
+                                            ):
                                                 ui.label("Sources:").classes("text-xs font-semibold text-gray-500")
                                                 for idx, cit in enumerate(msg.citations, start=1):
-                                                    def select_cit(c=cit) -> None:
-                                                        state.selected_citation = c
-                                                        refresh_chat_view()
-
                                                     page_info = f" p.{cit.page_number}" if cit.page_number else ""
                                                     pill_label = f"[{idx}] {cit.document_name}{page_info}"
-                                                    ui.button(pill_label, on_click=select_cit).props(
-                                                        "outline dense color=primary"
-                                                    ).classes("text-[11px] normal-case")
+                                                    ui.button(
+                                                        pill_label,
+                                                        on_click=lambda c=cit: select_citation(c),
+                                                    ).props("outline dense color=primary").classes(
+                                                        "text-[11px] normal-case"
+                                                    )
 
-                # Loading Indicator Placeholder
-                loading_row = ui.row().classes("w-full items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded hidden")
-                with loading_row:
-                    ui.spinner(size="sm")
-                    ui.label("Retrieving hybrid context, reranking passages, and generating response...").classes(
-                        "text-xs text-blue-700"
-                    )
-
-                # Input Row
-                with ui.row().classes("w-full items-center gap-2 mt-1"):
-                    input_box = ui.input(
-                        placeholder="Ask a question about documents in this knowledge base...",
-                    ).classes("flex-1")
-
-                    async def handle_submit() -> None:
-                        q = (input_box.value or "").strip()
-                        if not q:
-                            ui.notify("Please enter a question.", type="warning")
-                            return
-
-                        input_box.value = ""
-                        await send_message(q)
-
-                    send_btn = ui.button(icon="send", on_click=handle_submit).props("color=primary")
-                    input_box.on("keydown.enter", handle_submit)
-
-                async def send_message(question_text: str) -> None:
-                    # Append user message
-                    state.add_user_message(question_text)
-                    loading_row.classes(remove="hidden")
-                    send_btn.disable()
-
-                    try:
-                        # Call centralized API client boundary (mock in Step 3, real in Step 4)
-                        assistant_response = api_client.send_chat_message(
-                            kb_id=active_kb.id,
-                            question=question_text,
-                        )
-                        state.add_assistant_message(assistant_response)
-                        if assistant_response.citations:
-                            state.selected_citation = assistant_response.citations[0]
-                    except ValueError as err:
-                        ui.notify(f"Query error: {err}", type="negative")
-                    finally:
-                        loading_row.classes(add="hidden")
-                        send_btn.enable()
-                        refresh_chat_view()
-
-            # Initial render
-            refresh_chat_view()
+            # Initial render of content
+            render_messages()
+            render_evidence()

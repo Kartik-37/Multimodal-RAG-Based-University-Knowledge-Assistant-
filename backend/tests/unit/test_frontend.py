@@ -161,3 +161,47 @@ def test_page_layout_context_manager() -> None:
 
     # Clean up
     api_client.logout()
+
+
+def test_evidence_panel_rendering() -> None:
+    """Verify evidence panel renders both empty and populated states without exception."""
+    from frontend.components.evidence_panel import render_evidence_panel
+
+    # Empty citations
+    render_evidence_panel(citations=[])
+
+    # Populated citations
+    sample_citations = [
+        CitationDTO(
+            document_name="sample.pdf",
+            page_number=1,
+            chunk_id="chunk-1",
+            relevance_score=0.92,
+            snippet="Sample citation text.",
+        )
+    ]
+    render_evidence_panel(
+        citations=sample_citations,
+        selected_citation=sample_citations[0],
+        on_select=lambda _: None,
+    )
+
+
+def test_status_badge_rendering() -> None:
+    """Verify status badges render without exception for all lifecycle states."""
+    from frontend.components.status_badge import render_status_badge
+
+    for status in ["INDEXED", "PROCESSING", "FAILED", "UPLOADED", "UNKNOWN"]:
+        render_status_badge(status)
+
+
+def test_document_format_helpers() -> None:
+    """Verify byte formatting and supported format extensions."""
+    from frontend.pages.documents_page import SUPPORTED_EXTENSIONS, format_bytes
+
+    assert format_bytes(500) == "500 B"
+    assert format_bytes(2048) == "2.0 KB"
+    assert format_bytes(2 * 1024 * 1024) == "2.00 MB"
+
+    for ext in [".pdf", ".docx", ".txt", ".md", ".csv"]:
+        assert ext in SUPPORTED_EXTENSIONS
