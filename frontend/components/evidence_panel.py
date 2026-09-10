@@ -33,9 +33,9 @@ def render_evidence_panel(
                 ui.label("No citation evidence attached to this query.").classes(
                     "text-sm text-gray-500"
                 )
-                ui.label("Retrieved evidence will appear here when an answer is generated.").classes(
-                    "text-xs text-gray-400"
-                )
+                ui.label(
+                    "Retrieved evidence will appear here when an answer is generated."
+                ).classes("text-xs text-gray-400")
             return
 
         with ui.column().classes("w-full gap-3"):
@@ -58,15 +58,23 @@ def render_evidence_panel(
                     with ui.row().classes("w-full justify-between items-center mb-1"):
                         with ui.row().classes("items-center gap-1"):
                             ui.badge(f"[{idx}]", color="blue-grey").classes("text-xs font-mono")
-                            ui.label(cit.document_name).classes("text-sm font-semibold text-gray-900 truncate")
+                            ui.label(cit.document_name).classes(
+                                "text-sm font-semibold text-gray-900 truncate"
+                            )
 
                         with ui.row().classes("items-center gap-2"):
                             if cit.page_number is not None:
-                                ui.badge(f"Page {cit.page_number}", color="light-blue").classes("text-xs")
-                            ui.label(f"Score: {cit.relevance_score:.3f}").classes("text-xs font-mono text-gray-600")
+                                ui.badge(f"Page {cit.page_number}", color="light-blue").classes(
+                                    "text-xs"
+                                )
+                            ui.label(f"Score: {cit.relevance_score:.3f}").classes(
+                                "text-xs font-mono text-gray-600"
+                            )
 
                     with ui.row().classes("w-full text-xs text-gray-400 font-mono mb-2"):
                         ui.label(f"Chunk: {cit.chunk_id}").classes("truncate")
 
                     # Source text excerpt
-                    ui.label(cit.snippet).classes("text-xs text-gray-700 leading-relaxed bg-gray-50 p-2 rounded border border-gray-100 italic")
+                    ui.label(cit.snippet).classes(
+                        "text-xs text-gray-700 leading-relaxed bg-gray-50 p-2 rounded border border-gray-100 italic"
+                    )

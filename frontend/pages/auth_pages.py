@@ -17,7 +17,9 @@ def register_auth_pages() -> None:
     @ui.page("/login")
     def login_page() -> None:
         with page_layout(title="", require_auth=False):
-            with ui.card().classes("w-full max-w-md mx-auto p-6 border border-gray-200 shadow-sm mt-8"):
+            with ui.card().classes(
+                "w-full max-w-md mx-auto p-6 border border-gray-200 shadow-sm mt-8"
+            ):
                 with ui.column().classes("w-full gap-1 mb-4"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("lock", size="md").classes("text-blue-600")
@@ -70,7 +72,9 @@ def register_auth_pages() -> None:
     @ui.page("/register")
     def register_page() -> None:
         with page_layout(title="", require_auth=False):
-            with ui.card().classes("w-full max-w-md mx-auto p-6 border border-gray-200 shadow-sm mt-8"):
+            with ui.card().classes(
+                "w-full max-w-md mx-auto p-6 border border-gray-200 shadow-sm mt-8"
+            ):
                 with ui.column().classes("w-full gap-1 mb-4"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("person_add", size="md").classes("text-blue-600")

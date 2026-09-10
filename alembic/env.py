@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
+import backend.app.models  # noqa: F401 - Register models with metadata
 from alembic import context
 from backend.app.core.config import settings
 from backend.app.db.base import Base
@@ -21,9 +22,17 @@ if not config.get_main_option("sqlalchemy.url"):
 target_metadata = Base.metadata
 
 
+def get_url() -> str:
+    """Resolve database URL from config or application settings."""
+    url = config.get_main_option("sqlalchemy.url")
+    if not url or url.startswith("driver://"):
+        return settings.DATABASE_URL
+    return url
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+    url = get_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -37,8 +46,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    # Build connectable using configured or application settings
-    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+    url = get_url()
     configuration = config.get_section(config.config_ini_section, {}) or {}
     configuration["sqlalchemy.url"] = url
 
@@ -47,7 +55,6 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
 
     with connectable.connect() as connection:
         context.configure(
@@ -63,4 +70,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

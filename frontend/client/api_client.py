@@ -4,15 +4,20 @@ Centralized Frontend API Client.
 Encapsulates all communication between the NiceGUI presentation layer and the
 FastAPI backend API.
 
-In Step 3, before the full authentication and RAG backend is implemented in Step 4,
-this client maintains an in-memory session and deterministic responses for UI validation.
-It isolates this temporary behavior completely from the UI widgets, allowing smooth
-transition to real HTTP calls in Step 4 without changing UI code.
+In Step 4, this client communicates directly with the real FastAPI service boundary
+and PostgreSQL database:
+- Authenticates users with Argon2id and manages real server sessions.
+- Enforces role-based permissions (ADMIN vs STUDENT).
+- Uses authorization-aware queries for knowledge bases.
+- Validates that unauthorized student actions are rejected by the backend.
 """
 
 import uuid
 from datetime import datetime
 
+from fastapi.testclient import TestClient
+
+from backend.app.main import app
 from frontend.client.models import (
     ChatMessageDTO,
     CitationDTO,
@@ -25,64 +30,14 @@ from frontend.client.models import (
 class FrontendAPIClient:
     """API Client mediating presentation requests to the backend service boundary."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8000/api/v1") -> None:
+    def __init__(self, base_url: str = "http://testserver/api/v1") -> None:
         self.base_url = base_url
         self._current_user: UserDTO | None = None
+        # TestClient handles real FastAPI middleware, cookies, dependencies, and DB sessions
+        self._http = TestClient(app, base_url=base_url)
 
-        # In-memory presentation store for Step 3 UI testing
-        self._knowledge_bases: list[KnowledgeBaseDTO] = [
-            KnowledgeBaseDTO(
-                id="kb-default-university",
-                name="University Regulations & Policies",
-                description="Official BCA curriculum, exam regulations, and library rules.",
-                document_count=2,
-                created_at="2026-09-01",
-            ),
-            KnowledgeBaseDTO(
-                id="kb-admissions",
-                name="Admissions & Eligibility",
-                description="BCA admission guidelines and reservation quotas.",
-                document_count=1,
-                created_at="2026-09-05",
-            ),
-        ]
-
-        self._documents: dict[str, list[DocumentDTO]] = {
-            "kb-default-university": [
-                DocumentDTO(
-                    id="doc-1",
-                    kb_id="kb-default-university",
-                    filename="KSU-Act-English.pdf",
-                    file_type="pdf",
-                    file_size_bytes=351416,
-                    status="INDEXED",
-                    chunk_count=32,
-                    created_at="2026-09-01 10:30",
-                ),
-                DocumentDTO(
-                    id="doc-2",
-                    kb_id="kb-default-university",
-                    filename="examination_ordinance.docx",
-                    file_type="docx",
-                    file_size_bytes=48120,
-                    status="INDEXED",
-                    chunk_count=15,
-                    created_at="2026-09-02 11:15",
-                ),
-            ],
-            "kb-admissions": [
-                DocumentDTO(
-                    id="doc-3",
-                    kb_id="kb-admissions",
-                    filename="bca_eligibility_criteria.txt",
-                    file_type="txt",
-                    file_size_bytes=12400,
-                    status="INDEXED",
-                    chunk_count=6,
-                    created_at="2026-09-05 14:00",
-                ),
-            ],
-        }
+        # In-memory document status storage for Step 4 presentation
+        self._documents: dict[str, list[DocumentDTO]] = {}
 
     # --------------------------------------------------------------------------
     # Authentication Boundary
@@ -90,38 +45,72 @@ class FrontendAPIClient:
 
     def login(self, email: str, password: str) -> UserDTO:
         """
-        Authenticate user with email and password.
-        Validates non-empty credentials and sets current session user.
+        Authenticate user with email and password via FastAPI backend.
+        Establishes an authoritative server session with Argon2id verification.
         """
         if not email or not password:
             raise ValueError("Email and password must not be empty.")
 
-        user_name = email.split("@")[0].capitalize()
+        resp = self._http.post(
+            "/auth/login",
+            json={"email": email.strip(), "password": password},
+        )
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Authentication failed.")
+            raise ValueError(detail)
+
+        data = resp.json()
+        user_data = data["user"]
         self._current_user = UserDTO(
-            id=f"usr-{abs(hash(email)) % 10000}",
-            email=email,
-            full_name=user_name,
+            id=str(user_data["id"]),
+            email=user_data["email"],
+            full_name=user_data["full_name"],
+            role=user_data["role"],
         )
         return self._current_user
 
     def register(self, email: str, password: str, full_name: str) -> UserDTO:
-        """Register a new user account."""
+        """
+        Register a new user account via FastAPI backend.
+        CRITICAL SECURITY: Public registration always creates a STUDENT account.
+        """
         if not email or not password or not full_name:
             raise ValueError("All registration fields are required.")
 
-        self._current_user = UserDTO(
-            id=f"usr-{abs(hash(email)) % 10000}",
-            email=email,
-            full_name=full_name,
+        resp = self._http.post(
+            "/auth/register",
+            json={
+                "email": email.strip(),
+                "password": password,
+                "full_name": full_name.strip(),
+            },
         )
-        return self._current_user
+        if resp.status_code != 201:
+            detail = resp.json().get("detail", "Registration failed.")
+            raise ValueError(detail)
+
+        # Automatically authenticate the new user
+        return self.login(email=email, password=password)
 
     def logout(self) -> None:
-        """Clear active user session."""
-        self._current_user = None
+        """Terminate active session in PostgreSQL and clear cookie."""
+        try:
+            self._http.post("/auth/logout")
+        finally:
+            self._current_user = None
 
     def get_current_user(self) -> UserDTO | None:
-        """Retrieve currently authenticated user, or None if unauthenticated."""
+        """Retrieve currently authenticated user identity from backend session."""
+        if self._current_user is None:
+            resp = self._http.get("/auth/me")
+            if resp.status_code == 200:
+                user_data = resp.json()
+                self._current_user = UserDTO(
+                    id=str(user_data["id"]),
+                    email=user_data["email"],
+                    full_name=user_data["full_name"],
+                    role=user_data["role"],
+                )
         return self._current_user
 
     # --------------------------------------------------------------------------
@@ -129,22 +118,52 @@ class FrontendAPIClient:
     # --------------------------------------------------------------------------
 
     def get_knowledge_bases(self) -> list[KnowledgeBaseDTO]:
-        """Fetch all knowledge bases accessible to the current user."""
-        return list(self._knowledge_bases)
+        """
+        Fetch knowledge bases accessible to the current user.
+        FastAPI performs authorization-aware filtering at the database layer.
+        """
+        resp = self._http.get("/knowledge-bases")
+        if resp.status_code != 200:
+            return []
+
+        items = resp.json()
+        return [
+            KnowledgeBaseDTO(
+                id=str(item["id"]),
+                name=item["name"],
+                description=item.get("description", ""),
+                document_count=len(self._documents.get(str(item["id"]), [])),
+                created_at=item["created_at"][:10],
+            )
+            for item in items
+        ]
 
     def create_knowledge_base(self, name: str, description: str = "") -> KnowledgeBaseDTO:
-        """Create a new user knowledge base."""
+        """
+        Create a new knowledge base.
+        Server-side RBAC enforces ADMIN privileges.
+        """
         if not name.strip():
             raise ValueError("Knowledge base name cannot be empty.")
 
-        kb = KnowledgeBaseDTO(
-            id=f"kb-{uuid.uuid4().hex[:8]}",
-            name=name.strip(),
-            description=description.strip(),
-            document_count=0,
-            created_at=datetime.now().strftime("%Y-%m-%d"),
+        resp = self._http.post(
+            "/knowledge-bases",
+            json={"name": name.strip(), "description": description.strip()},
         )
-        self._knowledge_bases.append(kb)
+        if resp.status_code == 403:
+            raise ValueError("Administrator privileges required to create knowledge bases.")
+        if resp.status_code != 201:
+            detail = resp.json().get("detail", "Failed to create knowledge base.")
+            raise ValueError(detail)
+
+        data = resp.json()
+        kb = KnowledgeBaseDTO(
+            id=str(data["id"]),
+            name=data["name"],
+            description=data.get("description", ""),
+            document_count=0,
+            created_at=data["created_at"][:10],
+        )
         self._documents[kb.id] = []
         return kb
 
@@ -153,13 +172,23 @@ class FrontendAPIClient:
     # --------------------------------------------------------------------------
 
     def get_documents(self, kb_id: str) -> list[DocumentDTO]:
-        """Fetch documents belonging to a knowledge base."""
+        """Fetch registered documents for a knowledge base."""
         return list(self._documents.get(kb_id, []))
 
     def upload_document(
         self, kb_id: str, filename: str, content_size_bytes: int = 0
     ) -> DocumentDTO:
-        """Register an uploaded document into a knowledge base."""
+        """
+        Upload document authorization boundary.
+        FastAPI rejects student uploads with HTTP 403.
+        """
+        resp = self._http.post(f"/knowledge-bases/{kb_id}/documents")
+        if resp.status_code == 403:
+            raise ValueError("Students are not permitted to upload documents.")
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Document upload rejected.")
+            raise ValueError(detail)
+
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
         doc = DocumentDTO(
             id=f"doc-{uuid.uuid4().hex[:8]}",
@@ -174,13 +203,6 @@ class FrontendAPIClient:
         if kb_id not in self._documents:
             self._documents[kb_id] = []
         self._documents[kb_id].append(doc)
-
-        # Update KB document count
-        for kb in self._knowledge_bases:
-            if kb.id == kb_id:
-                kb.document_count = len(self._documents[kb_id])
-                break
-
         return doc
 
     # --------------------------------------------------------------------------
@@ -189,50 +211,43 @@ class FrontendAPIClient:
 
     def send_chat_message(self, kb_id: str, question: str) -> ChatMessageDTO:
         """
-        Submit a question to the conversational RAG pipeline.
-        Returns a response containing citations and evidence metadata.
+        Submit question to conversational query endpoint.
+        Both ADMIN and authorized STUDENT users can query.
         """
         if not question.strip():
             raise ValueError("Question cannot be empty.")
 
-        # Representative evidence citation demonstrating citation/evidence inspection panel
+        try:
+            kb_uuid = uuid.UUID(kb_id)
+        except ValueError:
+            raise ValueError("Invalid knowledge base ID format.") from None
+
+        resp = self._http.post(
+            "/chat/query",
+            json={"knowledge_base_id": str(kb_uuid), "question": question.strip()},
+        )
+        if resp.status_code == 404:
+            raise ValueError("Knowledge base not found or unauthorized.")
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Query failed.")
+            raise ValueError(detail)
+
+        data = resp.json()
         citations = [
             CitationDTO(
-                document_name="KSU-Act-English.pdf",
-                page_number=3,
-                chunk_id="KSU-Act-English.pdf_p3_c1",
-                relevance_score=0.892,
-                snippet=(
-                    "The University shall maintain standards for Bachelor in Computer "
-                    "Applications (BCA) and relevant academic programmes as prescribed by the "
-                    "Academic Council."
-                ),
-            ),
-            CitationDTO(
-                document_name="examination_ordinance.docx",
-                page_number=1,
-                chunk_id="examination_ordinance.docx_p1_c0",
-                relevance_score=0.781,
-                snippet=(
-                    "Students must maintain a minimum of 75% attendance in both lecture and "
-                    "laboratory sessions to be eligible for university semester examinations."
-                ),
-            ),
+                document_name=c["document_name"],
+                page_number=c.get("page_number"),
+                chunk_id=c["chunk_id"],
+                relevance_score=c["relevance_score"],
+                snippet=c["snippet"],
+            )
+            for c in data.get("citations", [])
         ]
-
-        answer = (
-            f"Based on the knowledge base documents, here is the answer regarding your query "
-            f"'{question.strip()}':\n\n"
-            f"1. As stated in [KSU-Act-English.pdf, Page 3], the university oversees academic standards "
-            f"and curriculum approval.\n"
-            f"2. Under [examination_ordinance.docx, Page 1], candidates are required to fulfill attendance "
-            f"and examination criteria."
-        )
 
         return ChatMessageDTO(
             id=f"msg-{uuid.uuid4().hex[:8]}",
             role="assistant",
-            content=answer,
+            content=data["answer"],
             citations=citations,
             created_at=datetime.now().strftime("%H:%M"),
         )

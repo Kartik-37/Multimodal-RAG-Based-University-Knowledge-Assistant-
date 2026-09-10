@@ -48,3 +48,32 @@ def db_session(db_engine) -> Generator:
         session.rollback()
         session.close()
 
+
+@pytest.fixture(scope="function")
+def api_client(db_engine) -> Generator[TestClient, None, None]:
+    """
+    HTTP test client wired to the isolated PostgreSQL test database.
+    Overrides FastAPI's get_db dependency to point to db_engine (TEST_DATABASE_URL).
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.app.api.deps import get_db
+
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
+    app = create_application()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()

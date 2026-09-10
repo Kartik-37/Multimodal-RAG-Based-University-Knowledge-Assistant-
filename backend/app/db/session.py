@@ -8,6 +8,7 @@ preventing event-loop blocking while ensuring thread safety for NiceGUI and back
 
 import logging
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -38,6 +39,23 @@ def create_db_engine(database_url: str | None = None) -> Engine:
 # Authoritative application database engine and session maker
 engine = create_db_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@contextmanager
+def get_db_session() -> Generator[Session, None, None]:
+    """
+    Context manager providing a transactional database session for standalone scripts
+    and background jobs.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def get_db() -> Generator[Session, None, None]:

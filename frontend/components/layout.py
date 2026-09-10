@@ -28,11 +28,15 @@ def _render_navbar(active_route: str) -> None:
     user = state.current_user
     kbs = api_client.get_knowledge_bases()
 
-    with ui.header().classes("w-full bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md"):
+    with ui.header().classes(
+        "w-full bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md"
+    ):
         # Left: App Brand and Navigation Links
         with ui.row().classes("items-center gap-6"):
-            with ui.row().classes("items-center gap-2 cursor-pointer").on(
-                "click", lambda: ui.navigate.to("/dashboard" if user else "/login")
+            with (
+                ui.row()
+                .classes("items-center gap-2 cursor-pointer")
+                .on("click", lambda: ui.navigate.to("/dashboard" if user else "/login"))
             ):
                 ui.icon("psychology", size="md").classes("text-blue-400")
                 ui.label("RAG Assistant").classes("text-lg font-bold tracking-tight text-white")
@@ -52,8 +56,11 @@ def _render_navbar(active_route: str) -> None:
                             btn_classes += "bg-blue-600 text-white"
                         else:
                             btn_classes += "text-gray-300 hover:bg-slate-800 hover:text-white"
-                        with ui.button(label, icon=icon).props("flat dense").classes(btn_classes).on(
-                            "click", lambda r=route: ui.navigate.to(r)
+                        with (
+                            ui.button(label, icon=icon)
+                            .props("flat dense")
+                            .classes(btn_classes)
+                            .on("click", lambda r=route: ui.navigate.to(r))
                         ):
                             pass
 
@@ -73,13 +80,17 @@ def _render_navbar(active_route: str) -> None:
                                 ui.notify(f"Switched active KB: {kb.name}", type="info")
                                 break
 
-                    with ui.row().classes("items-center gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-700"):
+                    with ui.row().classes(
+                        "items-center gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-700"
+                    ):
                         ui.icon("folder", size="xs").classes("text-blue-400")
                         ui.select(
                             options=kb_options,
                             value=active_id,
                             on_change=on_kb_change,
-                        ).props("dense borderless dark options-dense").classes("text-xs text-white w-44")
+                        ).props("dense borderless dark options-dense").classes(
+                            "text-xs text-white w-44"
+                        )
                 else:
                     ui.badge("No Knowledge Base", color="amber").classes("text-xs")
 
@@ -87,17 +98,19 @@ def _render_navbar(active_route: str) -> None:
                 with ui.row().classes("items-center gap-2 border-l border-slate-700 pl-4"):
                     ui.icon("account_circle", size="sm").classes("text-gray-300")
                     ui.label(user.full_name).classes("text-xs font-medium text-gray-200")
+                    role_color = "red" if user.role == "ADMIN" else "blue"
+                    ui.badge(user.role, color=role_color).classes("text-[10px] font-bold")
                     ui.button("Logout", icon="logout", on_click=_handle_logout).props(
                         "flat dense"
                     ).classes("text-xs text-red-400 hover:bg-slate-800")
             else:
                 with ui.row().classes("items-center gap-2"):
-                    ui.button("Login", icon="login", on_click=lambda: ui.navigate.to("/login")).props(
-                        "flat dense"
-                    ).classes("text-xs text-blue-300")
-                    ui.button("Register", icon="person_add", on_click=lambda: ui.navigate.to("/register")).props(
-                        "flat dense"
-                    ).classes("text-xs text-gray-300")
+                    ui.button(
+                        "Login", icon="login", on_click=lambda: ui.navigate.to("/login")
+                    ).props("flat dense").classes("text-xs text-blue-300")
+                    ui.button(
+                        "Register", icon="person_add", on_click=lambda: ui.navigate.to("/register")
+                    ).props("flat dense").classes("text-xs text-gray-300")
 
 
 @contextmanager
@@ -125,12 +138,14 @@ def page_layout(
                 "text-sm text-gray-600 mb-4"
             )
             with ui.row().classes("gap-3"):
-                ui.button("Go to Login", icon="login", on_click=lambda: ui.navigate.to("/login")).props(
-                    "color=primary"
-                )
-                ui.button("Register Account", icon="person_add", on_click=lambda: ui.navigate.to("/register")).props(
-                    "outline color=primary"
-                )
+                ui.button(
+                    "Go to Login", icon="login", on_click=lambda: ui.navigate.to("/login")
+                ).props("color=primary")
+                ui.button(
+                    "Register Account",
+                    icon="person_add",
+                    on_click=lambda: ui.navigate.to("/register"),
+                ).props("outline color=primary")
         # Yield into hidden container so contextmanager contract is satisfied
         # while suppressing protected page elements
         with ui.element("div").classes("hidden"):

@@ -33,9 +33,9 @@ def register_chat_page() -> None:
                 ):
                     ui.icon("folder_off", size="lg").classes("text-gray-400 mb-2")
                     ui.label("No Active Knowledge Base").classes("text-lg font-bold text-gray-800")
-                    ui.label("Select a knowledge base to begin conversational question answering.").classes(
-                        "text-sm text-gray-500 mb-4"
-                    )
+                    ui.label(
+                        "Select a knowledge base to begin conversational question answering."
+                    ).classes("text-sm text-gray-500 mb-4")
                     ui.button(
                         "Select Knowledge Base",
                         icon="arrow_forward",
@@ -52,7 +52,9 @@ def register_chat_page() -> None:
                             "text-xs font-semibold text-gray-500 uppercase"
                         )
                         ui.label(active_kb.name).classes("text-sm font-bold text-gray-900")
-                        ui.badge(f"{active_kb.document_count} doc(s)", color="blue-grey").classes("text-xs")
+                        ui.badge(f"{active_kb.document_count} doc(s)", color="blue-grey").classes(
+                            "text-xs"
+                        )
 
                     def clear_session() -> None:
                         state.clear_chat()
@@ -60,9 +62,9 @@ def register_chat_page() -> None:
                         render_messages()
                         render_evidence()
 
-                    ui.button("Clear Conversation", icon="delete_outline", on_click=clear_session).props(
-                        "flat dense"
-                    ).classes("text-xs text-red-500")
+                    ui.button(
+                        "Clear Conversation", icon="delete_outline", on_click=clear_session
+                    ).props("flat dense").classes("text-xs text-red-500")
 
             # Main Two-Column Layout: Chat on Left, Evidence Panel on Right
             with ui.row().classes("w-full gap-6 items-start"):
@@ -163,9 +165,13 @@ def register_chat_page() -> None:
                 message_container.clear()
                 with message_container:
                     if not state.chat_history:
-                        with ui.column().classes("w-full py-16 items-center justify-center text-center"):
+                        with ui.column().classes(
+                            "w-full py-16 items-center justify-center text-center"
+                        ):
                             ui.icon("chat_bubble_outline", size="xl").classes("text-gray-300 mb-2")
-                            ui.label("No Questions Asked Yet").classes("text-base font-bold text-gray-700")
+                            ui.label("No Questions Asked Yet").classes(
+                                "text-base font-bold text-gray-700"
+                            )
                             ui.label(
                                 "Type your question below. The assistant will retrieve relevant chunks, "
                                 "rerank evidence, and synthesize an answer with citations."
@@ -178,12 +184,13 @@ def register_chat_page() -> None:
                                     "What is the curriculum approval process?",
                                 ]
                                 for p in prompts:
+
                                     async def on_prompt_click(prompt_text: str = p) -> None:
                                         await send_message(prompt_text)
 
-                                    ui.button(p, on_click=on_prompt_click).props("outline dense").classes(
-                                        "text-xs text-blue-700"
-                                    )
+                                    ui.button(p, on_click=on_prompt_click).props(
+                                        "outline dense"
+                                    ).classes("text-xs text-blue-700")
                     else:
                         for msg in state.chat_history:
                             if msg.role == "user":
@@ -202,24 +209,38 @@ def register_chat_page() -> None:
                                         "w-full max-w-2xl bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-sm gap-2"
                                     ):
                                         with ui.row().classes("items-center gap-2 mb-1"):
-                                            ui.icon("psychology", size="xs").classes("text-blue-600")
-                                            ui.label("Assistant").classes("text-xs font-bold text-gray-800")
+                                            ui.icon("psychology", size="xs").classes(
+                                                "text-blue-600"
+                                            )
+                                            ui.label("Assistant").classes(
+                                                "text-xs font-bold text-gray-800"
+                                            )
                                             if msg.created_at:
                                                 ui.label(msg.created_at).classes(
                                                     "text-[10px] text-gray-400 font-mono"
                                                 )
 
-                                        ui.markdown(msg.content).classes("text-sm text-gray-800 leading-relaxed")
+                                        ui.markdown(msg.content).classes(
+                                            "text-sm text-gray-800 leading-relaxed"
+                                        )
 
                                         # Citation Pills
                                         if msg.citations:
                                             with ui.row().classes(
                                                 "items-center gap-1 mt-2 pt-2 border-t border-gray-200"
                                             ):
-                                                ui.label("Sources:").classes("text-xs font-semibold text-gray-500")
+                                                ui.label("Sources:").classes(
+                                                    "text-xs font-semibold text-gray-500"
+                                                )
                                                 for idx, cit in enumerate(msg.citations, start=1):
-                                                    page_info = f" p.{cit.page_number}" if cit.page_number else ""
-                                                    pill_label = f"[{idx}] {cit.document_name}{page_info}"
+                                                    page_info = (
+                                                        f" p.{cit.page_number}"
+                                                        if cit.page_number
+                                                        else ""
+                                                    )
+                                                    pill_label = (
+                                                        f"[{idx}] {cit.document_name}{page_info}"
+                                                    )
                                                     ui.button(
                                                         pill_label,
                                                         on_click=lambda c=cit: select_citation(c),

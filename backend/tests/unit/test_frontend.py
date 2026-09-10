@@ -2,8 +2,10 @@
 Unit Tests for Frontend Presentation Layer and API Client Boundary.
 
 Validates authentication state transitions, client operations, DTO serialization,
-and route registration in the NiceGUI presentation shell.
+and route registration in the NiceGUI presentation shell with real backend integration.
 """
+
+import uuid
 
 import pytest
 
@@ -17,6 +19,13 @@ from frontend.client.models import (
 )
 from frontend.main import init_ui
 from frontend.state.app_state import AppState
+from scripts.bootstrap_admin import bootstrap_admin
+
+
+@pytest.fixture(autouse=True)
+def ensure_admin_bootstrapped() -> None:
+    """Ensure the standard test admin exists before running frontend unit tests."""
+    bootstrap_admin("admin@university.edu", "AdminPass123!", "System Administrator")
 
 
 class TestFrontendAPIClient:
@@ -26,20 +35,24 @@ class TestFrontendAPIClient:
         client = FrontendAPIClient()
         assert client.get_current_user() is None
 
-        # Successful login
-        user = client.login("student@university.edu", "secret123")
-        assert isinstance(user, UserDTO)
-        assert user.email == "student@university.edu"
-        assert client.get_current_user() == user
+        # Registration creates real student account in database
+        unique_email = f"test_student_{uuid.uuid4().hex[:8]}@university.edu"
+        reg_user = client.register(unique_email, "SecurePassword123!", "Jane Doe")
+        assert isinstance(reg_user, UserDTO)
+        assert reg_user.email == unique_email
+        assert reg_user.full_name == "Jane Doe"
+        assert reg_user.role == "STUDENT"
+        assert client.get_current_user() == reg_user
 
         # Logout
         client.logout()
         assert client.get_current_user() is None
 
-        # Registration
-        reg_user = client.register("newuser@university.edu", "pass456", "Jane Doe")
-        assert reg_user.full_name == "Jane Doe"
-        assert client.get_current_user() == reg_user
+        # Login with newly created user
+        user = client.login(unique_email, "SecurePassword123!")
+        assert isinstance(user, UserDTO)
+        assert user.email == unique_email
+        assert client.get_current_user() == user
 
     def test_auth_invalid_inputs(self) -> None:
         client = FrontendAPIClient()
@@ -55,15 +68,19 @@ class TestFrontendAPIClient:
 
     def test_knowledge_base_operations(self) -> None:
         client = FrontendAPIClient()
-        kbs = client.get_knowledge_bases()
-        assert len(kbs) >= 1
-        assert isinstance(kbs[0], KnowledgeBaseDTO)
+        # Authenticate as Admin to create knowledge bases
+        client.login("admin@university.edu", "AdminPass123!")
 
         # Create new KB
-        new_kb = client.create_knowledge_base("New Semester Syllabus", "Description text")
-        assert new_kb.name == "New Semester Syllabus"
+        kb_name = f"Test Syllabus {uuid.uuid4().hex[:6]}"
+        new_kb = client.create_knowledge_base(kb_name, "Description text")
+        assert new_kb.name == kb_name
         assert new_kb.document_count == 0
-        assert any(k.id == new_kb.id for k in client.get_knowledge_bases())
+
+        # Retrieve knowledge bases
+        kbs = client.get_knowledge_bases()
+        assert len(kbs) >= 1
+        assert any(k.id == new_kb.id for k in kbs)
 
         # Empty name rejection
         with pytest.raises(ValueError, match="Knowledge base name cannot be empty"):
@@ -71,7 +88,9 @@ class TestFrontendAPIClient:
 
     def test_document_operations(self) -> None:
         client = FrontendAPIClient()
-        kb = client.get_knowledge_bases()[0]
+        client.login("admin@university.edu", "AdminPass123!")
+        kb_name = f"Doc Test KB {uuid.uuid4().hex[:6]}"
+        kb = client.create_knowledge_base(kb_name, "For docs")
         initial_count = len(client.get_documents(kb.id))
 
         doc = client.upload_document(
@@ -89,7 +108,9 @@ class TestFrontendAPIClient:
 
     def test_chat_query_and_citations(self) -> None:
         client = FrontendAPIClient()
-        kb = client.get_knowledge_bases()[0]
+        client.login("admin@university.edu", "AdminPass123!")
+        kb_name = f"Chat Test KB {uuid.uuid4().hex[:6]}"
+        kb = client.create_knowledge_base(kb_name, "For chat")
 
         # Valid chat message
         response = client.send_chat_message(kb_id=kb.id, question="What are the exam rules?")
@@ -111,11 +132,18 @@ class TestFrontendAPIClient:
 class TestAppState:
     """Test suite for AppState presentation manager."""
 
-    def test_active_kb_default(self) -> None:
+    def test_active_kb_management(self) -> None:
         state = AppState()
-        # Should default to the first available knowledge base
-        assert state.active_kb is not None
-        assert isinstance(state.active_kb, KnowledgeBaseDTO)
+        sample_kb = KnowledgeBaseDTO(
+            id=str(uuid.uuid4()),
+            name="Sample Active KB",
+            description="Sample",
+            document_count=0,
+            created_at="2026-09-10",
+        )
+        state.active_kb = sample_kb
+        assert state.active_kb == sample_kb
+        assert state.active_kb.name == "Sample Active KB"
 
     def test_chat_history_flow(self) -> None:
         state = AppState()
@@ -155,7 +183,7 @@ def test_page_layout_context_manager() -> None:
         pass  # should not error
 
     # Authenticated state
-    api_client.login("tester@example.edu", "secret")
+    api_client.login("admin@university.edu", "AdminPass123!")
     with page_layout(title="Protected Page", require_auth=True):
         pass  # should not error
 

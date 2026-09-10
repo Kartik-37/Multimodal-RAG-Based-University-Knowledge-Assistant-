@@ -14,6 +14,7 @@ class UserDTO(BaseModel):
     id: str
     email: str
     full_name: str
+    role: str = "STUDENT"
 
 
 class KnowledgeBaseDTO(BaseModel):

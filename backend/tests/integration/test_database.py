@@ -108,7 +108,6 @@ def test_transaction_commit(db_engine: Engine) -> None:
             conn.execute(text("DROP TABLE IF EXISTS itest_txn_cm;"))
 
 
-
 def test_alembic_migration(app_settings: Settings) -> None:
     """7: Verify Alembic migration can execute against the test database."""
     alembic_cfg = Config("alembic.ini")
@@ -167,7 +166,8 @@ def test_readiness_probe_database_unavailable() -> None:
 
 def test_vector_1024_operations(db_engine: Engine) -> None:
     """9: Verify Vector(1024) schema creation, insertion, and L2 distance search."""
-    Base.metadata.create_all(db_engine, tables=[VectorTestTable.__table__])
+    VectorTestTable.__table__.drop(db_engine, checkfirst=True)
+    VectorTestTable.__table__.create(db_engine, checkfirst=True)
 
     try:
         with Session(db_engine) as session:
@@ -198,4 +198,4 @@ def test_vector_1024_operations(db_engine: Engine) -> None:
             assert closest[0] == 1
             assert closest[1] == "alpha"
     finally:
-        Base.metadata.drop_all(db_engine, tables=[VectorTestTable.__table__])
+        VectorTestTable.__table__.drop(db_engine, checkfirst=True)

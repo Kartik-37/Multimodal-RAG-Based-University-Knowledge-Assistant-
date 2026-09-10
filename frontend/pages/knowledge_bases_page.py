@@ -27,7 +27,9 @@ def register_knowledge_bases_page() -> None:
 
             # Dialog for creating a new Knowledge Base
             with ui.dialog() as create_dialog, ui.card().classes("w-full max-w-md p-6"):
-                ui.label("Create New Knowledge Base").classes("text-lg font-bold text-gray-900 mb-1")
+                ui.label("Create New Knowledge Base").classes(
+                    "text-lg font-bold text-gray-900 mb-1"
+                )
                 ui.label("Group related reference material under a specific subject.").classes(
                     "text-xs text-gray-500 mb-4"
                 )
@@ -69,30 +71,51 @@ def register_knowledge_bases_page() -> None:
                     render_content()
 
             def render_content() -> None:
+                is_admin = bool(
+                    state.current_user and getattr(state.current_user, "role", "STUDENT") == "ADMIN"
+                )
                 kbs = api_client.get_knowledge_bases()
                 active_kb = state.active_kb
 
                 # Top Action Bar
-                with ui.row().classes("w-full justify-between items-center bg-gray-50 p-4 border rounded"):
+                with ui.row().classes(
+                    "w-full justify-between items-center bg-gray-50 p-4 border rounded"
+                ):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("library_books", size="sm").classes("text-blue-600")
-                        ui.label(f"{len(kbs)} Knowledge Base(s) Available").classes("text-sm font-semibold text-gray-700")
+                        ui.label(f"{len(kbs)} Knowledge Base(s) Available").classes(
+                            "text-sm font-semibold text-gray-700"
+                        )
+                        if not is_admin:
+                            ui.badge("STUDENT ACCESS", color="blue").classes(
+                                "text-xs font-semibold"
+                            )
 
-                    ui.button("New Knowledge Base", icon="add", on_click=open_create_dialog).props(
-                        "color=primary dense"
-                    )
+                    if is_admin:
+                        ui.button(
+                            "New Knowledge Base", icon="add", on_click=open_create_dialog
+                        ).props("color=primary dense")
 
                 # Empty State
                 if not kbs:
-                    with ui.card().classes("w-full p-10 items-center justify-center text-center border-dashed border-2 border-gray-300"):
+                    with ui.card().classes(
+                        "w-full p-10 items-center justify-center text-center border-dashed border-2 border-gray-300"
+                    ):
                         ui.icon("folder_off", size="xl").classes("text-gray-400 mb-2")
-                        ui.label("No Knowledge Bases Found").classes("text-lg font-bold text-gray-800")
-                        ui.label("Create your first knowledge base to begin uploading documents and querying context.").classes(
-                            "text-sm text-gray-500 max-w-md mb-4"
+                        ui.label("No Knowledge Bases Found").classes(
+                            "text-lg font-bold text-gray-800"
                         )
-                        ui.button("Create Knowledge Base", icon="add", on_click=open_create_dialog).props(
-                            "color=primary"
-                        )
+                        if is_admin:
+                            ui.label(
+                                "Create your first knowledge base to begin uploading documents and querying context."
+                            ).classes("text-sm text-gray-500 max-w-md mb-4")
+                            ui.button(
+                                "Create Knowledge Base", icon="add", on_click=open_create_dialog
+                            ).props("color=primary")
+                        else:
+                            ui.label(
+                                "No knowledge bases have been assigned to your student account yet. Please contact an administrator."
+                            ).classes("text-sm text-gray-500 max-w-md mb-4")
                     return
 
                 # Knowledge Base Cards List
@@ -109,38 +132,56 @@ def register_knowledge_bases_page() -> None:
                             with ui.row().classes("w-full justify-between items-start"):
                                 with ui.column().classes("gap-1"):
                                     with ui.row().classes("items-center gap-2"):
-                                        ui.label(kb.name).classes("text-base font-bold text-gray-900")
+                                        ui.label(kb.name).classes(
+                                            "text-base font-bold text-gray-900"
+                                        )
                                         if is_active:
-                                            ui.badge("ACTIVE", color="green").classes("text-xs font-semibold")
+                                            ui.badge("ACTIVE", color="green").classes(
+                                                "text-xs font-semibold"
+                                            )
 
                                     if kb.description:
                                         ui.label(kb.description).classes("text-xs text-gray-600")
                                     else:
-                                        ui.label("No description provided.").classes("text-xs text-gray-400 italic")
+                                        ui.label("No description provided.").classes(
+                                            "text-xs text-gray-400 italic"
+                                        )
 
-                                    with ui.row().classes("items-center gap-3 text-xs text-gray-500 mt-2"):
-                                        ui.label(f"{kb.document_count} document(s)").classes("font-mono")
-                                        ui.label(f"Created: {kb.created_at}").classes("text-gray-400")
+                                    with ui.row().classes(
+                                        "items-center gap-3 text-xs text-gray-500 mt-2"
+                                    ):
+                                        ui.label(f"{kb.document_count} document(s)").classes(
+                                            "font-mono"
+                                        )
+                                        ui.label(f"Created: {kb.created_at}").classes(
+                                            "text-gray-400"
+                                        )
 
                                 # Actions on KB
                                 with ui.row().classes("items-center gap-2"):
                                     if not is_active:
+
                                         def make_active(target_kb=kb) -> None:
                                             state.active_kb = target_kb
-                                            ui.notify(f"Set '{target_kb.name}' as active knowledge base.", type="positive")
+                                            ui.notify(
+                                                f"Set '{target_kb.name}' as active knowledge base.",
+                                                type="positive",
+                                            )
                                             refresh_view()
 
-                                        ui.button("Set Active", icon="check_circle_outline", on_click=make_active).props(
-                                            "outline dense color=primary"
-                                        ).classes("text-xs")
+                                        ui.button(
+                                            "Set Active",
+                                            icon="check_circle_outline",
+                                            on_click=make_active,
+                                        ).props("outline dense color=primary").classes("text-xs")
 
                                     def view_docs(target_kb=kb) -> None:
                                         state.active_kb = target_kb
                                         ui.navigate.to("/documents")
 
-                                    ui.button("Documents", icon="description", on_click=view_docs).props(
-                                        "flat dense"
-                                    ).classes("text-xs text-gray-700")
+                                    ui.button(
+                                        "Documents", icon="description", on_click=view_docs
+                                    ).props("flat dense").classes("text-xs text-gray-700")
 
                                     def start_chat(target_kb=kb) -> None:
                                         state.active_kb = target_kb
