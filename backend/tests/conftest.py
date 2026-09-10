@@ -23,3 +23,28 @@ def client() -> Generator[TestClient, None, None]:
     app = create_application()
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(scope="session")
+def db_engine(app_settings: Settings):
+    """Fixture providing a SQLAlchemy Engine connected to the real test database."""
+    from backend.app.db.session import create_db_engine
+
+    test_engine = create_db_engine(app_settings.TEST_DATABASE_URL)
+    yield test_engine
+    test_engine.dispose()
+
+
+@pytest.fixture(scope="function")
+def db_session(db_engine) -> Generator:
+    """Fixture providing an isolated database session per test function."""
+    from sqlalchemy.orm import sessionmaker
+
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+

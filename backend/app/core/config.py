@@ -42,6 +42,10 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres:postgres@localhost:5432/rag_assistant_db",
         description="PostgreSQL database connection URL.",
     )
+    TEST_DATABASE_URL: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost:5432/rag_assistant_test_db",
+        description="PostgreSQL test database connection URL.",
+    )
 
     # Local Storage
     STORAGE_DIR: Path = Field(

@@ -31,7 +31,7 @@ Never mark a task complete merely because code exists.
 - [x] Existing tests baseline (COMPLETE — starts from zero)
 - [x] Existing architecture reconciliation (COMPLETE)
 - [x] Foundation verified (COMPLETE)
-- [ ] Database setup (PostgreSQL + pgvector)
+- [x] Database setup (PostgreSQL + pgvector) (COMPLETE)
 - [ ] Authentication
 - [ ] Authorization/isolation
 - [ ] Document lifecycle
@@ -63,36 +63,28 @@ Never mark a task complete merely because code exists.
 - [ ] Documentation
 - [ ] Git/GitHub final review
 
-## Step 1 Execution Record
+## Step 2 Execution Record (Database Foundation)
 
 * **Status**: COMPLETE
-* **Python Version**: Python 3.14.5 (64-bit) in dedicated `.venv`
-* **Package Manager**: pip 26.1.1
-* **Files Created / Configured**:
-  - `pyproject.toml` (standard dependency definition, ruff, pytest settings)
-  - `.gitignore` (hardened with secret, local storage, vector, and cache rules)
-  - `.env.example` (documented configuration placeholders)
-  - `backend/app/__init__.py`, `backend/app/core/config.py` (Pydantic settings)
-  - `backend/app/api/v1/router.py` (v1 root router with `/ping`)
-  - `backend/app/main.py` (FastAPI app factory with `/health` and `/ready` probes)
-  - Package structure: `backend/app/{db,models,schemas,services,rag,providers}`
-  - RAG subpackages: `backend/app/rag/{ingestion,chunking,embeddings,retrieval,reranking,generation,citations}`
-  - Frontend structure: `frontend/{pages,components,client,main.py}`
-  - Tests: `backend/tests/{conftest.py, unit/test_config.py, integration/test_health.py, security/}`
-* **Commands & Checks Run**:
-  - `git init -b main`: repository initialized cleanly.
-  - `python -m venv .venv`: dedicated virtual environment created.
-  - `pip install -e ".[dev]"`: all runtime and development packages installed cleanly with prebuilt cp314 wheels.
-  - `python -c "import fastapi, nicegui, sqlalchemy, alembic, pydantic, psycopg, pgvector, argon2, jwt, ollama, pytest"`: verified clean imports.
-  - `pytest`: 5 tests passed (unit tests for config, integration tests for `/health`, `/ready`, `/api/v1/ping`).
-  - `ruff check .`: all lint checks passed (0 errors remaining).
-  - `git status`: verified clean staging with zero secrets or unwanted artifacts.
-* **Compatibility Notes**:
-  - All core dependencies resolved with Python 3.14 Windows wheels (`fastapi`, `nicegui`, `pydantic`, `sqlalchemy`, `alembic`, `psycopg`, `pgvector`, `argon2-cffi`, `pyjwt`, `pytest`, `ruff`).
-  - Starlette deprecation warning noted regarding `starlette.testclient` internal import of `httpx` (informational warning from upstream library).
-* **Next Safe Task**: Step 2: Database setup (PostgreSQL 16 + pgvector configuration on Windows).
+* **PostgreSQL Version**: PostgreSQL 16.15 (64-bit compiled by Visual C++ build 1944)
+* **pgvector Version**: v0.8.6 installed and verified (`extversion = 0.8.6`)
+* **Vector Dimension Verification**: `vector(1024)` verified in PostgreSQL and via SQLAlchemy
+* **Databases Created**:
+  - `rag_assistant_db` (primary application database)
+  - `rag_assistant_test_db` (real isolated PostgreSQL test database)
+* **Application Role**: `rag_app_user` (least-privileged: `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, database owner)
+* **SQLAlchemy Architecture**: Synchronous SQLAlchemy 2.0 with connection pooling (`QueuePool`, `pool_pre_ping=True`) via `psycopg 3`
+* **Alembic**: Initialized and configured with dynamic settings URL, metadata integration, and initial migration `f06d9a1c047f_enable_vector_extension` applied
+* **Probes**:
+  - `/health` (liveness probe)
+  - `/ready` (readiness probe verifying database connectivity via `SELECT 1`, returns 200 when ready, 503 when degraded)
+* **Documentation**: `docs/DATABASE_SETUP_WINDOWS.md` created
+* **Tests Run**: 14 tests passing (`pytest` 14/14 passed in 0.41s)
+* **Lint**: Ruff clean (0 errors)
+* **Next Safe Task**: Step 3: Minimal NiceGUI Frontend Shell (exercising auth, knowledge bases, document uploads, and chat scaffolding)
 
 ## Last verified
 
-2026-09-10 — Step 1 foundation verified with 5/5 pytest passing and ruff checks clean.
+2026-09-10 — Step 2 database foundation verified with 14/14 tests passing and clean pgvector 0.8.6 extension in PostgreSQL 16.
+
 

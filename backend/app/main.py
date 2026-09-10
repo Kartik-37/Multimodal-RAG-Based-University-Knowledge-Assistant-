@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from backend.app.api.v1.router import api_router
 from backend.app.core.config import settings
+from backend.app.db.session import check_database_connection
 
 
 def create_application() -> FastAPI:
@@ -46,21 +47,36 @@ def create_application() -> FastAPI:
             "version": "0.1.0",
         }
 
-    @app.get("/ready", tags=["system"], status_code=status.HTTP_200_OK)
+    @app.get("/ready", tags=["system"])
     async def readiness_check() -> JSONResponse:
         """
-        Readiness probe: verifies that critical backing dependencies are accessible.
-        In Step 1 foundation, checks basic app configuration readiness.
+        Readiness probe: verifies that critical backing dependencies (PostgreSQL) are accessible.
+        Returns 200 if ready to serve traffic, 503 if backing dependencies are unavailable.
+        Suppresses internal exception details to prevent credential or schema leakage.
         """
+        db_ready = check_database_connection()
+        checks = {
+            "config": "ok",
+            "database": "ok" if db_ready else "unavailable",
+            "storage_dir": str(settings.STORAGE_DIR),
+        }
+
+        if not db_ready:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "not_ready",
+                    "environment": settings.APP_ENV,
+                    "checks": checks,
+                },
+            )
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "status": "ready",
                 "environment": settings.APP_ENV,
-                "checks": {
-                    "config": "ok",
-                    "storage_dir": str(settings.STORAGE_DIR),
-                },
+                "checks": checks,
             },
         )
 
