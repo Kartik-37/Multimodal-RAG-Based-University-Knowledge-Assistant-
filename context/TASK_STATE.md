@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 1 COMPLETE — FOUNDATION VERIFIED
+STEP 3 COMPLETE — MINIMAL FUNCTIONAL NICEGUI FRONTEND SHELL VERIFIED
 
 ## Rules
 
@@ -52,7 +52,7 @@ Never mark a task complete merely because code exists.
 - [ ] Rate limiting
 - [ ] Backend security audit
 - [ ] Backend quality gate
-- [ ] Functional frontend
+- [x] Functional frontend (COMPLETE — Step 3 Minimal Functional Presentation Shell)
 - [ ] Frontend design pass
 - [ ] Accessibility QA
 - [ ] Responsive QA
@@ -63,28 +63,34 @@ Never mark a task complete merely because code exists.
 - [ ] Documentation
 - [ ] Git/GitHub final review
 
-## Step 2 Execution Record (Database Foundation)
+## Step 3 Execution Record (Minimal Functional NiceGUI Frontend Shell)
 
 * **Status**: COMPLETE
-* **PostgreSQL Version**: PostgreSQL 16.15 (64-bit compiled by Visual C++ build 1944)
-* **pgvector Version**: v0.8.6 installed and verified (`extversion = 0.8.6`)
-* **Vector Dimension Verification**: `vector(1024)` verified in PostgreSQL and via SQLAlchemy
-* **Databases Created**:
-  - `rag_assistant_db` (primary application database)
-  - `rag_assistant_test_db` (real isolated PostgreSQL test database)
-* **Application Role**: `rag_app_user` (least-privileged: `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, database owner)
-* **SQLAlchemy Architecture**: Synchronous SQLAlchemy 2.0 with connection pooling (`QueuePool`, `pool_pre_ping=True`) via `psycopg 3`
-* **Alembic**: Initialized and configured with dynamic settings URL, metadata integration, and initial migration `f06d9a1c047f_enable_vector_extension` applied
-* **Probes**:
-  - `/health` (liveness probe)
-  - `/ready` (readiness probe verifying database connectivity via `SELECT 1`, returns 200 when ready, 503 when degraded)
-* **Documentation**: `docs/DATABASE_SETUP_WINDOWS.md` created
-* **Tests Run**: 14 tests passing (`pytest` 14/14 passed in 0.41s)
-* **Lint**: Ruff clean (0 errors)
-* **Next Safe Task**: Step 3: Minimal NiceGUI Frontend Shell (exercising auth, knowledge bases, document uploads, and chat scaffolding)
+* **Architecture**:
+  - Python-first presentation layer with NiceGUI (v3.16.0).
+  - Clean separation: UI code decoupled from DB models, repositories, and RAG logic.
+  - Centralized `FrontendAPIClient` (`frontend/client/api_client.py`) mediating all communication via typed DTO models (`frontend/client/models.py`).
+  - Session and selection state managed via `AppState` singleton (`frontend/state/app_state.py`).
+* **Routes Implemented & Verified (Live Server 200 OK)**:
+  - `/login`: Minimal authentication sign-in form with validation and quick demo login.
+  - `/register`: User registration form with validation.
+  - `/dashboard`: High-level metrics (active KB, document count, isolated corpora), quick navigation cards, and recent documents summary table.
+  - `/knowledge-bases`: Knowledge base list, creation dialog, active KB selection, and empty state.
+  - `/documents`: Multi-format document upload (PDF, DOCX, TXT, MD, CSV) with MIME validation, status badges, chunk counters, and ingestion pipeline lifecycle inspector.
+  - `/chat`: Conversational RAG interface with message stream, quick prompt starters, loading indicators, assistant response markdown rendering, and evidence/citation inspection panel with relevance scores and page numbers.
+* **Component Modularity**:
+  - `page_layout`: Context manager ensuring consistent top navigation, active KB switching, user profile actions, logout, and auth protection guard.
+  - `render_status_badge`: Semantic badges for `INDEXED`, `PROCESSING`, `FAILED`, and `QUEUED`.
+  - `render_evidence_panel`: Citation inspection panel displaying source document name, page number, chunk ID, relevance score, and source excerpt snippet.
+* **Packaging**:
+  - Configured `[tool.setuptools.packages.find]` in `pyproject.toml` for `backend*` and `frontend*`.
+  - Editable install verified (`pip install -e . --no-deps`).
+* **Tests Run**: 23 tests passing (`pytest` 23/23 passed in 0.67s, including all Step 1, Step 2, and new frontend client/state/route tests).
+* **Lint**: Ruff clean (`ruff check .` passes with 0 errors).
+* **Next Safe Task**: Step 4: Backend RAG Pipeline (Data models, authentication & tenant isolation, document ingestion, chunking, embeddings with `qwen3-embedding:0.6b`, hybrid search, reranking with CrossEncoder, context assembly, and LLM generation).
 
 ## Last verified
 
-2026-09-10 — Step 2 database foundation verified with 14/14 tests passing and clean pgvector 0.8.6 extension in PostgreSQL 16.
+2026-09-10 — Step 3 minimal functional NiceGUI presentation shell verified with all 6 routes live tested, 23/23 tests passing, and ruff clean.
 
 

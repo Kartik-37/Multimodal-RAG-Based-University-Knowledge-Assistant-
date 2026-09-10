@@ -2,6 +2,10 @@
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*", "frontend*"]
+
 [project]
 name = "bca-rag-assistant"
 version = "0.1.0"
