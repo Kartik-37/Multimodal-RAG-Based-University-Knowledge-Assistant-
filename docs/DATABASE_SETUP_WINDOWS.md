@@ -37,7 +37,12 @@ PostgreSQL 16 is installed in a dedicated directory outside the git repository (
 
 The server-side extension binaries must be registered into PostgreSQL's library and extension paths:
 
-1. **Download Precompiled pgvector (v0.8.6 for PG16)**:
+* **Source Repository**: [`andreiramani/pgvector_pgsql_windows`](https://github.com/andreiramani/pgvector_pgsql_windows)
+* **Release Version**: `0.8.6_16` (pgvector v0.8.6 compiled for PostgreSQL 16 x64)
+* **Direct Asset URL**: `https://github.com/andreiramani/pgvector_pgsql_windows/releases/download/0.8.6_16/vector.v0.8.6-pg16.zip`
+* **Target PostgreSQL**: PostgreSQL 16.15 (x64)
+
+1. **Download Precompiled pgvector**:
    ```powershell
    curl.exe -L "https://github.com/andreiramani/pgvector_pgsql_windows/releases/download/0.8.6_16/vector.v0.8.6-pg16.zip" -o "D:\Kartik\pgsql_temp\vector.zip"
    Expand-Archive -Path "D:\Kartik\pgsql_temp\vector.zip" -DestinationPath "D:\Kartik\pgsql_temp\vector_extracted" -Force
@@ -57,8 +62,8 @@ The server-side extension binaries must be registered into PostgreSQL's library 
 
 3. **Verify Files in Place**:
    ```powershell
-   Test-Path "D:\Kartik\pgsql\pgsql\lib\vector.dll"                       # Must return True
-   Test-Path "D:\Kartik\pgsql\pgsql\share\extension\vector.control"        # Must return True
+   Test-Path "D:\Kartik\pgsql\pgsql\lib\vector.dll"                       # Returns True
+   Test-Path "D:\Kartik\pgsql\pgsql\share\extension\vector.control"        # Returns True
    ```
 
 ---
@@ -73,29 +78,40 @@ Initialize the data directory `D:\Kartik\pgsql\data` with UTF-8 encoding:
 
 ---
 
-## 5. Starting and Stopping PostgreSQL
+## 5. Running PostgreSQL: Daemon vs Windows Service
 
-### Start PostgreSQL Server (Background Daemon)
+### Option A: Background Daemon (Non-Elevated / Development Mode)
+Standard user shells on Windows run at *Medium Mandatory Level* (`BUILTIN\Administrators` used for deny-only). The server can run reliably in the background without needing administrator privileges:
+
 ```powershell
+# Start daemon:
 & "D:\Kartik\pgsql\pgsql\bin\pg_ctl.exe" start -D "D:\Kartik\pgsql\data" -l "D:\Kartik\pgsql\logfile.log"
-```
 
-### Check Server Status
-```powershell
+# Check status:
 & "D:\Kartik\pgsql\pgsql\bin\pg_ctl.exe" status -D "D:\Kartik\pgsql\data"
-```
 
-### Stop PostgreSQL Server
-```powershell
+# Stop daemon:
 & "D:\Kartik\pgsql\pgsql\bin\pg_ctl.exe" stop -D "D:\Kartik\pgsql\data"
 ```
 
-### Optional: Register as a Windows Service (Requires Administrator)
-If running from an Administrator PowerShell prompt:
+### Option B: Windows Service (Requires Administrator PowerShell)
+Registering a native Windows service with the Windows Service Control Manager (`OpenSCManager`) requires *High Mandatory Level* (Administrator). Open an **Administrator PowerShell** window and run:
+
 ```powershell
-& "D:\Kartik\pgsql\pgsql\bin\pg_ctl.exe" register -N "postgresql-16" -D "D:\Kartik\pgsql\data"
+# 1. Stop any running background process
+& "D:\Kartik\pgsql\pgsql\bin\pg_ctl.exe" stop -D "D:\Kartik\pgsql\data"
+
+# 2. Register service with automatic startup (-S auto)
+& "D:\Kartik\pgsql\pgsql\bin\pg_ctl.exe" register -N "postgresql-16" -D "D:\Kartik\pgsql\data" -S auto
+
+# 3. Start the Windows Service
 Start-Service -Name "postgresql-16"
+
+# 4. Verify Service Status and Startup Type
+Get-Service -Name "postgresql-16" | Select-Object Name, Status, StartType
 ```
+*(Expected status: `Running`, StartType: `Automatic`)*
+
 
 ---
 
