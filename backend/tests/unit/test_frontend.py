@@ -216,6 +216,22 @@ class TestFrontendAPIClient:
         assert isinstance(results, list)
         assert len(results) == 0
 
+    def test_process_query(self) -> None:
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+
+        # Valid query processing
+        res = client.process_query("   What is   C++   in   BCA Sem-4?   ")
+        assert res.original_query == "   What is   C++   in   BCA Sem-4?   "
+        assert res.processed_query == "What is C++ in BCA Sem-4?"
+        assert res.character_count == len("What is C++ in BCA Sem-4?")
+        assert res.token_estimate > 0
+        assert res.has_technical_tokens is True
+
+        # Whitespace-only rejection
+        with pytest.raises(ValueError, match="cannot be empty or whitespace"):
+            client.process_query("   \t  ")
+
 
 class TestAppState:
     """Test suite for AppState presentation manager."""

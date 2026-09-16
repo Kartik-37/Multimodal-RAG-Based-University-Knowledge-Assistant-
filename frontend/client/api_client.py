@@ -25,6 +25,7 @@ from frontend.client.models import (
     HybridRetrievalResultDTO,
     KnowledgeBaseDTO,
     LexicalRetrievalResultDTO,
+    QueryProcessingResultDTO,
     RerankResultDTO,
     RetrievalResultDTO,
     UserDTO,
@@ -557,6 +558,30 @@ class FrontendAPIClient:
             )
             for item in data.get("results", [])
         ]
+
+    def process_query(self, query: str) -> QueryProcessingResultDTO:
+        """
+        Send raw query to /query/process for deterministic normalization.
+        """
+        resp = self._http.post("/query/process", json={"query": query})
+        if resp.status_code == 401:
+            raise ValueError("Authentication required to process queries.")
+        if resp.status_code == 422:
+            detail = resp.json().get("detail", "Invalid query.")
+            raise ValueError(str(detail))
+        if resp.status_code != 200:
+            raise ValueError("Query processing failed.")
+
+        item = resp.json()
+        return QueryProcessingResultDTO(
+            original_query=item["original_query"],
+            processed_query=item["processed_query"],
+            character_count=item["character_count"],
+            token_estimate=item["token_estimate"],
+            has_quotes=item.get("has_quotes", False),
+            has_technical_tokens=item.get("has_technical_tokens", False),
+            metadata=item.get("metadata", {}),
+        )
 
 
 # Global default client instance for the frontend presentation layer

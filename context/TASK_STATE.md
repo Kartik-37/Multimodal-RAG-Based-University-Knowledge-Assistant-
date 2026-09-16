@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 10 COMPLETE — CROSSENCODER RERANKING LAYER VERIFIED
+STEP 11 COMPLETE — DETERMINISTIC QUERY PROCESSING LAYER VERIFIED
 
 ## Rules
 
@@ -43,7 +43,69 @@ Never mark a task complete merely because code exists.
 - [x] Lexical retrieval (COMPLETE — Step 8 PostgreSQL-Native tsvector + GIN Index + ts_rank_cd Full-Text Search)
 - [x] Hybrid retrieval (COMPLETE — Step 9 Dense Vector + PostgreSQL FTS fused with Reciprocal Rank Fusion)
 - [x] Reranking (COMPLETE — Step 10 Local Hugging Face CrossEncoder ms-marco-MiniLM-L-6-v2)
+- [x] Query processing / understanding (COMPLETE — Step 11 Deterministic Normalization, Raw/Processed Query Preservation, NFKC, Control-Char Stripping & Technical Token Preservation)
 - [ ] Context assembly
+- [ ] Grounded generation
+- [ ] Citations
+- [ ] Query/conversation persistence if required
+- [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
+- [ ] Observability
+- [ ] Rate limiting
+- [ ] Backend security audit
+- [ ] Backend quality gate
+- [x] Functional frontend (COMPLETE — Step 3 Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector UI + Step 8 Lexical UI + Step 9 Hybrid UI + Step 10 Rerank UI + Step 11 Query DTO)
+- [ ] Frontend design pass
+- [ ] Accessibility QA
+- [ ] Responsive QA
+- [ ] End-to-end QA
+- [ ] Deployment verification
+- [ ] Final security audit
+- [ ] Final RAG evaluation
+- [ ] Documentation
+- [ ] Git/GitHub final review
+
+## Step 11 Execution Record (Deterministic Query Processing Layer)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Deterministic Single Normalization Boundary**:
+     - `QueryProcessor` implemented in `backend/app/services/query_processing.py` as the single, centralized, deterministic query normalization service.
+     - Strips dangerous non-printable ASCII/Unicode control characters (`0x00-0x08, 0x0B-0x0C, 0x0E-0x1F, 0x7F`), preventing null-byte injection and terminal escape sequence issues.
+     - Applies Unicode NFKC normalization (standardizes typographic ligatures `ﬁ` -> `fi` and full-width Latin/digit characters `ＡＢＣ` -> `ABC` while preserving composed accented characters like `café`).
+     - Standardizes internal whitespace: converts `\r\n`, `\r`, `\n`, and `\t` into single spaces and collapses multiple spaces.
+     - Strips leading and trailing whitespace.
+  2. **Raw vs. Processed Query Preservation**:
+     - Preserves the exact user query string in `original_query`.
+     - Returns `processed_query` alongside `original_query` in `QueryProcessingResult`.
+     - Avoids permanently destroying the user query, facilitating auditability and future evaluation.
+     - Retains existing retrieval schemas (`VectorRetrievalResponse`, `LexicalRetrievalResponse`, `HybridRetrievalResponse`, `RerankResponse`) without unnecessary modification, preventing coupling.
+  3. **Preservation of Technical Tokens & Meaningful Punctuation**:
+     - Zero destructive regex stripping (no `re.sub(r"[^a-zA-Z0-9 ]", "", q)`).
+     - Fully preserves programming languages, frameworks, database keywords, status codes, and hyphenated identifiers: `C++`, `C#`, `.NET`, `PostgreSQL`, `pgvector`, `Python 3.12`, `HTTP 401`, `BCA Sem-4`, `SELECT * FROM users`, and quoted phrases (`"machine learning"`).
+     - Treats SQL and shell strings strictly as literal data without interpretation.
+  4. **Strict Boundaries & Zero Semantic Rewriting**:
+     - Zero LLM inference, zero synonym hallucination, zero keyword expansion, zero external network calls.
+     - Stopwords are intentionally preserved (PostgreSQL lexical search handles language stopwording natively, and vector embeddings require natural syntax).
+  5. **Idempotence & Diagnostic Metadata**:
+     - Strictly idempotent: `process(process(q).processed_query).processed_query == process(q).processed_query`.
+     - `character_count`: Processed query string length.
+     - `token_estimate`: Deterministic word/punctuation count via `TokenEstimator`.
+     - `has_quotes`: Diagnostic boolean for quoted phrases.
+     - `has_technical_tokens`: Diagnostic boolean for technical identifiers and symbols (never alters retrieval or ranking logic).
+     - Safe dictionary defaults (`Field(default_factory=dict)`).
+  6. **Security & Validation**:
+     - Rejects empty or whitespace-only queries with `QueryValidationError` (HTTP 422).
+     - Rejects queries exceeding `settings.RETRIEVAL_MAX_QUERY_LENGTH` (1000 characters).
+  7. **API Endpoint & Integration**:
+     - `POST /api/v1/query/process` registered in `backend/app/api/v1/router.py` and protected by `AuthenticatedUser`.
+     - Verified end-to-end integration: processed query flows smoothly through Vector (Step 7), Lexical (Step 8), Hybrid RRF (Step 9), and CrossEncoder (Step 10).
+  8. **Zero Database Migrations**:
+     - In-memory deterministic processing; no database schema modifications or query history tables created.
+  9. **Comprehensive Verification**:
+     - 259 total tests passing across entire test suite (34 new tests: 29 unit tests, 4 integration tests, 1 frontend client test).
+     - Full test suite: 259 passed, 0 failures, 0 regressions in 140s.
+     - Ruff check passed with 0 errors across 142 files; ruff format 100% clean.
+* **Next Safe Task**: Step 12: Context Assembly and Token-Budgeted Prompt Builder.
 - [ ] Grounded generation
 - [ ] Citations
 - [ ] Query/conversation persistence if required

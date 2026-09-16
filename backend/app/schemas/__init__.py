@@ -25,6 +25,10 @@ from backend.app.schemas.lexical_retrieval import (
     LexicalRetrievalResponse,
     LexicalRetrievalResultItem,
 )
+from backend.app.schemas.query_processing import (
+    QueryProcessingRequest,
+    QueryProcessingResult,
+)
 from backend.app.schemas.reranking import (
     RerankRequest,
     RerankResponse,
@@ -59,4 +63,6 @@ __all__ = [
     "RerankRequest",
     "RerankResponse",
     "RerankResultItem",
+    "QueryProcessingRequest",
+    "QueryProcessingResult",
 ]

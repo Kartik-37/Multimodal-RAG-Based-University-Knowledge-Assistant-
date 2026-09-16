@@ -5,6 +5,8 @@ Provides typed models representing user sessions, knowledge bases, documents,
 conversations, and citation evidence. Keeps UI code decoupled from backend DB models.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -119,3 +121,15 @@ class RerankResultDTO(HybridRetrievalResultDTO):
 
     reranker_score: float
     reranker_rank: int
+
+
+class QueryProcessingResultDTO(BaseModel):
+    """Processed query result with original query and diagnostic metadata."""
+
+    original_query: str
+    processed_query: str
+    character_count: int
+    token_estimate: int
+    has_quotes: bool = False
+    has_technical_tokens: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
