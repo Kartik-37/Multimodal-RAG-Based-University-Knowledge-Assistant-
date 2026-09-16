@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 11 COMPLETE — DETERMINISTIC QUERY PROCESSING LAYER VERIFIED
+STEP 12 COMPLETE — DETERMINISTIC CONTEXT ASSEMBLY LAYER VERIFIED
 
 ## Rules
 
@@ -44,7 +44,7 @@ Never mark a task complete merely because code exists.
 - [x] Hybrid retrieval (COMPLETE — Step 9 Dense Vector + PostgreSQL FTS fused with Reciprocal Rank Fusion)
 - [x] Reranking (COMPLETE — Step 10 Local Hugging Face CrossEncoder ms-marco-MiniLM-L-6-v2)
 - [x] Query processing / understanding (COMPLETE — Step 11 Deterministic Normalization, Raw/Processed Query Preservation, NFKC, Control-Char Stripping & Technical Token Preservation)
-- [ ] Context assembly
+- [x] Context assembly (COMPLETE — Step 12 Deterministic Token-Budgeted Selection, Deduplication & Strict Evidence Integrity)
 - [ ] Grounded generation
 - [ ] Citations
 - [ ] Query/conversation persistence if required
@@ -63,6 +63,45 @@ Never mark a task complete merely because code exists.
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 12 Execution Record (Deterministic Context Assembly Layer)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Strict Evidence Integrity**:
+     - Chunk text is completely immutable during context assembly.
+     - Never truncates, rewrites, summarizes, cleans, normalizes, merges, or alters chunk text or punctuation.
+     - Never introduces "[TRUNCATED]" or any truncation behavior.
+     - Consistent oversized candidate policy: if a candidate does not fit within the remaining token budget, it is skipped, and subsequent candidates continue to be evaluated against the remaining budget. If no candidate fits, an empty context item list is returned.
+  2. **Configured Defaults without Module Import Freezing**:
+     - Uses established project configuration pattern with dynamic evaluation (`default_factory=lambda: settings.MAX_CONTEXT_TOKENS` and `default_factory=lambda: settings.RAG_TOP_K_RERANK`).
+     - Zero duplicate configuration variables introduced.
+  3. **Preservation of Raw vs. Processed Query Distinction**:
+     - Preserves `original_query` (raw user query) and `query` (Step 11 processed query) independently.
+     - ContextAssembler performs zero query normalization, rewriting, expansion, or summarization.
+  4. **Authorization vs. Integrity Separation**:
+     - ContextAssembler is strictly an internal domain service, not an authorization or RBAC layer.
+     - Validates candidate `knowledge_base_id` consistency against request `knowledge_base_id` when supplied, raising `ValueError` on cross-KB candidate contamination without performing database queries.
+  5. **Token Accounting & TokenEstimator Usage**:
+     - Uses existing deterministic `TokenEstimator` from `backend.app.services.chunking`.
+     - Explicitly documented and tested as an estimator (`test_uses_existing_token_estimator`), making no claim of exact LLM token counts.
+  6. **Deduplication & Reranker Ordering**:
+     - Evaluates candidates strictly in their incoming Step 10 CrossEncoder rank order.
+     - Applies two-tier deduplication: `chunk_id` tracking and exact content hash (SHA-256 of `text.strip()`).
+     - Drops exact duplicates while incrementing `items_deduplicated` counter without merging partially overlapping chunks.
+  7. **Full Provenance Preservation**:
+     - Each selected `ContextItem` is assigned a 1-based sequential attribution identifier (`source_1`, `source_2`, ...).
+     - Fully preserves document title, page number, section title, chunk metadata, reranker rank & raw float score, RRF score, and estimated tokens.
+  8. **Zero Database Migrations & Zero New Dependencies**:
+     - Pure in-memory domain service; no new database tables or schema changes.
+     - Zero external dependencies added.
+  9. **Comprehensive Verification**:
+     - 279 total tests passing across entire test suite (20 new tests: 17 unit tests, 3 integration tests).
+     - Unit tests verify zero text mutation, oversized candidate skipping, subsequent smaller candidate inclusion, exact budget fitting, empty result on all exceeding, deterministic repeated execution, deduplication, provenance, query preservation, and zero external network/database dependencies.
+     - Integration tests verify end-to-end flow from Step 11 QueryProcessor -> Steps 7-9 Retrieval -> Step 10 CrossEncoder -> Step 12 ContextAssembler with real PostgreSQL 16.15 + pgvector.
+     - Ruff check passed with 0 errors across 146 files; ruff format 100% clean.
+* **Next Safe Task**: Step 13: Grounded Generation (Prompt Engineering & Ollama LLM Inference).
+
 
 ## Step 11 Execution Record (Deterministic Query Processing Layer)
 
@@ -351,7 +390,7 @@ Never mark a task complete merely because code exists.
 
 ## Last verified
 
-2026-09-16 — Step 9 Hybrid Retrieval Layer (Reciprocal Rank Fusion — RRF) verified with real PostgreSQL 16.15 + pgvector and full-text search, pure rank-based fusion (RRF_K from settings.RRF_K), reuse of Step 7 and Step 8 services, candidate deduplication, deterministic secondary tie-breaking, 195/195 tests passing across entire test suite, ruff lint/format 100% clean, knowledge-base authorization and isolation enforced, and administrative inspection dialog in NiceGUI.
+2026-09-16 — Step 12 Context Assembly Layer verified with deterministic token budgeting via existing TokenEstimator, strict evidence integrity (untruncated, unmodified candidate text), two-tier deduplication (chunk_id and SHA-256 content hash), sequential source attribution (source_1, source_2), query transparency (unmodified original and processed queries), candidate knowledge base consistency check, 279/279 tests passing across entire test suite, ruff lint/format 100% clean, and end-to-end integration verified with real PostgreSQL 16.15 + pgvector.
 
 
 

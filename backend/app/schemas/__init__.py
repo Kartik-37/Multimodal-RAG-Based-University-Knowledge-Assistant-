@@ -8,6 +8,11 @@ from backend.app.schemas.auth import (
     UserRegisterRequest,
     UserResponse,
 )
+from backend.app.schemas.context_assembly import (
+    ContextAssemblyRequest,
+    ContextAssemblyResult,
+    ContextItem,
+)
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
 from backend.app.schemas.hybrid_retrieval import (
     HybridRetrievalRequest,
@@ -65,4 +70,7 @@ __all__ = [
     "RerankResultItem",
     "QueryProcessingRequest",
     "QueryProcessingResult",
+    "ContextItem",
+    "ContextAssemblyRequest",
+    "ContextAssemblyResult",
 ]
