@@ -36,9 +36,12 @@ class DocumentDTO(BaseModel):
     file_type: str
     file_size_bytes: int = 0
     status: str = "PENDING"  # PENDING, PROCESSING, COMPLETED, FAILED
+    indexing_status: str = "PENDING"  # PENDING, PROCESSING, COMPLETED, FAILED
     error_message: str | None = None
+    indexing_error: str | None = None
     chunk_count: int = 0
     created_at: str = ""
+    indexed_at: str | None = None
 
 
 class CitationDTO(BaseModel):

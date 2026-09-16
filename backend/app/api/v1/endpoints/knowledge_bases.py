@@ -29,7 +29,7 @@ from backend.app.api.deps import (
     get_authorized_knowledge_base,
     require_knowledge_base_admin,
 )
-from backend.app.models.document import Document, DocumentChunk, DocumentStatus
+from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import User, UserRole
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
@@ -39,6 +39,7 @@ from backend.app.schemas.knowledge_base import (
     KnowledgeBaseResponse,
     MemberResponse,
 )
+from backend.app.services.indexing import index_document_task
 from backend.app.services.ingestion import process_document_task
 from backend.app.services.storage import storage_service
 
@@ -238,9 +239,12 @@ async def upload_document(
         mime_type=doc.mime_type,
         file_size_bytes=doc.file_size_bytes,
         status=doc.status,
+        indexing_status=doc.indexing_status,
         error_message=doc.error_message,
+        indexing_error=doc.indexing_error,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
+        indexed_at=doc.indexed_at,
         chunk_count=0,
     )
 
@@ -284,9 +288,12 @@ def list_documents(
                 mime_type=doc.mime_type,
                 file_size_bytes=doc.file_size_bytes,
                 status=doc.status,
+                indexing_status=doc.indexing_status,
                 error_message=doc.error_message,
+                indexing_error=doc.indexing_error,
                 created_at=doc.created_at,
                 updated_at=doc.updated_at,
+                indexed_at=doc.indexed_at,
                 chunk_count=chunk_count,
             )
         )
@@ -334,9 +341,86 @@ def get_document(
         mime_type=doc.mime_type,
         file_size_bytes=doc.file_size_bytes,
         status=doc.status,
+        indexing_status=doc.indexing_status,
         error_message=doc.error_message,
+        indexing_error=doc.indexing_error,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
+        indexed_at=doc.indexed_at,
+        chunk_count=chunk_count,
+    )
+
+
+@router.post(
+    "/{kb_id}/documents/{document_id}/index",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Trigger vector indexing for an ingested document (ADMIN only)",
+)
+def index_document_endpoint(
+    kb: AdminKB,
+    document_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: DatabaseSession,
+) -> DocumentResponse:
+    """
+    Trigger 1024-dimensional dense vector indexing for an ingested document.
+    Restricted strictly to the ADMIN who manages the target knowledge base.
+
+    Invariants (Addressing Step 6 Rules & Corrections):
+    1. Document must exist within the target knowledge base (returns 404 otherwise).
+    2. Document ingestion must be COMPLETED (returns 400 if still pending/processing/failed).
+    3. Transition status to PROCESSING immediately and queue index_document_task
+       via BackgroundTasks without blocking the API caller.
+    """
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if doc.status != DocumentStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Document is not eligible for vector indexing. "
+                f"Ingestion status is '{doc.status}' (must be COMPLETED)."
+            ),
+        )
+
+    doc.indexing_status = IndexingStatus.PROCESSING
+    doc.indexing_error = None
+    db.commit()
+
+    background_tasks.add_task(index_document_task, doc.id)
+
+    chunk_count = db.execute(
+        select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
+    ).scalar_one()
+
+    return DocumentResponse(
+        id=doc.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        original_filename=doc.original_filename,
+        file_type=doc.file_type,
+        mime_type=doc.mime_type,
+        file_size_bytes=doc.file_size_bytes,
+        status=doc.status,
+        indexing_status=doc.indexing_status,
+        error_message=doc.error_message,
+        indexing_error=doc.indexing_error,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        indexed_at=doc.indexed_at,
         chunk_count=chunk_count,
     )
 
@@ -381,7 +465,22 @@ def list_document_chunks(
         .all()
     )
 
-    return [DocumentChunkResponse.model_validate(c) for c in chunks]
+    return [
+        DocumentChunkResponse(
+            id=c.id,
+            document_id=c.document_id,
+            knowledge_base_id=c.knowledge_base_id,
+            chunk_index=c.chunk_index,
+            text=c.text,
+            token_count=c.token_count,
+            page_number=c.page_number,
+            section_title=c.section_title,
+            chunk_metadata=c.chunk_metadata,
+            has_embedding=(c.embedding is not None),
+            created_at=c.created_at,
+        )
+        for c in chunks
+    ]
 
 
 @router.delete(

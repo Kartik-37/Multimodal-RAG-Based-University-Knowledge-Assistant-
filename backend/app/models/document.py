@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -37,7 +38,21 @@ class DocumentStatus(enum.StrEnum):
     Ingestion status lifecycle states for documents.
 
     Note: Step 5 terminates at COMPLETED (parsing, normalization, chunking).
-    Embeddings and vector indexing occur in subsequent RAG stages.
+    Vector indexing occurs as a distinct subsequent stage tracked by IndexingStatus.
+    """
+
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class IndexingStatus(enum.StrEnum):
+    """
+    Vector indexing lifecycle states for documents.
+
+    Maintains distinct separation from DocumentStatus (parsing & chunking).
+    Allows vector indexing retries without re-parsing or re-chunking files.
     """
 
     PENDING = "PENDING"
@@ -102,9 +117,26 @@ class Document(Base):
         default=DocumentStatus.PENDING,
         index=True,
     )
-    # Diagnostic error details if processing fails (safe for administrator inspection)
+    # Vector indexing lifecycle status (independent from document ingestion status)
+    indexing_status: Mapped[IndexingStatus] = mapped_column(
+        Enum(IndexingStatus, name="indexing_status", native_enum=True),
+        nullable=False,
+        default=IndexingStatus.PENDING,
+        index=True,
+    )
+    # Diagnostic error details if ingestion/parsing fails
     error_message: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True,
+    )
+    # Diagnostic error details if vector indexing fails
+    indexing_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    # Timestamp when vector indexing completed successfully
+    indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -189,6 +221,12 @@ class DocumentChunk(Base):
         JSONB,
         nullable=False,
         default=dict,
+    )
+    # 1024-dimensional dense vector representation (qwen3-embedding:0.6b via pgvector)
+    # Nullable initially; populated upon vector indexing completion
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(1024),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

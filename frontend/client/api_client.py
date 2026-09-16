@@ -186,9 +186,14 @@ class FrontendAPIClient:
                 file_type=item["file_type"],
                 file_size_bytes=item["file_size_bytes"],
                 status=item["status"],
+                indexing_status=item.get("indexing_status", "PENDING"),
                 error_message=item.get("error_message"),
+                indexing_error=item.get("indexing_error"),
                 chunk_count=item.get("chunk_count", 0),
                 created_at=item["created_at"][:16].replace("T", " "),
+                indexed_at=item.get("indexed_at")[:16].replace("T", " ")
+                if item.get("indexed_at")
+                else None,
             )
             for item in items
         ]
@@ -222,9 +227,44 @@ class FrontendAPIClient:
             file_type=item["file_type"],
             file_size_bytes=item.get("file_size_bytes", size),
             status=item.get("status", "COMPLETED"),
+            indexing_status=item.get("indexing_status", "PENDING"),
             error_message=item.get("error_message"),
+            indexing_error=item.get("indexing_error"),
             chunk_count=item.get("chunk_count", 0),
             created_at=item.get("created_at", "")[:16].replace("T", " "),
+            indexed_at=item.get("indexed_at")[:16].replace("T", " ")
+            if item.get("indexed_at")
+            else None,
+        )
+
+    def index_document(self, kb_id: str, document_id: str) -> DocumentDTO:
+        """
+        Trigger dense vector indexing via FastAPI endpoint.
+        Server-side RBAC enforces ADMIN privileges.
+        """
+        resp = self._http.post(f"/knowledge-bases/{kb_id}/documents/{document_id}/index")
+        if resp.status_code == 403:
+            raise ValueError("Students are not permitted to trigger vector indexing.")
+        if resp.status_code not in (200, 202):
+            detail = resp.json().get("detail", "Failed to trigger vector indexing.")
+            raise ValueError(detail)
+
+        item = resp.json()
+        return DocumentDTO(
+            id=str(item["id"]),
+            kb_id=str(item["knowledge_base_id"]),
+            filename=item["original_filename"],
+            file_type=item["file_type"],
+            file_size_bytes=item.get("file_size_bytes", 0),
+            status=item.get("status", "COMPLETED"),
+            indexing_status=item.get("indexing_status", "PROCESSING"),
+            error_message=item.get("error_message"),
+            indexing_error=item.get("indexing_error"),
+            chunk_count=item.get("chunk_count", 0),
+            created_at=item.get("created_at", "")[:16].replace("T", " "),
+            indexed_at=item.get("indexed_at")[:16].replace("T", " ")
+            if item.get("indexed_at")
+            else None,
         )
 
     def delete_document(self, kb_id: str, document_id: str) -> None:

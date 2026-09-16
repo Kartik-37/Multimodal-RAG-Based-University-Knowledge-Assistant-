@@ -10,7 +10,7 @@ from nicegui import events, ui
 
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
-from frontend.components.status_badge import render_status_badge
+from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
 from frontend.state.app_state import state
 
 # Supported formats per specification
@@ -208,11 +208,15 @@ def register_documents_page() -> None:
                                             ui.label(f"Uploaded: {doc.created_at}")
 
                                         if doc.error_message:
-                                            ui.label(f"Error: {doc.error_message}").classes(
-                                                "text-xs text-red-600 font-mono"
+                                            ui.label(
+                                                f"Ingestion Error: {doc.error_message}"
+                                            ).classes("text-xs text-red-600 font-mono")
+                                        if doc.indexing_error:
+                                            ui.label(f"Vector Error: {doc.indexing_error}").classes(
+                                                "text-xs text-deep-orange-600 font-mono"
                                             )
 
-                                with ui.row().classes("items-center gap-4"):
+                                with ui.row().classes("items-center gap-3"):
                                     with ui.row().classes("items-center gap-1"):
                                         ui.icon("layers", size="xs").classes("text-gray-400")
                                         ui.label(f"{doc.chunk_count} chunk(s)").classes(
@@ -220,20 +224,54 @@ def register_documents_page() -> None:
                                         )
 
                                     render_status_badge(doc.status)
+                                    render_indexing_status_badge(doc.indexing_status)
+
+                                    # Admin index / retry vector indexing action
+                                    if is_admin and doc.status == "COMPLETED":
+                                        if doc.indexing_status in ("PENDING", "FAILED"):
+
+                                            def trigger_index(
+                                                target_id=doc.id, target_name=doc.filename
+                                            ) -> None:
+                                                try:
+                                                    api_client.index_document(
+                                                        active_kb.id, target_id
+                                                    )
+                                                    ui.notify(
+                                                        f"Vector indexing started for '{target_name}'.",
+                                                        type="positive",
+                                                    )
+                                                    refresh_doc_list()
+                                                except ValueError as err:
+                                                    ui.notify(str(err), type="negative")
+
+                                            btn_label = (
+                                                "Index"
+                                                if doc.indexing_status == "PENDING"
+                                                else "Retry Index"
+                                            )
+                                            ui.button(
+                                                btn_label,
+                                                icon="scatter_plot",
+                                                on_click=trigger_index,
+                                            ).props("flat dense color=primary").classes("text-xs")
 
                                     def show_ingestion_progress(target_doc=doc) -> None:
                                         with (
                                             ui.dialog() as dlg,
                                             ui.card().classes("w-full max-w-lg p-6"),
                                         ):
-                                            ui.label("Ingestion Pipeline Lifecycle").classes(
-                                                "text-lg font-bold text-gray-900 mb-1"
-                                            )
+                                            ui.label(
+                                                "Document & Vector Pipeline Lifecycle"
+                                            ).classes("text-lg font-bold text-gray-900 mb-1")
                                             ui.label(f"Document: {target_doc.filename}").classes(
                                                 "text-xs text-gray-500 mb-4"
                                             )
 
                                             is_completed = target_doc.status == "COMPLETED"
+                                            is_vector_indexed = (
+                                                target_doc.indexing_status == "COMPLETED"
+                                            )
                                             stages = [
                                                 (
                                                     "1. Ingestion & Validation",
@@ -252,13 +290,13 @@ def register_documents_page() -> None:
                                                     is_completed,
                                                 ),
                                                 (
-                                                    "4. Vector Embeddings (Planned)",
-                                                    "Generate 1024-dim vectors via qwen3-embedding:0.6b (Step 6).",
-                                                    False,
+                                                    "4. Vector Embeddings (1024-d)",
+                                                    "Generated 1024-dim vectors via qwen3-embedding:0.6b stored in pgvector.",
+                                                    is_vector_indexed,
                                                 ),
                                                 (
-                                                    "5. Vector & Lexical Indexing (Planned)",
-                                                    "Index into PostgreSQL pgvector and BM25 (Step 6/7).",
+                                                    "5. Retrieval & Hybrid Search (Planned)",
+                                                    "Exact cosine similarity & hybrid BM25 fusion (Step 7).",
                                                     False,
                                                 ),
                                             ]

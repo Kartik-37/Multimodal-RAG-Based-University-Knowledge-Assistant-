@@ -21,3 +21,19 @@ def render_status_badge(status: str) -> None:
         ui.badge("PENDING", color="amber").classes("text-xs font-semibold")
     else:
         ui.badge(norm, color="grey").classes("text-xs font-semibold")
+
+
+def render_indexing_status_badge(status: str) -> None:
+    """Render a distinct status badge for vector indexing."""
+    norm = status.upper().strip()
+
+    if norm == "COMPLETED":
+        ui.badge("VECTORS: OK", color="teal").classes("text-xs font-semibold")
+    elif norm == "PROCESSING":
+        ui.badge("INDEXING...", color="indigo").classes("text-xs font-semibold animate-pulse")
+    elif norm == "FAILED":
+        ui.badge("INDEX FAILED", color="deep-orange").classes("text-xs font-semibold")
+    elif norm in ("PENDING", "UNINDEXED"):
+        ui.badge("UNINDEXED", color="grey-6").classes("text-xs font-semibold")
+    else:
+        ui.badge(f"INDEX: {norm}", color="grey").classes("text-xs font-semibold")

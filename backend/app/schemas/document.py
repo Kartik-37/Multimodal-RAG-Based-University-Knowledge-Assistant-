@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from backend.app.models.document import DocumentStatus
+from backend.app.models.document import DocumentStatus, IndexingStatus
 
 
 class DocumentResponse(BaseModel):
@@ -26,9 +26,12 @@ class DocumentResponse(BaseModel):
     mime_type: str
     file_size_bytes: int
     status: DocumentStatus
+    indexing_status: IndexingStatus = IndexingStatus.PENDING
     error_message: str | None = None
+    indexing_error: str | None = None
     created_at: datetime
     updated_at: datetime
+    indexed_at: datetime | None = None
     chunk_count: int = 0
 
 
@@ -46,4 +49,5 @@ class DocumentChunkResponse(BaseModel):
     page_number: int | None = None
     section_title: str | None = None
     chunk_metadata: dict[str, Any] = {}
+    has_embedding: bool = False
     created_at: datetime
