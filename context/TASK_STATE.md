@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 7 COMPLETE — VECTOR RETRIEVAL LAYER VERIFIED
+STEP 8 COMPLETE — LEXICAL RETRIEVAL LAYER VERIFIED
 
 ## Rules
 
@@ -40,7 +40,7 @@ Never mark a task complete merely because code exists.
 - [x] Chunking (COMPLETE — Step 5 Deterministic Token Estimator & Overlap Chunker)
 - [x] Embeddings (COMPLETE — Step 6 Provider Abstraction, Ollama qwen3-embedding:0.6b, 1024-dim Vector Storage in pgvector)
 - [x] Vector retrieval (COMPLETE — Step 7 Exact pgvector Cosine Distance Search, Authorization & Provenance)
-- [ ] Lexical retrieval
+- [x] Lexical retrieval (COMPLETE — Step 8 PostgreSQL-Native tsvector + GIN Index + ts_rank_cd Full-Text Search)
 - [ ] Hybrid retrieval
 - [ ] Reranking
 - [ ] Context assembly
@@ -52,7 +52,7 @@ Never mark a task complete merely because code exists.
 - [ ] Rate limiting
 - [ ] Backend security audit
 - [ ] Backend quality gate
-- [x] Functional frontend (COMPLETE — Step 3 Presentation Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector Inspection)
+- [x] Functional frontend (COMPLETE — Step 3 Presentation Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector Inspection + Step 8 Lexical Inspection)
 - [ ] Frontend design pass
 - [ ] Accessibility QA
 - [ ] Responsive QA
@@ -62,6 +62,44 @@ Never mark a task complete merely because code exists.
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 8 Execution Record (Lexical Retrieval Layer)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **PostgreSQL-Native Lexical / Full-Text Retrieval**:
+     - Accurately named and implemented as PostgreSQL-native full-text search with `ts_rank_cd` cover density ranking (explicitly avoiding calling `ts_rank_cd` BM25).
+     - Generated column `searchable_text: tsvector` created via `Computed("to_tsvector('english', text)", persisted=True)` in PostgreSQL `document_chunks`.
+     - High-performance GIN index `ix_document_chunks_searchable_text` implemented and verified on PostgreSQL 16.15.
+     - Production Alembic migration `35fc9a73097a` applied and verified on both `rag_assistant_db` and `rag_assistant_test_db`.
+  2. **Query Safety & websearch_to_tsquery**:
+     - Lexical queries parsed using PostgreSQL's `websearch_to_tsquery('english', :query)`.
+     - Handles plain words, quoted exact phrases (`"machine learning"`), boolean operators (`OR`, `-`), punctuation, and code symbols (`C++`, `*`, `&`, `|`, `!`, `:`) safely without SQL syntax errors or injections.
+     - Stopword-only queries evaluate to empty tsquery safely and return 0 results without errors.
+  3. **Safe Default Factory on Schema**:
+     - `LexicalRetrievalResultItem` enforces safe default factory: `chunk_metadata: dict[str, Any] = Field(default_factory=dict)` (avoiding mutable dictionary default).
+  4. **Complete Independence from Ollama & Vector Layer**:
+     - Zero dependency on Ollama or vector embeddings.
+     - Documents with `Document.status == DocumentStatus.COMPLETED` are fully retrievable lexically, even if `embedding IS NULL` (vector-less chunks).
+     - Verified that lexical search operates flawlessly even when Ollama is offline.
+  5. **Knowledge-Base Authorization & Multi-User Isolation**:
+     - Enforces `get_authorized_knowledge_base` dependency on `POST /api/v1/knowledge-bases/{kb_id}/lexical-retrieve`.
+     - Admin access for KB owners; student access strictly via `knowledge_base_members` membership.
+     - Nonexistent or unauthorized knowledge bases return HTTP 404 (preventing existence leakage); unauthenticated requests return HTTP 401.
+     - SQL query strictly scopes to `document_chunks.knowledge_base_id == kb_id` (foreign KB chunks never leak).
+  6. **Data Eligibility & Deterministic Ordering**:
+     - Filter: `Document.status == DocumentStatus.COMPLETED` and `searchable_text @@ query_tsquery`.
+     - Order by: `rank.desc(), DocumentChunk.chunk_index.asc(), DocumentChunk.id.asc()`.
+     - Duplicate text chunks remain distinguishable through unique `chunk_id` and `chunk_index`.
+  7. **Frontend Presentation Layer**:
+     - Added `retrieve_lexical_chunks` to `FrontendAPIClient`.
+     - Added administrative "Inspect Lexical Retrieval" dialog in NiceGUI (`frontend/components/lexical_inspect.py`), accessible from `/chat` top context bar for admins.
+     - Clearly labeled as "Lexical Search Results" displaying source document, page, section, lexical rank score, and snippet text.
+  8. **Comprehensive Verification**:
+     - 172 tests passing (40 new tests added: 27 lexical unit tests, 12 real PostgreSQL + GIN index integration tests, 1 frontend client unit test).
+     - Full test suite: 172 passed, 0 failures, 0 regressions in 72.94s.
+     - Ruff check passed with 0 errors across 119 files; ruff format 100% clean.
+* **Next Safe Task**: Step 9: Hybrid Retrieval (Reciprocal Rank Fusion — RRF) & Reranking.
 
 ## Step 7 Execution Record (Vector Retrieval Layer)
 
@@ -149,7 +187,8 @@ Never mark a task complete merely because code exists.
 
 ## Last verified
 
-2026-09-16 — Step 7 Vector Retrieval Layer verified with real PostgreSQL + pgvector cosine similarity search (<=> operator), live local Ollama model test (qwen3-embedding:0.6b, 1024-d vectors), 132/132 tests passing, ruff lint/format 100% clean, knowledge-base authorization and isolation enforced, and minimal inspection UI hooked into presentation layer.
+2026-09-16 — Step 8 Lexical Retrieval Layer verified with real PostgreSQL 16.15 full-text search (generated tsvector column and GIN index, websearch_to_tsquery, and ts_rank_cd cover density ranking), completely independent of Ollama and vector retrieval, 172/172 tests passing, ruff lint/format 100% clean, knowledge-base authorization and isolation enforced, safe default_factory on schemas, and administrative inspection UI hooked into presentation layer.
+
 
 
 

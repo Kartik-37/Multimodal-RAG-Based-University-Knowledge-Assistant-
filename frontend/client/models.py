@@ -77,3 +77,17 @@ class RetrievalResultDTO(BaseModel):
     section_title: str | None = None
     cosine_distance: float
     similarity: float
+
+
+class LexicalRetrievalResultDTO(BaseModel):
+    """Retrieved lexical full-text match with PostgreSQL score and provenance."""
+
+    chunk_id: str
+    document_id: str
+    knowledge_base_id: str
+    document_title: str
+    chunk_index: int
+    text: str
+    page_number: int | None = None
+    section_title: str | None = None
+    lexical_score: float

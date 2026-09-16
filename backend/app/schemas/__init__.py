@@ -15,6 +15,11 @@ from backend.app.schemas.knowledge_base import (
     KnowledgeBaseResponse,
     MemberResponse,
 )
+from backend.app.schemas.lexical_retrieval import (
+    LexicalRetrievalRequest,
+    LexicalRetrievalResponse,
+    LexicalRetrievalResultItem,
+)
 from backend.app.schemas.retrieval import (
     RetrievalRequest,
     RetrievalResponse,
@@ -35,4 +40,7 @@ __all__ = [
     "RetrievalRequest",
     "RetrievalResponse",
     "RetrievalResultItem",
+    "LexicalRetrievalRequest",
+    "LexicalRetrievalResponse",
+    "LexicalRetrievalResultItem",
 ]

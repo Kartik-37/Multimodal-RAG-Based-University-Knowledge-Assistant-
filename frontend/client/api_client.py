@@ -23,6 +23,7 @@ from frontend.client.models import (
     CitationDTO,
     DocumentDTO,
     KnowledgeBaseDTO,
+    LexicalRetrievalResultDTO,
     RetrievalResultDTO,
     UserDTO,
 )
@@ -375,6 +376,57 @@ class FrontendAPIClient:
                 section_title=item.get("section_title"),
                 cosine_distance=item["cosine_distance"],
                 similarity=item["similarity"],
+            )
+            for item in data.get("results", [])
+        ]
+
+    # --------------------------------------------------------------------------
+    # Lexical Retrieval Inspection Boundary (Step 8)
+    # --------------------------------------------------------------------------
+
+    def retrieve_lexical_chunks(
+        self,
+        kb_id: str,
+        query: str,
+        top_k: int = 5,
+    ) -> list[LexicalRetrievalResultDTO]:
+        """
+        Execute PostgreSQL full-text lexical search for an authorized knowledge base.
+        Returns ranked evidence chunks strictly as lexical search results.
+        """
+        if not query.strip():
+            raise ValueError("Query string cannot be empty.")
+
+        try:
+            kb_uuid = uuid.UUID(kb_id)
+        except ValueError:
+            raise ValueError("Invalid knowledge base ID format.") from None
+
+        resp = self._http.post(
+            f"/knowledge-bases/{kb_uuid}/lexical-retrieve",
+            json={"query": query.strip(), "top_k": top_k},
+        )
+        if resp.status_code == 404:
+            raise ValueError("Knowledge base not found or unauthorized.")
+        if resp.status_code == 422:
+            detail = resp.json().get("detail", "Invalid query parameters.")
+            raise ValueError(str(detail))
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Lexical retrieval failed.")
+            raise ValueError(str(detail))
+
+        data = resp.json()
+        return [
+            LexicalRetrievalResultDTO(
+                chunk_id=str(item["chunk_id"]),
+                document_id=str(item["document_id"]),
+                knowledge_base_id=str(item["knowledge_base_id"]),
+                document_title=item["document_title"],
+                chunk_index=item["chunk_index"],
+                text=item["text"],
+                page_number=item.get("page_number"),
+                section_title=item.get("section_title"),
+                lexical_score=item["lexical_score"],
             )
             for item in data.get("results", [])
         ]

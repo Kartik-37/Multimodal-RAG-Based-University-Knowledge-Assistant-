@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Computed,
     DateTime,
     Enum,
     ForeignKey,
@@ -24,7 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -228,6 +229,12 @@ class DocumentChunk(Base):
         Vector(1024),
         nullable=True,
     )
+    # PostgreSQL full-text search representation generated automatically from text
+    searchable_text: Mapped[Any | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', text)", persisted=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -237,6 +244,7 @@ class DocumentChunk(Base):
     __table_args__ = (
         UniqueConstraint("document_id", "chunk_index", name="uq_doc_chunk_index"),
         Index("ix_chunks_kb_doc", "knowledge_base_id", "document_id"),
+        Index("ix_document_chunks_searchable_text", "searchable_text", postgresql_using="gin"),
     )
 
     # Relationships

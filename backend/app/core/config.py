@@ -97,6 +97,20 @@ class Settings(BaseSettings):
     RETRIEVAL_MAX_TOP_K: int = 50
     RETRIEVAL_MAX_QUERY_LENGTH: int = 1000
 
+    # PostgreSQL Lexical Full-Text Search Configuration
+    LEXICAL_LANGUAGE: str = Field(
+        default="english",
+        description="PostgreSQL full-text search text configuration dictionary (e.g. 'english').",
+    )
+    LEXICAL_TOP_K: int = Field(
+        default=20,
+        description="Default number of top lexical matches to return.",
+    )
+    LEXICAL_MAX_QUERY_LENGTH: int = Field(
+        default=1000,
+        description="Maximum character length permitted for search queries.",
+    )
+
 
 # Singleton settings instance
 settings = Settings()
