@@ -112,3 +112,10 @@ class HybridRetrievalResultDTO(BaseModel):
     cosine_distance: float | None = None
     similarity: float | None = None
     lexical_score: float | None = None
+
+
+class RerankResultDTO(HybridRetrievalResultDTO):
+    """Retrieved candidate after CrossEncoder reranking."""
+
+    reranker_score: float
+    reranker_rank: int

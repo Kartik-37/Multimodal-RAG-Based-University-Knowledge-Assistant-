@@ -25,6 +25,7 @@ from frontend.client.models import (
     HybridRetrievalResultDTO,
     KnowledgeBaseDTO,
     LexicalRetrievalResultDTO,
+    RerankResultDTO,
     RetrievalResultDTO,
     UserDTO,
 )
@@ -489,6 +490,70 @@ class FrontendAPIClient:
                 cosine_distance=item.get("cosine_distance"),
                 similarity=item.get("similarity"),
                 lexical_score=item.get("lexical_score"),
+            )
+            for item in data.get("results", [])
+        ]
+
+    def rerank_chunks(
+        self,
+        kb_id: str,
+        query: str,
+        candidate_limit: int = 20,
+        top_k: int = 5,
+    ) -> list[RerankResultDTO]:
+        """
+        Execute CrossEncoder reranking on hybrid candidate chunks for an authorized knowledge base.
+        Returns reranked candidate chunks strictly for inspection/verification.
+        """
+        if not query.strip():
+            raise ValueError("Query string cannot be empty.")
+
+        try:
+            kb_uuid = uuid.UUID(kb_id)
+        except ValueError:
+            raise ValueError("Invalid knowledge base ID format.") from None
+
+        resp = self._http.post(
+            f"/knowledge-bases/{kb_uuid}/rerank",
+            json={
+                "query": query.strip(),
+                "candidate_limit": candidate_limit,
+                "top_k": top_k,
+            },
+        )
+        if resp.status_code == 404:
+            raise ValueError("Knowledge base not found or unauthorized.")
+        if resp.status_code == 422:
+            detail = resp.json().get("detail", "Invalid query parameters.")
+            raise ValueError(str(detail))
+        if resp.status_code == 503:
+            detail = resp.json().get("detail", "Inference provider unavailable.")
+            raise ValueError(str(detail))
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Reranking operation failed.")
+            raise ValueError(str(detail))
+
+        data = resp.json()
+        return [
+            RerankResultDTO(
+                chunk_id=str(item["chunk_id"]),
+                document_id=str(item["document_id"]),
+                knowledge_base_id=str(item["knowledge_base_id"]),
+                document_title=item["document_title"],
+                chunk_index=item["chunk_index"],
+                text=item["text"],
+                page_number=item.get("page_number"),
+                section_title=item.get("section_title"),
+                rrf_score=item["rrf_score"],
+                vector_rank=item.get("vector_rank"),
+                lexical_rank=item.get("lexical_rank"),
+                vector_contribution=item.get("vector_contribution", 0.0),
+                lexical_contribution=item.get("lexical_contribution", 0.0),
+                cosine_distance=item.get("cosine_distance"),
+                similarity=item.get("similarity"),
+                lexical_score=item.get("lexical_score"),
+                reranker_score=item["reranker_score"],
+                reranker_rank=item["reranker_rank"],
             )
             for item in data.get("results", [])
         ]

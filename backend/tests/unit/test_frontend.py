@@ -195,6 +195,27 @@ class TestFrontendAPIClient:
         assert isinstance(results, list)
         assert len(results) == 0
 
+    def test_rerank_chunks(self) -> None:
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+        kb_name = f"Rerank DTO KB {uuid.uuid4().hex[:6]}"
+        kb = client.create_knowledge_base(kb_name, "For reranking")
+
+        # Empty query validation
+        with pytest.raises(ValueError, match="Query string cannot be empty"):
+            client.rerank_chunks(kb_id=kb.id, query="   ")
+
+        # Invalid UUID validation
+        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
+            client.rerank_chunks(kb_id="invalid-uuid", query="valid query")
+
+        # Rerank against empty KB returns empty list of DTOs
+        results = client.rerank_chunks(
+            kb_id=kb.id, query="scheduling algorithms", candidate_limit=20, top_k=5
+        )
+        assert isinstance(results, list)
+        assert len(results) == 0
+
 
 class TestAppState:
     """Test suite for AppState presentation manager."""

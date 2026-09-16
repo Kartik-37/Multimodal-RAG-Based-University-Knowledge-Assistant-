@@ -85,6 +85,7 @@ class Settings(BaseSettings):
 
     # Reranker Model
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    RERANK_BATCH_SIZE: int = 32
 
     # RAG Pipeline Parameters
     RAG_TOP_K_RETRIEVAL: int = 20

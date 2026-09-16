@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 9 COMPLETE — HYBRID RETRIEVAL LAYER (RRF) VERIFIED
+STEP 10 COMPLETE — CROSSENCODER RERANKING LAYER VERIFIED
 
 ## Rules
 
@@ -42,7 +42,72 @@ Never mark a task complete merely because code exists.
 - [x] Vector retrieval (COMPLETE — Step 7 Exact pgvector Cosine Distance Search, Authorization & Provenance)
 - [x] Lexical retrieval (COMPLETE — Step 8 PostgreSQL-Native tsvector + GIN Index + ts_rank_cd Full-Text Search)
 - [x] Hybrid retrieval (COMPLETE — Step 9 Dense Vector + PostgreSQL FTS fused with Reciprocal Rank Fusion)
-- [ ] Reranking
+- [x] Reranking (COMPLETE — Step 10 Local Hugging Face CrossEncoder ms-marco-MiniLM-L-6-v2)
+- [ ] Context assembly
+- [ ] Grounded generation
+- [ ] Citations
+- [ ] Query/conversation persistence if required
+- [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
+- [ ] Observability
+- [ ] Rate limiting
+- [ ] Backend security audit
+- [ ] Backend quality gate
+- [x] Functional frontend (COMPLETE — Step 3 Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector UI + Step 8 Lexical UI + Step 9 Hybrid UI + Step 10 Rerank UI)
+- [ ] Frontend design pass
+- [ ] Accessibility QA
+- [ ] Responsive QA
+- [ ] End-to-end QA
+- [ ] Deployment verification
+- [ ] Final security audit
+- [ ] Final RAG evaluation
+- [ ] Documentation
+- [ ] Git/GitHub final review
+
+## Step 10 Execution Record (CrossEncoder Reranking Layer)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Provider-Independent CrossEncoder Reranking**:
+     - `BaseRerankerProvider` abstract contract enforces strict provider isolation.
+     - `HuggingFaceCrossEncoderProvider` implements local inference using `sentence-transformers` (`cross-encoder/ms-marco-MiniLM-L-6-v2`).
+     - Thread-safe lazy model loading via `threading.Lock()` ensures the model is loaded once and shared across requests.
+     - Non-blocking execution via `asyncio.to_thread` keeps FastAPI's event loop unblocked during CPU inference.
+     - Completely local inference; zero paid APIs or external inference services.
+  2. **Raw Float Score Contract & Ordering**:
+     - Raw finite CrossEncoder scores are preserved without internal rounding (`reranker_score: float`).
+     - Candidates are sorted strictly by `reranker_score DESC`.
+     - Deterministic tie-breaking on `(chunk_index ASC, str(chunk_id) ASC)` on equal scores.
+     - Formatting to 6 decimal places is restricted strictly to presentation time in the UI (`f"{item.reranker_score:.6f}"`).
+     - CrossEncoder scores are used solely for final candidate ranking; never combined or averaged with RRF or vector/lexical scores.
+  3. **Preservation of Full Step 9 Provenance**:
+     - Preserves all upstream fields: `chunk_id`, `document_id`, `knowledge_base_id`, `document_title`, `chunk_index`, `text`, `page_number`, `section_title`, safe `chunk_metadata` dictionary.
+     - Preserves all diagnostic branch metrics: `rrf_score`, `vector_rank`, `lexical_rank`, `vector_contribution`, `lexical_contribution`, `cosine_distance`, `similarity`, and `lexical_score`.
+     - Adds `reranker_score` (raw float) and `reranker_rank` (1-indexed position).
+  4. **Strict Architectural Boundary**:
+     - Operates strictly on hybrid candidates retrieved from Step 9 (`HybridRetrievalService.retrieve`).
+     - Does NOT implement Step 11 or any of: query rewriting/expansion, context assembly, LLM generation, citations, grounding validation, or chat answer generation.
+  5. **Configuration Discipline**:
+     - Reuses existing `settings.RRF_K` (60), `settings.RERANKER_MODEL` (`cross-encoder/ms-marco-MiniLM-L-6-v2`), `settings.RAG_TOP_K_RETRIEVAL` (20), `settings.RAG_TOP_K_RERANK` (5), `settings.RETRIEVAL_MIN_TOP_K` (1), and `settings.RETRIEVAL_MAX_TOP_K` (50).
+     - Added only `RERANK_BATCH_SIZE: int = 32`.
+     - Zero duplicate configuration sources.
+  6. **Zero Database Migrations**:
+     - Purely computational in-memory reranking over retrieved candidate chunks. No schema changes or migrations.
+  7. **Security & Authorization**:
+     - Enforces `get_authorized_knowledge_base` dependency on `POST /api/v1/knowledge-bases/{kb_id}/rerank`.
+     - Admins authorized for owned KBs; students authorized strictly via `knowledge_base_members`.
+     - Unauthorized or nonexistent KBs return HTTP 404 (preventing existence leakage); unauthenticated requests return HTTP 401.
+     - Foreign KB chunks never leak across knowledge base boundaries.
+  8. **Frontend Presentation Layer**:
+     - Added `RerankResultDTO` in `frontend/client/models.py`.
+     - Added `rerank_chunks` method in `frontend/client/api_client.py`.
+     - Created administrative inspection dialog in NiceGUI (`frontend/components/rerank_inspect.py`) labeled **"CrossEncoder Reranking Inspection"**.
+     - Added "Inspect Reranking" button for administrators in the `/chat` context bar.
+  9. **Comprehensive Verification**:
+     - 225 total tests passing across entire test suite (30 new tests in Step 10: 21 unit tests, 1 real CrossEncoder inference integration test, 7 PostgreSQL integration tests, 1 frontend client test).
+     - Full test suite: 225 passed, 0 failures, 0 regressions.
+     - Real model inference verified: local load, query/text pairs, score count == candidate count, finite floats, input order mapping preserved.
+     - Ruff check passed with 0 errors across 137 files; ruff format 100% clean.
+* **Next Safe Task**: Step 11: Context Assembly and Prompt Formatting Pipeline.
 - [ ] Context assembly
 - [ ] Grounded generation
 - [ ] Citations
