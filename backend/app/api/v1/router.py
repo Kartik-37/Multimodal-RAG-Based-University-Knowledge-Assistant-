@@ -13,11 +13,13 @@ from fastapi import APIRouter
 from backend.app.api.v1.endpoints.auth import router as auth_router
 from backend.app.api.v1.endpoints.chat import router as chat_router
 from backend.app.api.v1.endpoints.knowledge_bases import router as kb_router
+from backend.app.api.v1.endpoints.retrieval import router as retrieval_router
 
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
 api_router.include_router(kb_router)
+api_router.include_router(retrieval_router)
 api_router.include_router(chat_router)
 
 

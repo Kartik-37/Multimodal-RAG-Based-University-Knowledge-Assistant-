@@ -15,6 +15,11 @@ from backend.app.schemas.knowledge_base import (
     KnowledgeBaseResponse,
     MemberResponse,
 )
+from backend.app.schemas.retrieval import (
+    RetrievalRequest,
+    RetrievalResponse,
+    RetrievalResultItem,
+)
 
 __all__ = [
     "UserRegisterRequest",
@@ -27,4 +32,7 @@ __all__ = [
     "MemberResponse",
     "DocumentResponse",
     "DocumentChunkResponse",
+    "RetrievalRequest",
+    "RetrievalResponse",
+    "RetrievalResultItem",
 ]

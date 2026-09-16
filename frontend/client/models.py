@@ -62,3 +62,18 @@ class ChatMessageDTO(BaseModel):
     content: str
     citations: list[CitationDTO] = Field(default_factory=list)
     created_at: str = ""
+
+
+class RetrievalResultDTO(BaseModel):
+    """Retrieved vector evidence match with distance and provenance."""
+
+    chunk_id: str
+    document_id: str
+    knowledge_base_id: str
+    document_title: str
+    chunk_index: int
+    text: str
+    page_number: int | None = None
+    section_title: str | None = None
+    cosine_distance: float
+    similarity: float

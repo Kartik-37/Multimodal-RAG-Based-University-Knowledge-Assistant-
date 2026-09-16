@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     RRF_K: int = 60
     MAX_CONTEXT_TOKENS: int = 2000
 
+    # Vector Retrieval Bounds
+    RETRIEVAL_MIN_TOP_K: int = 1
+    RETRIEVAL_MAX_TOP_K: int = 50
+    RETRIEVAL_MAX_QUERY_LENGTH: int = 1000
+
 
 # Singleton settings instance
 settings = Settings()

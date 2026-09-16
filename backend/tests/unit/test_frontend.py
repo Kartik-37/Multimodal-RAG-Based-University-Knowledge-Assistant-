@@ -136,6 +136,25 @@ class TestFrontendAPIClient:
         with pytest.raises(ValueError, match="Question cannot be empty"):
             client.send_chat_message(kb_id=kb.id, question="   ")
 
+    def test_retrieve_chunks(self) -> None:
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+        kb_name = f"Retrieval DTO KB {uuid.uuid4().hex[:6]}"
+        kb = client.create_knowledge_base(kb_name, "For vector retrieval")
+
+        # Empty query validation
+        with pytest.raises(ValueError, match="Query string cannot be empty"):
+            client.retrieve_chunks(kb_id=kb.id, query="   ")
+
+        # Invalid UUID validation
+        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
+            client.retrieve_chunks(kb_id="invalid-uuid", query="valid query")
+
+        # Vector search against empty KB returns empty list of DTOs
+        results = client.retrieve_chunks(kb_id=kb.id, query="What is an index?", top_k=5)
+        assert isinstance(results, list)
+        assert len(results) == 0
+
 
 class TestAppState:
     """Test suite for AppState presentation manager."""

@@ -12,6 +12,7 @@ from frontend.client.api_client import api_client
 from frontend.client.models import CitationDTO
 from frontend.components.evidence_panel import render_evidence_panel
 from frontend.components.layout import page_layout
+from frontend.components.retrieval_inspect import open_vector_retrieval_dialog
 from frontend.state.app_state import state
 
 
@@ -62,9 +63,19 @@ def register_chat_page() -> None:
                         render_messages()
                         render_evidence()
 
-                    ui.button(
-                        "Clear Conversation", icon="delete_outline", on_click=clear_session
-                    ).props("flat dense").classes("text-xs text-red-500")
+                    with ui.row().classes("items-center gap-2"):
+                        if state.is_admin:
+                            ui.button(
+                                "Inspect Vector Retrieval",
+                                icon="manage_search",
+                                on_click=lambda: open_vector_retrieval_dialog(
+                                    active_kb.id, active_kb.name
+                                ),
+                            ).props("outline dense").classes("text-xs text-blue-700")
+
+                        ui.button(
+                            "Clear Conversation", icon="delete_outline", on_click=clear_session
+                        ).props("flat dense").classes("text-xs text-red-500")
 
             # Main Two-Column Layout: Chat on Left, Evidence Panel on Right
             with ui.row().classes("w-full gap-6 items-start"):
