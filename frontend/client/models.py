@@ -91,3 +91,24 @@ class LexicalRetrievalResultDTO(BaseModel):
     page_number: int | None = None
     section_title: str | None = None
     lexical_score: float
+
+
+class HybridRetrievalResultDTO(BaseModel):
+    """Retrieved hybrid candidate fused via Reciprocal Rank Fusion (RRF)."""
+
+    chunk_id: str
+    document_id: str
+    knowledge_base_id: str
+    document_title: str
+    chunk_index: int
+    text: str
+    page_number: int | None = None
+    section_title: str | None = None
+    rrf_score: float
+    vector_rank: int | None = None
+    lexical_rank: int | None = None
+    vector_contribution: float = 0.0
+    lexical_contribution: float = 0.0
+    cosine_distance: float | None = None
+    similarity: float | None = None
+    lexical_score: float | None = None

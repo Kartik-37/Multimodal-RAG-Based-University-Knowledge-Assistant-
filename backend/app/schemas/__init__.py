@@ -9,6 +9,11 @@ from backend.app.schemas.auth import (
     UserResponse,
 )
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
+from backend.app.schemas.hybrid_retrieval import (
+    HybridRetrievalRequest,
+    HybridRetrievalResponse,
+    HybridRetrievalResultItem,
+)
 from backend.app.schemas.knowledge_base import (
     AddMemberRequest,
     KnowledgeBaseCreate,
@@ -43,4 +48,7 @@ __all__ = [
     "LexicalRetrievalRequest",
     "LexicalRetrievalResponse",
     "LexicalRetrievalResultItem",
+    "HybridRetrievalRequest",
+    "HybridRetrievalResponse",
+    "HybridRetrievalResultItem",
 ]

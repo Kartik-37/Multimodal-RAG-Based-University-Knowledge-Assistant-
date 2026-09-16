@@ -22,6 +22,7 @@ from frontend.client.models import (
     ChatMessageDTO,
     CitationDTO,
     DocumentDTO,
+    HybridRetrievalResultDTO,
     KnowledgeBaseDTO,
     LexicalRetrievalResultDTO,
     RetrievalResultDTO,
@@ -427,6 +428,67 @@ class FrontendAPIClient:
                 page_number=item.get("page_number"),
                 section_title=item.get("section_title"),
                 lexical_score=item["lexical_score"],
+            )
+            for item in data.get("results", [])
+        ]
+
+    # --------------------------------------------------------------------------
+    # Hybrid Retrieval Inspection Boundary (Step 9)
+    # --------------------------------------------------------------------------
+
+    def retrieve_hybrid_chunks(
+        self,
+        kb_id: str,
+        query: str,
+        top_k: int = 5,
+    ) -> list[HybridRetrievalResultDTO]:
+        """
+        Execute hybrid retrieval (vector + lexical fused with RRF) for an authorized knowledge base.
+        Returns ranked candidate chunks strictly as hybrid retrieval inspection results.
+        """
+        if not query.strip():
+            raise ValueError("Query string cannot be empty.")
+
+        try:
+            kb_uuid = uuid.UUID(kb_id)
+        except ValueError:
+            raise ValueError("Invalid knowledge base ID format.") from None
+
+        resp = self._http.post(
+            f"/knowledge-bases/{kb_uuid}/hybrid-retrieve",
+            json={"query": query.strip(), "top_k": top_k},
+        )
+        if resp.status_code == 404:
+            raise ValueError("Knowledge base not found or unauthorized.")
+        if resp.status_code == 422:
+            detail = resp.json().get("detail", "Invalid query parameters.")
+            raise ValueError(str(detail))
+        if resp.status_code == 503:
+            detail = resp.json().get("detail", "Embedding provider unavailable.")
+            raise ValueError(str(detail))
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Hybrid retrieval failed.")
+            raise ValueError(str(detail))
+
+        data = resp.json()
+        return [
+            HybridRetrievalResultDTO(
+                chunk_id=str(item["chunk_id"]),
+                document_id=str(item["document_id"]),
+                knowledge_base_id=str(item["knowledge_base_id"]),
+                document_title=item["document_title"],
+                chunk_index=item["chunk_index"],
+                text=item["text"],
+                page_number=item.get("page_number"),
+                section_title=item.get("section_title"),
+                rrf_score=item["rrf_score"],
+                vector_rank=item.get("vector_rank"),
+                lexical_rank=item.get("lexical_rank"),
+                vector_contribution=item.get("vector_contribution", 0.0),
+                lexical_contribution=item.get("lexical_contribution", 0.0),
+                cosine_distance=item.get("cosine_distance"),
+                similarity=item.get("similarity"),
+                lexical_score=item.get("lexical_score"),
             )
             for item in data.get("results", [])
         ]

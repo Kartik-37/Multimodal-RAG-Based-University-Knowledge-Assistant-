@@ -11,6 +11,7 @@ from nicegui import ui
 from frontend.client.api_client import api_client
 from frontend.client.models import CitationDTO
 from frontend.components.evidence_panel import render_evidence_panel
+from frontend.components.hybrid_inspect import open_hybrid_retrieval_dialog
 from frontend.components.layout import page_layout
 from frontend.components.lexical_inspect import open_lexical_retrieval_dialog
 from frontend.components.retrieval_inspect import open_vector_retrieval_dialog
@@ -80,6 +81,13 @@ def register_chat_page() -> None:
                                     active_kb.id, active_kb.name
                                 ),
                             ).props("outline dense").classes("text-xs text-teal-700")
+                            ui.button(
+                                "Inspect Hybrid Retrieval",
+                                icon="layers",
+                                on_click=lambda: open_hybrid_retrieval_dialog(
+                                    active_kb.id, active_kb.name
+                                ),
+                            ).props("outline dense").classes("text-xs text-indigo-700")
 
                         ui.button(
                             "Clear Conversation", icon="delete_outline", on_click=clear_session

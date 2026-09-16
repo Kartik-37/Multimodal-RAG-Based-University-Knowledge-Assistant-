@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 8 COMPLETE — LEXICAL RETRIEVAL LAYER VERIFIED
+STEP 9 COMPLETE — HYBRID RETRIEVAL LAYER (RRF) VERIFIED
 
 ## Rules
 
@@ -41,7 +41,7 @@ Never mark a task complete merely because code exists.
 - [x] Embeddings (COMPLETE — Step 6 Provider Abstraction, Ollama qwen3-embedding:0.6b, 1024-dim Vector Storage in pgvector)
 - [x] Vector retrieval (COMPLETE — Step 7 Exact pgvector Cosine Distance Search, Authorization & Provenance)
 - [x] Lexical retrieval (COMPLETE — Step 8 PostgreSQL-Native tsvector + GIN Index + ts_rank_cd Full-Text Search)
-- [ ] Hybrid retrieval
+- [x] Hybrid retrieval (COMPLETE — Step 9 Dense Vector + PostgreSQL FTS fused with Reciprocal Rank Fusion)
 - [ ] Reranking
 - [ ] Context assembly
 - [ ] Grounded generation
@@ -52,7 +52,7 @@ Never mark a task complete merely because code exists.
 - [ ] Rate limiting
 - [ ] Backend security audit
 - [ ] Backend quality gate
-- [x] Functional frontend (COMPLETE — Step 3 Presentation Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector Inspection + Step 8 Lexical Inspection)
+- [x] Functional frontend (COMPLETE — Step 3 Presentation Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector Inspection + Step 8 Lexical Inspection + Step 9 Hybrid Inspection)
 - [ ] Frontend design pass
 - [ ] Accessibility QA
 - [ ] Responsive QA
@@ -62,6 +62,43 @@ Never mark a task complete merely because code exists.
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 9 Execution Record (Hybrid Retrieval Layer + RRF)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Rank-Based Fusion via Reciprocal Rank Fusion (RRF)**:
+     - Pure rank-based fusion: strictly fuses 1-based candidate rank positions. Does NOT normalize, average, or combine incompatible raw scores (cosine distance, similarity, or PostgreSQL `ts_rank_cd`).
+     - Formula:
+       $$RRF\_score(c) = \sum_{b \in \{\text{vector}, \text{lexical}\}} \frac{1}{\text{RRF\_K} + \text{rank}_b(c)}$$
+     - Uses authoritative project configuration `settings.RRF_K` (default 60) without hardcoding or duplicate sources of truth.
+  2. **Service Reuse & Zero SQL Duplication**:
+     - `HybridRetrievalService` orchestrates `VectorRetrievalService` (Step 7) and `LexicalRetrievalService` (Step 8) directly.
+     - Preserves all underlying database filters, parameter validations, and transactional semantics without duplicating retrieval SQL.
+  3. **Candidate Deduplication & Provenance**:
+     - Fuses candidates using unique `chunk_id` as the fusion key. Chunks matching in both branches are merged into a single candidate, accumulating both score contributions.
+     - Preserves complete structural metadata (`chunk_id`, `document_id`, `knowledge_base_id`, `document_title`, `chunk_index`, `text`, `page_number`, `section_title`, and safe `default_factory=dict` `chunk_metadata`).
+     - Preserves diagnostic metrics: `vector_rank`, `lexical_rank`, `vector_contribution`, `lexical_contribution`, `cosine_distance`, `similarity`, and `lexical_score`.
+  4. **Deterministic Tie-Breaking**:
+     - Sorted primarily by `rrf_score DESC`.
+     - Secondary tie-breaking on `(chunk_index ASC, chunk_id ASC)` ensures deterministic ordering on equal RRF scores.
+  5. **Knowledge-Base Authorization & Multi-User Isolation**:
+     - Enforces `get_authorized_knowledge_base` dependency on `POST /api/v1/knowledge-bases/{kb_id}/hybrid-retrieve`.
+     - Admins authorized for owned KBs; students authorized strictly via `knowledge_base_members`.
+     - Unauthorized or nonexistent KBs return HTTP 404 (preventing private existence leakage); unauthenticated requests return HTTP 401.
+     - Foreign KB chunks never leak across KB boundaries.
+  6. **Zero Database Migrations**:
+     - Operates directly on existing PostgreSQL 16 + pgvector schema and GIN index. No new migration created.
+  7. **Frontend Presentation Layer**:
+     - Added `HybridRetrievalResultDTO` in `frontend/client/models.py`.
+     - Added `retrieve_hybrid_chunks` in `frontend/client/api_client.py`.
+     - Created administrative inspection dialog in NiceGUI (`frontend/components/hybrid_inspect.py`) labeled **"Hybrid Search Inspection (RRF)"**.
+     - Added "Inspect Hybrid Retrieval" button for administrators in the `/chat` context bar.
+  8. **Comprehensive Verification**:
+     - 195 tests passing across entire test suite (23 new tests: 12 hybrid unit tests, 10 real PostgreSQL + pgvector integration tests, 1 frontend client unit test).
+     - Full test suite: 195 passed, 0 failures, 0 regressions in 81.86s.
+     - Ruff check passed with 0 errors across 125 files; ruff format 100% clean.
+* **Next Safe Task**: Step 10: CrossEncoder Reranking Layer (`cross-encoder/ms-marco-MiniLM-L-6-v2`).
 
 ## Step 8 Execution Record (Lexical Retrieval Layer)
 
@@ -187,7 +224,8 @@ Never mark a task complete merely because code exists.
 
 ## Last verified
 
-2026-09-16 — Step 8 Lexical Retrieval Layer verified with real PostgreSQL 16.15 full-text search (generated tsvector column and GIN index, websearch_to_tsquery, and ts_rank_cd cover density ranking), completely independent of Ollama and vector retrieval, 172/172 tests passing, ruff lint/format 100% clean, knowledge-base authorization and isolation enforced, safe default_factory on schemas, and administrative inspection UI hooked into presentation layer.
+2026-09-16 — Step 9 Hybrid Retrieval Layer (Reciprocal Rank Fusion — RRF) verified with real PostgreSQL 16.15 + pgvector and full-text search, pure rank-based fusion (RRF_K from settings.RRF_K), reuse of Step 7 and Step 8 services, candidate deduplication, deterministic secondary tie-breaking, 195/195 tests passing across entire test suite, ruff lint/format 100% clean, knowledge-base authorization and isolation enforced, and administrative inspection dialog in NiceGUI.
+
 
 
 
