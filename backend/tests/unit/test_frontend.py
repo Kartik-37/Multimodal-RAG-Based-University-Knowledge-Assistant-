@@ -9,6 +9,7 @@ import uuid
 
 import pytest
 
+from backend.tests.fixtures_documents import create_sample_pdf_bytes
 from frontend.client.api_client import FrontendAPIClient
 from frontend.client.models import (
     ChatMessageDTO,
@@ -68,18 +69,19 @@ class TestFrontendAPIClient:
 
     def test_knowledge_base_operations(self) -> None:
         client = FrontendAPIClient()
-        # Authenticate as Admin to create knowledge bases
         client.login("admin@university.edu", "AdminPass123!")
+        initial_kbs = client.get_knowledge_bases()
+        unique_name = f"Test KB {uuid.uuid4().hex[:6]}"
 
-        # Create new KB
-        kb_name = f"Test Syllabus {uuid.uuid4().hex[:6]}"
-        new_kb = client.create_knowledge_base(kb_name, "Description text")
-        assert new_kb.name == kb_name
+        # Create
+        new_kb = client.create_knowledge_base(unique_name, "Unit test knowledge base")
+        assert isinstance(new_kb, KnowledgeBaseDTO)
+        assert new_kb.name == unique_name
         assert new_kb.document_count == 0
 
-        # Retrieve knowledge bases
+        # List contains created
         kbs = client.get_knowledge_bases()
-        assert len(kbs) >= 1
+        assert len(kbs) == len(initial_kbs) + 1
         assert any(k.id == new_kb.id for k in kbs)
 
         # Empty name rejection
@@ -93,18 +95,24 @@ class TestFrontendAPIClient:
         kb = client.create_knowledge_base(kb_name, "For docs")
         initial_count = len(client.get_documents(kb.id))
 
+        pdf_bytes = create_sample_pdf_bytes()
         doc = client.upload_document(
             kb_id=kb.id,
             filename="curriculum_guide.pdf",
-            content_size_bytes=204800,
+            content=pdf_bytes,
         )
         assert isinstance(doc, DocumentDTO)
         assert doc.filename == "curriculum_guide.pdf"
         assert doc.file_type == "pdf"
-        assert doc.status == "INDEXED"
+        assert doc.status in ("PENDING", "PROCESSING", "COMPLETED")
 
         updated_docs = client.get_documents(kb.id)
         assert len(updated_docs) == initial_count + 1
+
+        # Delete document
+        client.delete_document(kb.id, doc.id)
+        remaining_docs = client.get_documents(kb.id)
+        assert len(remaining_docs) == initial_count
 
     def test_chat_query_and_citations(self) -> None:
         client = FrontendAPIClient()

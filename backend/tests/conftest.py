@@ -35,6 +35,19 @@ def db_engine(app_settings: Settings):
     test_engine.dispose()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def configure_test_db(db_engine) -> Generator[None, None, None]:
+    """Ensure all database operations (including background tasks) bind to test database."""
+    import backend.app.db.session as db_session_module
+
+    old_engine = db_session_module.engine
+    db_session_module.engine = db_engine
+    db_session_module.SessionLocal.configure(bind=db_engine)
+    yield
+    db_session_module.engine = old_engine
+    db_session_module.SessionLocal.configure(bind=old_engine)
+
+
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Generator:
     """Fixture providing an isolated database session per test function."""

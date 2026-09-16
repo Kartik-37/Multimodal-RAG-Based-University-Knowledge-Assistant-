@@ -47,10 +47,32 @@ class Settings(BaseSettings):
         description="PostgreSQL test database connection URL.",
     )
 
-    # Local Storage
+    # Local Storage & Uploads
     STORAGE_DIR: Path = Field(
         default=Path("./storage"),
         description="Filesystem path for local uploaded documents.",
+    )
+    MAX_UPLOAD_SIZE_BYTES: int = Field(
+        default=20 * 1024 * 1024,  # 20 MB default limit
+        description="Maximum allowed uploaded file size in bytes.",
+    )
+    ALLOWED_EXTENSIONS: set[str] = Field(
+        default={".pdf", ".docx", ".txt", ".md", ".csv"},
+        description="Explicit allowlist of permitted file extensions.",
+    )
+
+    # Chunking & Token Estimator Parameters
+    CHUNK_TARGET_TOKENS: int = Field(
+        default=500,
+        description="Target estimated token count per text chunk.",
+    )
+    CHUNK_OVERLAP_TOKENS: int = Field(
+        default=100,
+        description="Estimated token overlap between consecutive chunks.",
+    )
+    CHUNK_MIN_TOKENS: int = Field(
+        default=50,
+        description="Minimum token threshold to avoid creating tiny meaningless chunks.",
     )
 
     # Model Infrastructure (Ollama)

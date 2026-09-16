@@ -7,10 +7,20 @@ Enforces role-based access control and multi-user isolation:
 - Unauthorized access returns HTTP 404 to avoid leaking private resource existence.
 """
 
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, select
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
+from sqlalchemy import and_, func, select
 
 from backend.app.api.deps import (
     AuthenticatedAdmin,
@@ -19,14 +29,18 @@ from backend.app.api.deps import (
     get_authorized_knowledge_base,
     require_knowledge_base_admin,
 )
+from backend.app.models.document import Document, DocumentChunk, DocumentStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import User, UserRole
+from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
 from backend.app.schemas.knowledge_base import (
     AddMemberRequest,
     KnowledgeBaseCreate,
     KnowledgeBaseResponse,
     MemberResponse,
 )
+from backend.app.services.ingestion import process_document_task
+from backend.app.services.storage import storage_service
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge-bases"])
 
@@ -158,39 +172,259 @@ def add_member(
 
 @router.post(
     "/{kb_id}/documents",
-    status_code=status.HTTP_200_OK,
-    summary="Document upload authorization boundary (ADMIN only)",
+    response_model=DocumentResponse | dict[str, str],
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload and ingest document (ADMIN only)",
 )
-def upload_document_authorization_gate(
+async def upload_document(
     kb: AdminKB,
-) -> dict[str, str]:
+    background_tasks: BackgroundTasks,
+    response: Response,
+    db: DatabaseSession,
+    file: Annotated[UploadFile | None, File()] = None,
+) -> DocumentResponse | dict[str, str]:
     """
-    Enforces that document upload is strictly restricted to ADMINs.
-    Step 4 security gate: students attempting to invoke this receive HTTP 403 Forbidden.
+    Upload and ingest a document into an authorized knowledge base.
+    Restricted strictly to the ADMIN who owns the target knowledge base.
+
+    If invoked without a file, returns authorization status confirmation
+    for backward compatibility with Step 4 authorization probes.
     """
-    return {
-        "status": "authorized",
-        "knowledge_base_id": str(kb.id),
-        "message": "User is authorized to upload documents.",
-    }
+    if file is None:
+        response.status_code = status.HTTP_200_OK
+        return {
+            "status": "authorized",
+            "knowledge_base_id": str(kb.id),
+            "message": "User is authorized to upload documents.",
+        }
+
+    # Validate file extension, size, and content signature/magic bytes
+    validated = await storage_service.validate_and_read_upload(file)
+
+    # Generate unpredictable UUID for internal storage
+    document_id = uuid.uuid4()
+    storage_key = storage_service.save_file(
+        knowledge_base_id=kb.id,
+        document_id=document_id,
+        extension=validated.extension,
+        content=validated.content,
+    )
+
+    # Create document record in PENDING state
+    doc = Document(
+        id=document_id,
+        knowledge_base_id=kb.id,
+        original_filename=validated.original_filename,
+        storage_key=storage_key,
+        file_type=validated.file_type,
+        mime_type=validated.mime_type,
+        file_size_bytes=validated.file_size_bytes,
+        content_hash=validated.content_hash,
+        status=DocumentStatus.PENDING,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # Dispatch ingestion background task
+    background_tasks.add_task(process_document_task, doc.id)
+
+    response.status_code = status.HTTP_201_CREATED
+    return DocumentResponse(
+        id=doc.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        original_filename=doc.original_filename,
+        file_type=doc.file_type,
+        mime_type=doc.mime_type,
+        file_size_bytes=doc.file_size_bytes,
+        status=doc.status,
+        error_message=doc.error_message,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        chunk_count=0,
+    )
+
+
+@router.get(
+    "/{kb_id}/documents",
+    response_model=list[DocumentResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all documents in an authorized knowledge base",
+)
+def list_documents(
+    kb: AuthorizedKB,
+    db: DatabaseSession,
+) -> list[DocumentResponse]:
+    """
+    Retrieve all documents belonging to an authorized knowledge base.
+    Accessible to the ADMIN creator and authorized STUDENT members.
+    """
+    docs = (
+        db.execute(
+            select(Document)
+            .where(Document.knowledge_base_id == kb.id)
+            .order_by(Document.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+    results: list[DocumentResponse] = []
+    for doc in docs:
+        chunk_count = db.execute(
+            select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
+        ).scalar_one()
+
+        results.append(
+            DocumentResponse(
+                id=doc.id,
+                knowledge_base_id=doc.knowledge_base_id,
+                original_filename=doc.original_filename,
+                file_type=doc.file_type,
+                mime_type=doc.mime_type,
+                file_size_bytes=doc.file_size_bytes,
+                status=doc.status,
+                error_message=doc.error_message,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at,
+                chunk_count=chunk_count,
+            )
+        )
+    return results
+
+
+@router.get(
+    "/{kb_id}/documents/{document_id}",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get document details and processing status",
+)
+def get_document(
+    kb: AuthorizedKB,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+) -> DocumentResponse:
+    """
+    Retrieve metadata and processing status for an individual document.
+    """
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    chunk_count = db.execute(
+        select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
+    ).scalar_one()
+
+    return DocumentResponse(
+        id=doc.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        original_filename=doc.original_filename,
+        file_type=doc.file_type,
+        mime_type=doc.mime_type,
+        file_size_bytes=doc.file_size_bytes,
+        status=doc.status,
+        error_message=doc.error_message,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        chunk_count=chunk_count,
+    )
+
+
+@router.get(
+    "/{kb_id}/documents/{document_id}/chunks",
+    response_model=list[DocumentChunkResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Inspect extracted chunks for an authorized document",
+)
+def list_document_chunks(
+    kb: AuthorizedKB,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+) -> list[DocumentChunkResponse]:
+    """
+    Inspect extracted text chunks, page numbers, and structural headings.
+    Useful for administrator auditing and citation verification.
+    """
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    chunks = (
+        db.execute(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .order_by(DocumentChunk.chunk_index.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+    return [DocumentChunkResponse.model_validate(c) for c in chunks]
 
 
 @router.delete(
     "/{kb_id}/documents/{document_id}",
     status_code=status.HTTP_200_OK,
-    summary="Document deletion authorization boundary (ADMIN only)",
+    summary="Delete document, chunks, and storage file (ADMIN only)",
 )
-def delete_document_authorization_gate(
+def delete_document(
     kb: AdminKB,
-    document_id: str,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
 ) -> dict[str, str]:
     """
-    Enforces that document deletion is strictly restricted to ADMINs.
-    Step 4 security gate: students attempting to invoke this receive HTTP 403 Forbidden.
+    Delete a document and all its derived chunks and physical files.
+    Restricted strictly to the administering ADMIN.
+
+    Consistency Strategy (Correction #5):
+    1. The document record is removed in a database transaction, which cascades
+       deletion to all associated DocumentChunk entities via PostgreSQL foreign keys.
+    2. Only after database commit succeeds is the physical file unlinked from disk.
+    3. If unlinking fails (e.g. temporary Windows file lock), a warning is logged
+       for background orphan cleanup. No dangling database records are left pointing
+       to missing files.
     """
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if doc:
+        storage_key = doc.storage_key
+        db.delete(doc)
+        db.commit()
+        # Post-commit physical file cleanup
+        storage_service.delete_file(storage_key)
+
     return {
         "status": "authorized",
         "knowledge_base_id": str(kb.id),
-        "document_id": document_id,
-        "message": "User is authorized to delete documents.",
+        "document_id": str(document_id),
+        "message": "Document deleted successfully.",
     }

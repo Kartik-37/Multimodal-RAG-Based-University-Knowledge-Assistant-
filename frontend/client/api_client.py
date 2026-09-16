@@ -172,38 +172,72 @@ class FrontendAPIClient:
     # --------------------------------------------------------------------------
 
     def get_documents(self, kb_id: str) -> list[DocumentDTO]:
-        """Fetch registered documents for a knowledge base."""
-        return list(self._documents.get(kb_id, []))
+        """Fetch real documents for an authorized knowledge base from FastAPI."""
+        resp = self._http.get(f"/knowledge-bases/{kb_id}/documents")
+        if resp.status_code != 200:
+            return []
+
+        items = resp.json()
+        return [
+            DocumentDTO(
+                id=str(item["id"]),
+                kb_id=str(item["knowledge_base_id"]),
+                filename=item["original_filename"],
+                file_type=item["file_type"],
+                file_size_bytes=item["file_size_bytes"],
+                status=item["status"],
+                error_message=item.get("error_message"),
+                chunk_count=item.get("chunk_count", 0),
+                created_at=item["created_at"][:16].replace("T", " "),
+            )
+            for item in items
+        ]
 
     def upload_document(
-        self, kb_id: str, filename: str, content_size_bytes: int = 0
+        self,
+        kb_id: str,
+        filename: str,
+        content: bytes,
+        content_size_bytes: int | None = None,
     ) -> DocumentDTO:
         """
-        Upload document authorization boundary.
-        FastAPI rejects student uploads with HTTP 403.
+        Upload document to real FastAPI endpoint.
+        Server-side RBAC enforces ADMIN privileges.
         """
-        resp = self._http.post(f"/knowledge-bases/{kb_id}/documents")
+        size = content_size_bytes if content_size_bytes is not None else len(content)
+        files = {"file": (filename, content)}
+
+        resp = self._http.post(f"/knowledge-bases/{kb_id}/documents", files=files)
         if resp.status_code == 403:
             raise ValueError("Students are not permitted to upload documents.")
-        if resp.status_code != 200:
+        if resp.status_code not in (200, 201):
             detail = resp.json().get("detail", "Document upload rejected.")
             raise ValueError(detail)
 
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
-        doc = DocumentDTO(
-            id=f"doc-{uuid.uuid4().hex[:8]}",
-            kb_id=kb_id,
-            filename=filename,
-            file_type=ext,
-            file_size_bytes=content_size_bytes,
-            status="INDEXED",
-            chunk_count=5,
-            created_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        item = resp.json()
+        return DocumentDTO(
+            id=str(item["id"]),
+            kb_id=str(item["knowledge_base_id"]),
+            filename=item["original_filename"],
+            file_type=item["file_type"],
+            file_size_bytes=item.get("file_size_bytes", size),
+            status=item.get("status", "COMPLETED"),
+            error_message=item.get("error_message"),
+            chunk_count=item.get("chunk_count", 0),
+            created_at=item.get("created_at", "")[:16].replace("T", " "),
         )
-        if kb_id not in self._documents:
-            self._documents[kb_id] = []
-        self._documents[kb_id].append(doc)
-        return doc
+
+    def delete_document(self, kb_id: str, document_id: str) -> None:
+        """
+        Delete a document via real FastAPI endpoint.
+        Server-side RBAC enforces ADMIN privileges.
+        """
+        resp = self._http.delete(f"/knowledge-bases/{kb_id}/documents/{document_id}")
+        if resp.status_code == 403:
+            raise ValueError("Students are not permitted to delete documents.")
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Failed to delete document.")
+            raise ValueError(detail)
 
     # --------------------------------------------------------------------------
     # Conversational RAG Query Boundary

@@ -111,16 +111,18 @@ def register_documents_page() -> None:
                             content = await e.read()
                             size = len(content)
                         except Exception:
+                            content = b""
                             size = 0
 
                         try:
                             doc = api_client.upload_document(
                                 kb_id=active_kb.id,
                                 filename=fname,
+                                content=content,
                                 content_size_bytes=size,
                             )
                             ui.notify(
-                                f"Uploaded '{doc.filename}'. Queued for ingestion pipeline.",
+                                f"Uploaded '{doc.filename}'. Ingestion status: {doc.status}.",
                                 type="positive",
                             )
                             refresh_doc_list()
@@ -131,7 +133,7 @@ def register_documents_page() -> None:
                         label="Drop files here or click to browse",
                         on_upload=handle_upload,
                         auto_upload=True,
-                        max_file_size=50 * 1024 * 1024,  # 50MB
+                        max_file_size=20 * 1024 * 1024,  # 20MB
                     ).props('accept=".pdf,.docx,.txt,.md,.csv"').classes("w-full")
             else:
                 with ui.card().classes("w-full p-4 border border-blue-100 bg-blue-50 rounded"):
@@ -205,6 +207,11 @@ def register_documents_page() -> None:
                                             ui.label(f"Size: {format_bytes(doc.file_size_bytes)}")
                                             ui.label(f"Uploaded: {doc.created_at}")
 
+                                        if doc.error_message:
+                                            ui.label(f"Error: {doc.error_message}").classes(
+                                                "text-xs text-red-600 font-mono"
+                                            )
+
                                 with ui.row().classes("items-center gap-4"):
                                     with ui.row().classes("items-center gap-1"):
                                         ui.icon("layers", size="xs").classes("text-gray-400")
@@ -226,31 +233,33 @@ def register_documents_page() -> None:
                                                 "text-xs text-gray-500 mb-4"
                                             )
 
+                                            is_completed = target_doc.status == "COMPLETED"
                                             stages = [
                                                 (
                                                     "1. Ingestion & Validation",
-                                                    "File validated against supported MIME whitelist.",
+                                                    "File validated against supported format allowlist and magic bytes.",
                                                     True,
                                                 ),
                                                 (
                                                     "2. Parsing & Normalization",
-                                                    "Extracted plain text & structural headings.",
-                                                    True,
+                                                    "Extracted structural headings, pages, and normalized text.",
+                                                    is_completed
+                                                    or target_doc.status == "PROCESSING",
                                                 ),
                                                 (
                                                     "3. Semantic Chunking",
-                                                    f"Split into {target_doc.chunk_count} contextual chunks.",
-                                                    True,
+                                                    f"Partitioned into {target_doc.chunk_count} token-bounded chunks.",
+                                                    is_completed,
                                                 ),
                                                 (
-                                                    "4. Vector Embeddings",
-                                                    "Generated 1024-dim vectors via qwen3-embedding:0.6b.",
-                                                    True,
+                                                    "4. Vector Embeddings (Planned)",
+                                                    "Generate 1024-dim vectors via qwen3-embedding:0.6b (Step 6).",
+                                                    False,
                                                 ),
                                                 (
-                                                    "5. Hybrid Storage",
-                                                    "Stored in PostgreSQL + pgvector and BM25 index.",
-                                                    True,
+                                                    "5. Vector & Lexical Indexing (Planned)",
+                                                    "Index into PostgreSQL pgvector and BM25 (Step 6/7).",
+                                                    False,
                                                 ),
                                             ]
                                             for stage_title, stage_desc, is_done in stages:
@@ -276,10 +285,30 @@ def register_documents_page() -> None:
                                         dlg.open()
 
                                     ui.button(
-                                        "Ingestion Details",
+                                        "Details",
                                         icon="info",
                                         on_click=show_ingestion_progress,
                                     ).props("flat dense").classes("text-xs text-blue-600")
+
+                                    # Admin delete action
+                                    if is_admin:
+
+                                        def delete_this_doc(
+                                            target_id=doc.id, target_name=doc.filename
+                                        ) -> None:
+                                            try:
+                                                api_client.delete_document(active_kb.id, target_id)
+                                                ui.notify(
+                                                    f"Deleted '{target_name}'.", type="positive"
+                                                )
+                                                refresh_doc_list()
+                                            except ValueError as err:
+                                                ui.notify(str(err), type="negative")
+
+                                        ui.button(
+                                            icon="delete",
+                                            on_click=delete_this_doc,
+                                        ).props("flat dense color=red").classes("text-xs")
 
             # Initial render
             render_doc_list()

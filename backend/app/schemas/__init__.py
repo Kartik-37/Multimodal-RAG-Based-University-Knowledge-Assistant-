@@ -8,6 +8,7 @@ from backend.app.schemas.auth import (
     UserRegisterRequest,
     UserResponse,
 )
+from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
 from backend.app.schemas.knowledge_base import (
     AddMemberRequest,
     KnowledgeBaseCreate,
@@ -24,4 +25,6 @@ __all__ = [
     "KnowledgeBaseResponse",
     "AddMemberRequest",
     "MemberResponse",
+    "DocumentResponse",
+    "DocumentChunkResponse",
 ]
