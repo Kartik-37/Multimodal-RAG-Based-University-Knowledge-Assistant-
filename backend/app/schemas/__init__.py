@@ -14,6 +14,14 @@ from backend.app.schemas.context_assembly import (
     ContextItem,
 )
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
+from backend.app.schemas.grounding_validation import (
+    CitationValidationItem,
+    ClaimValidationItem,
+    EvidenceConflictItem,
+    GroundingStatus,
+    GroundingValidationRequest,
+    GroundingValidationResult,
+)
 from backend.app.schemas.hybrid_retrieval import (
     HybridRetrievalRequest,
     HybridRetrievalResponse,
@@ -81,4 +89,10 @@ __all__ = [
     "LLMGenerationRequest",
     "LLMGenerationResponse",
     "LLMProviderResponse",
+    "GroundingStatus",
+    "CitationValidationItem",
+    "ClaimValidationItem",
+    "EvidenceConflictItem",
+    "GroundingValidationRequest",
+    "GroundingValidationResult",
 ]

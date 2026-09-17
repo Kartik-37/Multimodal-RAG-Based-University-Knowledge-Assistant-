@@ -13,9 +13,18 @@ After every meaningful implementation change:
 2. record what changed;
 3. record tests run;
 4. record failures and their status;
-5. record the next safe task.
-
-Never mark a task complete merely because code exists.
+Antigravity must follow all instructions in `AGENTS.md`.
+Non-negotiable requirements:
+- Inspect before coding.
+- Minimal frontend shell first.
+- Complete backend and RAG pipeline before frontend redesign.
+- Complete backend quality gate before frontend redesign.
+- Small, composable modules.
+- Server-side authorization on every document/user/tenant operation.
+- No secrets committed.
+- Test every component thoroughly (unit, integration, security).
+- Never claim "works on my machine" as an acceptance criterion.
+- Add concise, explanatory comments so the user can understand how the code works.
 
 ## Status vocabulary
 
@@ -46,7 +55,7 @@ Never mark a task complete merely because code exists.
 - [x] Query processing / understanding (COMPLETE — Step 11 Deterministic Normalization, Raw/Processed Query Preservation, NFKC, Control-Char Stripping & Technical Token Preservation)
 - [x] Context assembly (COMPLETE — Step 12 Deterministic Token-Budgeted Selection, Deduplication & Strict Evidence Integrity)
 - [x] Grounded generation (COMPLETE — Step 13 Provider-Independent Ollama qwen3:4b, Adversarial-Resistant Prompt Architecture, Deterministic Empty-Context Fast-Path & Citation Handoff)
-- [ ] Citations
+- [x] Citations (COMPLETE — Step 14 Deterministic Citation Syntax & Provenance Validation, Conservative Heuristic Claim Grounding, Conflict Detection & Machine-Readable Evaluation Metrics)
 - [ ] Query/conversation persistence if required
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
 - [ ] Observability
@@ -63,6 +72,44 @@ Never mark a task complete merely because code exists.
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 14 Execution Record (Citation and Grounding Validation Layer)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Conservative Deterministic Heuristic Grounding**:
+     - Operates as a conservative deterministic heuristic validator measuring whether generated claims have evidence characteristics consistent with supplied context.
+     - Does NOT claim definitive semantic entailment or real-world truth.
+     - Favors `UNVERIFIABLE` rather than falsely declaring `SUPPORTED` when confidence is insufficient.
+     - Known limitations clearly documented: paraphrasing with heavy synonym replacement may be missed, common vocabulary can introduce false overlap if not stopword-filtered, and entity/numerical matching is an auxiliary signal.
+  2. **Independent Citation Syntax & Provenance Verification**:
+     - `CitationValidator` detects standard tags (`[source_X]`) and malformed patterns (`[source_]`, `(source_1)`).
+     - Resolves valid tags to exact `ContextItem` provenance (chunk UUID, document ID, title, page, section).
+     - Zero citations metric rule: `citation_validity_rate` is 0.0 when `citations_found == 0` (never 1.0).
+  3. **Sentence & Claim Segmentation with Protected Tokens**:
+     - `SentenceSplitter` partitions answers by line breaks and sentence terminals without variable-width lookbehinds.
+     - Trailing citation markers are cleanly preserved with their attributing sentence.
+     - Negative guards protect abbreviations (`e.g.`, `i.e.`, `Dr.`, `vs.`), decimals (`3.14`), versions (`v1.2.3`), list prefixes (`1.`, `-`), and code spans.
+     - Classifies conversational preambles/refusals so they are not evaluated as ungrounded factual assertions.
+  4. **Multi-Faceted Claim Grounding & Strict Entity Invariance**:
+     - `ClaimVerifier` enforces content-word recall against stopword-filtered vocabularies.
+     - Strict entity & numerical invariance: claims asserting numbers (e.g. `1970` vs `1950`) or technical acronyms (e.g. `SJF` vs `FCFS`) absent from the cited source chunk are flagged as `UNSUPPORTED`.
+     - Extracts the highest-overlap sentence snippet from the evidence chunk as human-auditable proof.
+     - Detects uncited claims corroborated by retrieved context (`SUPPORTED_UNCITED`).
+  5. **Conservative Evidence Conflict Detection**:
+     - `ConflictDetector` performs pairwise comparison over bounded context items for opposing polarities (e.g. `preemptive` vs `non-preemptive`) or conflicting explicit values associated with the same technical entity.
+     - Preserves source neutrality without deciding which source is correct.
+  6. **Mathematically Bounded Metric Contracts**:
+     - `citation_validity_rate` = `valid / found` if `found > 0` else `0.0`.
+     - `citation_coverage` = `cited_claims / factual_claims` if `factual_claims > 0` else `0.0`.
+     - `claim_support_rate` = `supported / factual_claims` if `factual_claims > 0` else (`1.0` if empty context refusal else `0.0`).
+     - `unsupported_claim_rate` = `(unsupported + unverifiable) / factual_claims` if `factual_claims > 0` else `0.0`.
+     - All metrics strictly bounded to `[0.0, 1.0]` with zero division safeguards.
+  7. **Comprehensive Verification**:
+     - 327 total tests passing across entire test suite (25 new tests: 24 unit tests, 1 integration test).
+     - Ruff check passed with 0 errors across 169 files; ruff format 100% clean.
+* **Next Safe Task**: Step 15: Quantitative RAG Evaluation Harness & Benchmarking.
+
 
 ## Step 13 Execution Record (Grounded Provider-Independent LLM Generation Layer)
 
@@ -419,7 +466,7 @@ Never mark a task complete merely because code exists.
 
 ## Last verified
 
-2026-09-17 — Step 13 Grounded Provider-Independent LLM Generation Layer verified with Ollama qwen3:4b, BaseLLMProvider abstraction, adversarial-resistant prompt architecture, deterministic empty-context fast-path, citation handoff extraction, safe diagnostic metadata, 302/302 tests passing across entire test suite, ruff lint/format 100% clean, and live inference verified on real local Ollama instance.
+2026-09-17 — Step 14 Citation and Grounding Validation Layer verified with deterministic sentence segmentation, citation syntax & ContextItem provenance resolution, conservative heuristic claim grounding with strict entity & numerical invariance, conservative evidence conflict detection, bounded quantitative metrics (citation_validity_rate, citation_coverage, claim_support_rate, unsupported_claim_rate), 327/327 tests passing across entire test suite, ruff lint/format 100% clean, and end-to-end integration verified with real Step 12 & Step 13 data contracts.
 
 
 

@@ -132,6 +132,38 @@ class Settings(BaseSettings):
         description="Maximum character length permitted for search queries.",
     )
 
+    # Step 14 Grounding & Citation Validation Configuration
+    GROUNDING_MIN_OVERLAP_THRESHOLD: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum content-word recall threshold required to consider a claim supported by cited evidence.",
+    )
+    GROUNDING_MAX_ANSWER_LENGTH: int = Field(
+        default=10000,
+        ge=100,
+        le=100000,
+        description="Maximum character length of generated answer processed by the validator.",
+    )
+    GROUNDING_MAX_CLAIMS_PER_ANSWER: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Maximum number of sentence claims parsed and validated per answer.",
+    )
+    GROUNDING_MAX_CITATIONS_PER_ANSWER: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Maximum number of citation occurrences parsed and validated per answer.",
+    )
+    GROUNDING_MAX_EVIDENCE_ITEMS: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum number of context evidence items processed for cross-verification.",
+    )
+
 
 # Singleton settings instance
 settings = Settings()
