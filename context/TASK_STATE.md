@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 15 COMPLETE — RAG EVALUATION AND BENCHMARKING HARNESS VERIFIED
+STEP 17 COMPLETE — OBSERVABILITY & STRUCTURED RAG LOGGING VERIFIED
 
 ## Rules
 
@@ -60,7 +60,7 @@ Non-negotiable requirements:
 - [x] End-to-end RAG orchestration & chat pipeline (COMPLETE — Step 16 Single Application Orchestrator, Canonical & Legacy Endpoints, Exclusive Latencies, 7-State Grounding Rule, NiceGUI Presentation Wiring)
 - [ ] Query/conversation persistence if required
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
-- [ ] Observability
+- [x] Observability (COMPLETE — Step 17 Structured JSON Logging, Correlation IDs, CorrelationIdMiddleware, TelemetryManager, InMemoryTelemetryExporter, 7-Stage RAGOrchestrator Instrumentation, Multi-Layer Redaction, Security Sanitization, Concurrent Request Isolation)
 - [ ] Rate limiting
 - [ ] Backend security audit
 - [ ] Backend quality gate
@@ -574,9 +574,51 @@ Non-negotiable requirements:
       - Ruff check and format 100% clean across 185 files.
 * **Next Safe Task**: Step 17 (Next roadmap stage).
 
+## Step 17 Execution Record (Observability & Structured RAG Logging)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Structured JSON Logging with StructuredJSONFormatter**:
+     - `StructuredJSONFormatter` in `backend/app/core/telemetry.py` emits one JSON object per log line.
+     - Every record carries: `timestamp` (ISO 8601 UTC), `level`, `logger`, `message`, `request_id`, `user_id`, `kb_id`, `operation`, `status`, `error_category`, and an `extra` dict.
+     - Completely replaces unstructured Python logging output for backend services without changing any retrieval, reranking, grounding, or generation algorithms.
+  2. **Correlation / Request ID Middleware**:
+     - `CorrelationIdMiddleware` (registered in `backend/app/main.py`) reads `X-Request-ID` header or mints a UUID4 for every incoming request.
+     - Propagates the request ID, authenticated user ID, and KB ID to `contextvars.ContextVar` so all log records within a request automatically carry those fields.
+     - Concurrent async requests are fully isolated — `contextvars` provides per-coroutine state.
+     - Error categories are injected from HTTP status codes (504→TIMEOUT_ERROR, 503→PROVIDER_ERROR, 401→AUTHENTICATION_ERROR, 403→AUTHORIZATION_ERROR, 422→VALIDATION_ERROR) when the exception was handled upstream.
+  3. **TelemetryManager & BaseTelemetryExporter Abstraction**:
+     - `TelemetryManager` is a lightweight internal singleton that collects `TelemetryEvent` objects.
+     - `BaseTelemetryExporter` abstract interface decouples the manager from any specific backend. `InMemoryTelemetryExporter` ships for testing; production exporters (file, HTTP) can be added without touching instrumented code.
+  4. **RAGOrchestrator 7-Stage Pipeline Instrumentation**:
+     - Every pipeline stage — `query_processing`, `hybrid_retrieval`, `reranking`, `context_assembly`, `llm_generation`, `grounding_validation`, `response_packaging` — is wrapped in `RAGOrchestrator` to record a `RAGPipelineStageTelemetry` event.
+     - Each event captures: stage name, duration_ms, success flag, error_category, and key stage-specific metrics (candidate counts, context items, token budget, grounding status, citation counts).
+     - Wrapping does NOT modify stage logic or data flow.
+  5. **Multi-Layer Sensitive-Data Redaction**:
+     - `sanitize_string()` removes passwords, API keys, tokens, and connection strings from arbitrary strings via curated regex patterns.
+     - `sanitize_headers()` strips `Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key`, and similar headers.
+     - `sanitize_log_data()` recursively walks nested dicts to apply both rules.
+     - NEVER logged: passwords, password hashes, session tokens, cookies, Authorization headers, API keys, database credentials, complete document contents, complete prompts, complete model responses.
+  6. **`categorize_exception` Helper**:
+     - Maps domain exceptions (`HybridRetrievalValidationError`, `RetrievalValidationError`, `QueryValidationError`) to `VALIDATION_ERROR`.
+     - Maps provider errors (`HybridRetrievalProviderError`, `LLMConnectionError`, `LLMModelNotFoundError`, `LLMTimeoutError`, `LLMProviderError`) to `PROVIDER_ERROR`.
+     - Maps `HTTPException` 401/403 to auth categories, 422 to validation, 504 to timeout, and 503 to provider errors.
+     - Maps generic `Exception` to `INTERNAL_ERROR`.
+  7. **Telemetry DTO Schema** (`backend/app/schemas/telemetry.py`):
+     - `TelemetryEvent`, `RAGPipelineStageTelemetry`, `RAGPipelineTelemetry`, `CitationTelemetry`, `GroundingTelemetry` — Pydantic v2 models with `model_config = ConfigDict(frozen=True)` for immutability.
+  8. **Zero Algorithm Changes**:
+     - Steps 7–16 algorithms (retrieval, RRF, reranking, context assembly, LLM generation, grounding, citations) are completely unchanged.
+     - Telemetry is additive instrumentation only.
+  9. **Comprehensive Verification**:
+     - 387 tests passing across the full repository (15 unit tests in `test_telemetry.py`, 9 integration tests in `test_telemetry_integration.py` — including concurrent request isolation and security redaction tests).
+     - Zero regressions introduced in Steps 7–16.
+     - Ruff check and format 100% clean across 189 files.
+     - No secrets committed; sensitive field redaction explicitly tested.
+* **Next Safe Task**: Step 18 (next roadmap stage).
+
 ## Last verified
 
-2026-09-17 — Step 16 End-to-End RAG Orchestration & Chat Pipeline verified with single application orchestrator, non-overlapping exclusive latency accounting, 7-state deterministic grounding rule, backward-compatible legacy endpoint `POST /api/v1/chat/query`, canonical REST endpoint `POST /api/v1/knowledge-bases/{kb_id}/chat`, NiceGUI presentation wiring, real live Ollama integration passed, 363/363 tests passing across entire repository, and ruff lint/format 100% clean across 185 files.
+2026-09-17 — Step 17 Observability & Structured RAG Logging verified with CorrelationIdMiddleware, TelemetryManager + InMemoryTelemetryExporter abstraction, 7-stage RAGOrchestrator pipeline instrumentation, multi-layer sensitive-data redaction, concurrent request isolation via contextvars, categorize_exception mapping, Pydantic v2 telemetry DTOs — 387/387 tests passing across entire repository, and ruff lint/format 100% clean across 189 files.
 
 
 

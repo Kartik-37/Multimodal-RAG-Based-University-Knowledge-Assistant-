@@ -16,6 +16,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.api.deps import AuthenticatedUser, DatabaseSession, get_authorized_knowledge_base
+from backend.app.core.telemetry import (
+    kb_id_ctx,
+    set_current_kb_id,
+    set_current_user_id,
+    user_id_ctx,
+)
 from backend.app.schemas.chat import (
     ChatQueryRequest,
     ChatQueryResponse,
@@ -52,16 +58,20 @@ async def _execute_orchestrated_chat(
     db: DatabaseSession,
     kb_id: uuid.UUID,
     question: str,
+    user_id: uuid.UUID | None = None,
 ) -> ChatQueryResponse:
     """
-    Execute RAG orchestration with strict error mapping.
+    Execute RAG orchestration with strict error mapping and correlation context binding.
     """
+    user_token = set_current_user_id(str(user_id)) if user_id else None
+    kb_token = set_current_kb_id(str(kb_id))
     try:
         return await orchestrator.execute_query(
             db=db,
             kb_id=kb_id,
             raw_query=question,
         )
+
     except (
         QueryValidationError,
         HybridRetrievalValidationError,
@@ -104,6 +114,10 @@ async def _execute_orchestrated_chat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during chat orchestration.",
         ) from exc
+    finally:
+        if user_token is not None:
+            user_id_ctx.reset(user_token)
+        kb_id_ctx.reset(kb_token)
 
 
 @router.post(
@@ -134,6 +148,7 @@ async def query_knowledge_base_legacy(
         db=db,
         kb_id=kb.id,
         question=payload.question,
+        user_id=current_user.id,
     )
 
 
@@ -166,4 +181,5 @@ async def chat_with_knowledge_base(
         db=db,
         kb_id=kb.id,
         question=payload.question,
+        user_id=current_user.id,
     )

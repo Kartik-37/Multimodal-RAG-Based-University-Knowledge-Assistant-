@@ -33,6 +33,11 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Observability & Correlation ID middleware (outermost layer)
+    from backend.app.core.telemetry import CorrelationIdMiddleware
+
+    app.add_middleware(CorrelationIdMiddleware)
+
     # Register API routes
     app.include_router(api_router, prefix=settings.API_V1_STR)
 

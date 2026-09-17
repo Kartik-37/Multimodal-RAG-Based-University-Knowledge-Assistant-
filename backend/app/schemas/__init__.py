@@ -77,6 +77,11 @@ from backend.app.schemas.retrieval import (
     RetrievalResponse,
     RetrievalResultItem,
 )
+from backend.app.schemas.telemetry import (
+    RAGPipelineTelemetry,
+    RAGStageTelemetry,
+    TelemetryEvent,
+)
 
 __all__ = [
     "UserRegisterRequest",
@@ -131,4 +136,7 @@ __all__ = [
     "ClaimSummaryDTO",
     "GroundingSummaryDTO",
     "ChatLatencyBreakdownDTO",
+    "TelemetryEvent",
+    "RAGStageTelemetry",
+    "RAGPipelineTelemetry",
 ]
