@@ -80,6 +80,26 @@ class Settings(BaseSettings):
     OLLAMA_LLM_MODEL: str = "qwen3:4b"
     OLLAMA_EMBED_MODEL: str = "qwen3-embedding:0.6b"
 
+    # LLM Generation Defaults
+    LLM_TEMPERATURE: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature for grounded generation (low values favor evidence-bounded responses).",
+    )
+    LLM_MAX_OUTPUT_TOKENS: int = Field(
+        default=1024,
+        ge=1,
+        le=4096,
+        description="Maximum generation token budget for the model response.",
+    )
+    LLM_REQUEST_TIMEOUT_SECONDS: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=300.0,
+        description="Timeout in seconds for LLM generation requests.",
+    )
+
     # Verified Embedding Dimension for qwen3-embedding:0.6b
     EMBEDDING_DIM: int = 1024
 

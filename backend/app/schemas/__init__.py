@@ -30,6 +30,11 @@ from backend.app.schemas.lexical_retrieval import (
     LexicalRetrievalResponse,
     LexicalRetrievalResultItem,
 )
+from backend.app.schemas.llm import (
+    LLMGenerationRequest,
+    LLMGenerationResponse,
+    LLMProviderResponse,
+)
 from backend.app.schemas.query_processing import (
     QueryProcessingRequest,
     QueryProcessingResult,
@@ -73,4 +78,7 @@ __all__ = [
     "ContextItem",
     "ContextAssemblyRequest",
     "ContextAssemblyResult",
+    "LLMGenerationRequest",
+    "LLMGenerationResponse",
+    "LLMProviderResponse",
 ]

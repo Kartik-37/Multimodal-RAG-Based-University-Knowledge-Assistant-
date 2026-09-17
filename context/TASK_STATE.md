@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 12 COMPLETE — DETERMINISTIC CONTEXT ASSEMBLY LAYER VERIFIED
+STEP 13 COMPLETE — GROUNDED PROVIDER-INDEPENDENT LLM GENERATION VERIFIED
 
 ## Rules
 
@@ -45,7 +45,7 @@ Never mark a task complete merely because code exists.
 - [x] Reranking (COMPLETE — Step 10 Local Hugging Face CrossEncoder ms-marco-MiniLM-L-6-v2)
 - [x] Query processing / understanding (COMPLETE — Step 11 Deterministic Normalization, Raw/Processed Query Preservation, NFKC, Control-Char Stripping & Technical Token Preservation)
 - [x] Context assembly (COMPLETE — Step 12 Deterministic Token-Budgeted Selection, Deduplication & Strict Evidence Integrity)
-- [ ] Grounded generation
+- [x] Grounded generation (COMPLETE — Step 13 Provider-Independent Ollama qwen3:4b, Adversarial-Resistant Prompt Architecture, Deterministic Empty-Context Fast-Path & Citation Handoff)
 - [ ] Citations
 - [ ] Query/conversation persistence if required
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
@@ -63,6 +63,35 @@ Never mark a task complete merely because code exists.
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 13 Execution Record (Grounded Provider-Independent LLM Generation Layer)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Provider-Independent Abstraction**:
+     - `BaseLLMProvider` abstract contract enforces strict provider decoupling with canonical properties (`provider_name`, `model_name`) and `generate(system_instruction, user_prompt, ...)`.
+     - `OllamaLLMProvider` implements local inference with `qwen3:4b` over HTTP (`/api/chat`).
+     - `LLMGenerationService` depends exclusively on `BaseLLMProvider`, allowing seamless addition of future providers (OpenAI, Anthropic, Gemini, local vLLM).
+  2. **Adversarial-Resistant Prompt Architecture**:
+     - `GroundedPromptBuilder` enforces strict hierarchy: System Instructions > Retrieved Evidence (untrusted data) > User Question (user-controlled input).
+     - Model is explicitly instructed that neither retrieved evidence nor user queries can override system grounding rules, confidentiality, or source constraints.
+     - Delimiters (`=== RETRIEVED EVIDENCE (UNTRUSTED DATA) ===`, `--- BEGIN EVIDENCE [source_X] ---`, `--- END EVIDENCE [source_X] ---`) provide clean structural separation. Internal delimiter collision strings within chunks are neutralized without mutating content.
+  3. **Deterministic Empty-Context Fast-Path**:
+     - When `ContextAssemblyResult` has 0 items, `LLMGenerationService` immediately returns a deterministic refusal (`"I could not find any relevant information in the available documents to answer your question."`) with `is_empty_context=True` and `latency_ms=0.0` without invoking the LLM provider, guaranteeing zero hallucination.
+  4. **Citation Handoff Preservation**:
+     - Embeds Step 12 `source_1`, `source_2` markers into prompt evidence blocks.
+     - Parses candidate referenced source tags (`[source_X]`) into `sources_referenced`.
+     - Strictly delegates citation validation, factuality checking, and URL linking to Step 14.
+  5. **Safe Error Handling & Diagnostic Metadata**:
+     - Explicit domain exceptions: `LLMError`, `LLMProviderError`, `LLMConnectionError`, `LLMTimeoutError`, `LLMModelNotFoundError`, `LLMResponseError`.
+     - Preserves only safe diagnostic metadata (`prompt_tokens`, `output_tokens`, `latency_ms`, duration metrics); strictly excludes secrets, internal paths, headers, or raw exception traces.
+     - Failures never result in fabricated answers.
+  6. **Comprehensive Verification**:
+     - 302 total tests passing across entire test suite (23 new tests: 21 unit tests, 2 integration tests).
+     - Real integration test verified live inference with local Ollama `qwen3:4b`, producing grounded completions with citation markers and validating connection error handling.
+     - Ruff check passed with 0 errors across 157 files; ruff format 100% clean.
+* **Next Safe Task**: Step 14: Citation Validation and Factual Grounding Evaluation.
+
 
 ## Step 12 Execution Record (Deterministic Context Assembly Layer)
 
@@ -390,7 +419,7 @@ Never mark a task complete merely because code exists.
 
 ## Last verified
 
-2026-09-16 — Step 12 Context Assembly Layer verified with deterministic token budgeting via existing TokenEstimator, strict evidence integrity (untruncated, unmodified candidate text), two-tier deduplication (chunk_id and SHA-256 content hash), sequential source attribution (source_1, source_2), query transparency (unmodified original and processed queries), candidate knowledge base consistency check, 279/279 tests passing across entire test suite, ruff lint/format 100% clean, and end-to-end integration verified with real PostgreSQL 16.15 + pgvector.
+2026-09-17 — Step 13 Grounded Provider-Independent LLM Generation Layer verified with Ollama qwen3:4b, BaseLLMProvider abstraction, adversarial-resistant prompt architecture, deterministic empty-context fast-path, citation handoff extraction, safe diagnostic metadata, 302/302 tests passing across entire test suite, ruff lint/format 100% clean, and live inference verified on real local Ollama instance.
 
 
 
