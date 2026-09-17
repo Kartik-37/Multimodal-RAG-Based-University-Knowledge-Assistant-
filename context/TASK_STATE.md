@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 13 COMPLETE — GROUNDED PROVIDER-INDEPENDENT LLM GENERATION VERIFIED
+STEP 15 COMPLETE — RAG EVALUATION AND BENCHMARKING HARNESS VERIFIED
 
 ## Rules
 
@@ -56,6 +56,7 @@ Non-negotiable requirements:
 - [x] Context assembly (COMPLETE — Step 12 Deterministic Token-Budgeted Selection, Deduplication & Strict Evidence Integrity)
 - [x] Grounded generation (COMPLETE — Step 13 Provider-Independent Ollama qwen3:4b, Adversarial-Resistant Prompt Architecture, Deterministic Empty-Context Fast-Path & Citation Handoff)
 - [x] Citations (COMPLETE — Step 14 Deterministic Citation Syntax & Provenance Validation, Conservative Heuristic Claim Grounding, Conflict Detection & Machine-Readable Evaluation Metrics)
+- [x] Evaluation and Benchmarking (COMPLETE — Step 15 Deterministic Chunk Relevance, 4-Stage Ablation Harness, Exclusive Latency Instrumentation, Refusal Separation & JSON Benchmark Reporting)
 - [ ] Query/conversation persistence if required
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
 - [ ] Observability
@@ -464,9 +465,66 @@ Non-negotiable requirements:
 * **Tests Run**: 72 tests passing.
 * **Next Safe Task**: Step 6: Embedding and Vector Indexing Layer.
 
+## Step 15 Execution Record (Evaluation and Benchmarking)
+
+* **Status**: COMPLETE
+* **Architecture & Features Implemented**:
+  1. **Reproducible Benchmark Dataset**:
+     - Curated dataset `bca_rag_benchmark_v1` (`backend/app/services/evaluation/data/evaluation_dataset_v1.json`) containing 20 queries grounded in the benchmark document corpus.
+     - Spans 6 required categories: Direct Factual (4), Technical/Numerical (3), Multi-Document (4), No-Answer/Refusal (3), Ambiguous (3), Citation/Grounding (3).
+     - JSON schema validation and category filtering implemented in `EvaluationDatasetLoader`.
+  2. **Chunk-Level Deterministic Relevance Evaluation**:
+     - Relevance evaluated strictly at the chunk level via `is_chunk_relevant`.
+     - Chunks match relevance when chunk document title matches AND expected technical domain keywords are present in chunk text, or if explicit chunk UUID is specified.
+     - `expected_answer_contains` retained strictly as a surface sanity check; explicitly documented as NOT measuring semantic truth.
+  3. **Multi-Stage Retrieval Ablation**:
+     - Runs and benchmarks all 4 retrieval configurations:
+       * Vector Retrieval Only (Ablation Stage A)
+       * PostgreSQL Lexical Retrieval Only (Ablation Stage B)
+       * Hybrid Retrieval via Reciprocal Rank Fusion (Ablation Stage C)
+       * CrossEncoder Reranked Hybrid Retrieval (Ablation Stage D)
+     - Measures candidate K and evaluation K, HitRate@K, Recall@K, Precision@K, and MRR across all stages.
+     - Calculates CrossEncoder reranker lift over hybrid RRF ($MRR_{\text{reranked}} - MRR_{\text{hybrid}}$).
+  4. **Granular Exclusive Latency Instrumentation**:
+     - Records high-resolution millisecond timings for each pipeline phase:
+       * Query Processing (`query_processing_ms`)
+       * Vector Retrieval (`vector_retrieval_ms`)
+       * Lexical Retrieval (`lexical_retrieval_ms`)
+       * RRF Fusion (`rrf_fusion_ms`)
+       * CrossEncoder Reranking (`reranking_ms`)
+       * Context Assembly (`context_assembly_ms`)
+       * LLM Generation (`llm_generation_ms`)
+       * Grounding Validation (`grounding_validation_ms`)
+       * Total Pipeline Wall-Clock (`total_pipeline_ms`)
+     - Strictly exclusive measurements; no nested timing inflation or double-counting.
+     - Statistical distributions computed: Mean, Median (P50), P95, Min, Max, and Count.
+  5. **Refusal Fidelity & Failure Taxonomy Attribution**:
+     - Separates unanswerable query refusal from retrieval misses:
+       * `is_unanswerable=True` + model refusal -> `is_correct_refusal = True`
+       * `is_unanswerable=True` + factual claims asserted -> `is_ungrounded_answer = True` (`FailureMode.REFUSAL_FAILURE`)
+       * `is_unanswerable=False` + candidate missing -> `FailureMode.RETRIEVAL_MISS`
+       * `is_unanswerable=False` + candidate found in hybrid but dropped by reranker -> `FailureMode.RERANKING_MISS`
+       * `is_unanswerable=False` + candidate retrieved but empty context/refusal -> `is_false_refusal = True` (`FailureMode.FALSE_REFUSAL`)
+     - Categorizes grounding failures: `UNSUPPORTED_ANSWER`, `UNVERIFIABLE_ANSWER`, `INVALID_CITATION`, `MISSING_CITATION`, `EVIDENCE_CONFLICT`.
+  6. **Generation & Grounding Aggregates**:
+     - Seamlessly reuses Step 14 metrics without modifying production generation code:
+       * Mean Citation Validity Rate
+       * Mean Citation Coverage
+       * Mean Claim Support Rate
+       * Mean Unsupported Claim Rate
+  7. **CLI Benchmark Runner**:
+     - Standalone script `scripts/run_rag_benchmark.py` supporting `--kb-id`, `--dataset`, `--output`, and `--limit`.
+     - Prints formatted summary tables for terminal inspection and exports complete machine-readable `BenchmarkReport` JSON.
+  8. **Comprehensive Verification**:
+     - 348 tests passing across the repository (21 new Step 15 tests: 7 metrics unit tests, 5 dataset unit tests, 7 failure analyzer unit tests, 2 runner integration tests).
+     - Full regression suite passing with zero regressions across Steps 1–14.
+     - Ruff check and format 100% clean across 180 files.
+* **Next Safe Task**: Step 16: End-to-End RAG Orchestration & Chat Pipeline.
+
 ## Last verified
 
-2026-09-17 — Step 14 Citation and Grounding Validation Layer verified with deterministic sentence segmentation, citation syntax & ContextItem provenance resolution, conservative heuristic claim grounding with strict entity & numerical invariance, conservative evidence conflict detection, bounded quantitative metrics (citation_validity_rate, citation_coverage, claim_support_rate, unsupported_claim_rate), 327/327 tests passing across entire test suite, ruff lint/format 100% clean, and end-to-end integration verified with real Step 12 & Step 13 data contracts.
+2026-09-17 — Step 15 Evaluation and Benchmarking verified with 20 curated benchmark queries across 6 categories, 4-stage retrieval ablations, exclusive latency instrumentation, chunk-level relevance calculation, refusal separation, failure mode taxonomy classification, 348/348 tests passing across entire test suite, ruff lint/format 100% clean, and standalone CLI benchmark runner verified.
+
 
 
 

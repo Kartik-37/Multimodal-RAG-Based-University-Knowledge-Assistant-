@@ -14,6 +14,17 @@ from backend.app.schemas.context_assembly import (
     ContextItem,
 )
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
+from backend.app.schemas.evaluation import (
+    BenchmarkReport,
+    EvaluationCategory,
+    EvaluationDataset,
+    EvaluationQueryItem,
+    FailureMode,
+    MetricSummary,
+    PipelineLatencyBreakdown,
+    QueryEvaluationResult,
+    StageRetrievalMetrics,
+)
 from backend.app.schemas.grounding_validation import (
     CitationValidationItem,
     ClaimValidationItem,
@@ -95,4 +106,13 @@ __all__ = [
     "EvidenceConflictItem",
     "GroundingValidationRequest",
     "GroundingValidationResult",
+    "EvaluationCategory",
+    "EvaluationQueryItem",
+    "EvaluationDataset",
+    "StageRetrievalMetrics",
+    "PipelineLatencyBreakdown",
+    "FailureMode",
+    "QueryEvaluationResult",
+    "MetricSummary",
+    "BenchmarkReport",
 ]
