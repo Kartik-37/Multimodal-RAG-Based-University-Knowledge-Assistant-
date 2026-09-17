@@ -57,6 +57,7 @@ Non-negotiable requirements:
 - [x] Grounded generation (COMPLETE — Step 13 Provider-Independent Ollama qwen3:4b, Adversarial-Resistant Prompt Architecture, Deterministic Empty-Context Fast-Path & Citation Handoff)
 - [x] Citations (COMPLETE — Step 14 Deterministic Citation Syntax & Provenance Validation, Conservative Heuristic Claim Grounding, Conflict Detection & Machine-Readable Evaluation Metrics)
 - [x] Evaluation and Benchmarking (COMPLETE — Step 15 Deterministic Chunk Relevance, 4-Stage Ablation Harness, Exclusive Latency Instrumentation, Refusal Separation & JSON Benchmark Reporting)
+- [x] End-to-end RAG orchestration & chat pipeline (COMPLETE — Step 16 Single Application Orchestrator, Canonical & Legacy Endpoints, Exclusive Latencies, 7-State Grounding Rule, NiceGUI Presentation Wiring)
 - [ ] Query/conversation persistence if required
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
 - [ ] Observability
@@ -519,11 +520,64 @@ Non-negotiable requirements:
      - 348 tests passing across the repository (21 new Step 15 tests: 7 metrics unit tests, 5 dataset unit tests, 7 failure analyzer unit tests, 2 runner integration tests).
      - Full regression suite passing with zero regressions across Steps 1–14.
      - Ruff check and format 100% clean across 180 files.
-* **Next Safe Task**: Step 16: End-to-End RAG Orchestration & Chat Pipeline.
+* **Next Safe Task**: Step 17 (Next roadmap stage).
+
+## Step 16 Execution Record (End-to-End RAG Orchestration & Chat Pipeline)
+
+* **Status**: COMPLETE
+* **Architecture & Implemented Requirements**:
+  1. **Strict 9-Stage Orchestration Flow**:
+     - Connected Steps 7–15 into a single production application service (`RAGOrchestrator`):
+       `QueryProcessor` (Step 11)
+       $\rightarrow$ `HybridRetrievalService` (Step 9, internally orchestrating `VectorRetrievalService` Step 7 + `LexicalRetrievalService` Step 8 + RRF)
+       $\rightarrow$ `RerankingService.rerank_candidates` (Step 10 CrossEncoder `ms-marco-MiniLM-L-6-v2`)
+       $\rightarrow$ `ContextAssembler.assemble` (Step 12 Token-Budgeted Selection & Strict Evidence Integrity)
+       $\rightarrow$ `LLMGenerationService.generate_grounded_answer` (Step 13 Grounded Prompt & Deterministic Empty-Context Fast-Path)
+       $\rightarrow$ `GroundingValidationService.validate` (Step 14 Conservative Claim Grounding & Citation Verification)
+       $\rightarrow$ Client-Safe Response Packaging with Provenance & Non-Overlapping Exclusive Latencies.
+     - Does NOT duplicate retrieval work: `HybridRetrievalService` internally calls vector + lexical retrieval.
+  2. **Non-Overlapping Latency Accounting**:
+     - `retrieval_ms` records the inclusive wall-clock duration of `HybridRetrievalService.retrieve()`.
+     - Internal vector/lexical timings are not double-counted.
+     - `ChatLatencyBreakdownDTO` reports mutually exclusive non-overlapping stage latencies: `query_processing_ms`, `retrieval_ms`, `reranking_ms`, `context_assembly_ms`, `llm_generation_ms`, `grounding_validation_ms`, and overall pipeline duration `total_pipeline_ms`.
+  3. **Deterministic 7-State Grounding Status Classification**:
+     - `FULLY_SUPPORTED`: all factual claims corroborated by cited context, 100% citation coverage, 100% citation validity, 0 conflicts.
+     - `PARTIALLY_SUPPORTED`: some claims corroborated, but uncited factual claims, invalid citations, or unverifiable claims exist.
+     - `UNSUPPORTED`: at least one factual claim is contradicted or unsupported by context.
+     - `UNVERIFIABLE`: claims cannot be verified with sufficient confidence under conservative heuristics.
+     - `REFUSAL`: model produced an empty-context fast-path or safe refusal without ungrounded factual assertions (`is_grounded = True`).
+     - `CONVERSATIONAL`: conversational framing or preamble with zero factual assertions (`is_grounded = True`).
+     - `EVIDENCE_CONFLICT`: potential evidence conflicts detected across retrieved context chunks (`is_grounded = False`).
+     - Grounding status is conservatively derived and does NOT claim real-world factual truth.
+  4. **Preserved Prompt & Generation Architecture**:
+     - Reuses Step 13 `GroundedPromptBuilder` and `LLMGenerationService` directly without prompt redesign or delimiters modification.
+     - Retrieved documents and user queries remain untrusted input.
+  5. **Client Response Safety & Provenance Separation**:
+     - `ChatQueryResponse` exposes client-safe answer, verified `CitationItem` list (document_name, document_id, chunk_id, page_number, section_title, relevance_score, clamped snippet $\le$ 300 chars), safe `GroundingSummaryDTO`, and latency breakdown.
+     - Internal validator raw reasoning, prompt templates, system instructions, database schemas, and stack traces are never exposed.
+  6. **Deterministic Empty-Context Fast-Path**:
+     - When `ContextAssembler` returns 0 items, `LLMGenerationService` triggers fast-path refusal without invoking Ollama. Actual latency recorded.
+  7. **API Endpoints & Backward Compatibility**:
+     - Legacy endpoint: `POST /api/v1/chat/query` accepts `ChatQueryRequest` (`knowledge_base_id`, `question`) and returns `ChatQueryResponse` with top-level `answer` and `citations`. Preserved 100% backward compatibility for existing RBAC and frontend tests.
+     - Canonical REST endpoint: `POST /api/v1/knowledge-bases/{kb_id}/chat` accepts `KnowledgeBaseChatRequest` (`question`) and returns `ChatQueryResponse`.
+     - Strict error mapping: 401 unauthenticated, 404 unauthorized KB / isolation, 422 query/parameter validation, 503 provider unavailability, 504 LLM timeout, 500 internal server error.
+  8. **Stateless Orchestration Decision**:
+     - Step 16 remains strictly stateless. No conversation tables or database migrations added.
+  9. **Frontend NiceGUI Integration**:
+     - Connected `frontend/client/api_client.py` (`send_chat_message`) to the real orchestration endpoint.
+     - Populates `ChatMessageDTO` with `is_grounded`, `grounding_status`, `total_pipeline_ms`, and `model`.
+     - `frontend/pages/chat_page.py` displays clean grounding badge and latency next to Assistant message.
+     - Presentation-only in NiceGUI: no retrieval, reranking, prompts, LLM calls, grounding, or DB operations inside event handlers.
+  10. **Comprehensive Verification**:
+      - 363 tests passing across the repository (15 new Step 16 tests: 5 unit tests in `test_rag_orchestrator.py`, 7 integration tests in `test_chat_orchestration_integration.py`, 1 real live Ollama test in `test_chat_real_ollama.py`, 2 new frontend unit tests in `test_frontend.py`).
+      - Live Ollama test PASSED with real `qwen3:4b`.
+      - Ruff check and format 100% clean across 185 files.
+* **Next Safe Task**: Step 17 (Next roadmap stage).
 
 ## Last verified
 
-2026-09-17 — Step 15 Evaluation and Benchmarking verified with 20 curated benchmark queries across 6 categories, 4-stage retrieval ablations, exclusive latency instrumentation, chunk-level relevance calculation, refusal separation, failure mode taxonomy classification, 348/348 tests passing across entire test suite, ruff lint/format 100% clean, and standalone CLI benchmark runner verified.
+2026-09-17 — Step 16 End-to-End RAG Orchestration & Chat Pipeline verified with single application orchestrator, non-overlapping exclusive latency accounting, 7-state deterministic grounding rule, backward-compatible legacy endpoint `POST /api/v1/chat/query`, canonical REST endpoint `POST /api/v1/knowledge-bases/{kb_id}/chat`, NiceGUI presentation wiring, real live Ollama integration passed, 363/363 tests passing across entire repository, and ruff lint/format 100% clean across 185 files.
+
 
 
 

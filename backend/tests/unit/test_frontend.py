@@ -120,17 +120,14 @@ class TestFrontendAPIClient:
         kb_name = f"Chat Test KB {uuid.uuid4().hex[:6]}"
         kb = client.create_knowledge_base(kb_name, "For chat")
 
-        # Valid chat message
+        # Valid chat message against newly created empty KB produces deterministic refusal
         response = client.send_chat_message(kb_id=kb.id, question="What are the exam rules?")
         assert isinstance(response, ChatMessageDTO)
         assert response.role == "assistant"
-        assert len(response.citations) > 0
-
-        first_citation = response.citations[0]
-        assert isinstance(first_citation, CitationDTO)
-        assert first_citation.document_name != ""
-        assert first_citation.chunk_id != ""
-        assert first_citation.relevance_score > 0.0
+        assert response.is_grounded is True
+        assert response.grounding_status == "REFUSAL"
+        assert "could not find any relevant information" in response.content.lower()
+        assert len(response.citations) == 0
 
         # Empty query validation
         with pytest.raises(ValueError, match="Question cannot be empty"):
@@ -231,6 +228,107 @@ class TestFrontendAPIClient:
         # Whitespace-only rejection
         with pytest.raises(ValueError, match="cannot be empty or whitespace"):
             client.process_query("   \t  ")
+
+    def test_send_chat_message_success_and_provenance(self) -> None:
+        """Verify chat message contract parsing, citation provenance, and grounding status."""
+        from unittest.mock import MagicMock
+
+        client = FrontendAPIClient()
+        kb_id = str(uuid.uuid4())
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "query": "What is 2PL?",
+            "processed_query": "what is 2pl",
+            "knowledge_base_id": kb_id,
+            "answer": "Two-phase locking ensures serializability [source_1].",
+            "is_empty_context": False,
+            "citations": [
+                {
+                    "source_id": "source_1",
+                    "document_name": "db_systems.pdf",
+                    "document_id": str(uuid.uuid4()),
+                    "chunk_id": "chunk-101",
+                    "page_number": 42,
+                    "section_title": "Concurrency",
+                    "relevance_score": 0.985,
+                    "snippet": "Two-phase locking guarantees conflict serializability.",
+                }
+            ],
+            "grounding": {
+                "is_grounded": True,
+                "status": "FULLY_SUPPORTED",
+                "citation_validity_rate": 1.0,
+                "citation_coverage": 1.0,
+                "claim_support_rate": 1.0,
+                "unsupported_claim_rate": 0.0,
+                "has_conflicts": False,
+                "claims": [],
+            },
+            "latency": {
+                "query_processing_ms": 1.2,
+                "retrieval_ms": 15.0,
+                "reranking_ms": 8.0,
+                "context_assembly_ms": 0.5,
+                "llm_generation_ms": 110.0,
+                "grounding_validation_ms": 3.5,
+                "total_pipeline_ms": 138.2,
+            },
+            "model": "qwen3:4b",
+            "metadata": {},
+        }
+
+        client._http.post = MagicMock(return_value=mock_resp)
+
+        msg = client.send_chat_message(kb_id=kb_id, question="What is 2PL?")
+        assert isinstance(msg, ChatMessageDTO)
+        assert msg.role == "assistant"
+        assert msg.content == "Two-phase locking ensures serializability [source_1]."
+        assert msg.is_grounded is True
+        assert msg.grounding_status == "FULLY_SUPPORTED"
+        assert msg.total_pipeline_ms == 138.2
+        assert msg.model == "qwen3:4b"
+
+        assert len(msg.citations) == 1
+        cit = msg.citations[0]
+        assert cit.source_id == "source_1"
+        assert cit.document_name == "db_systems.pdf"
+        assert cit.page_number == 42
+        assert cit.section_title == "Concurrency"
+        assert cit.relevance_score == 0.985
+        assert "Two-phase locking" in cit.snippet
+
+    def test_send_chat_message_error_handling(self) -> None:
+        """Verify client validation and safe error propagation."""
+        from unittest.mock import MagicMock
+
+        client = FrontendAPIClient()
+
+        # Empty question validation
+        with pytest.raises(ValueError, match="Question cannot be empty"):
+            client.send_chat_message(str(uuid.uuid4()), "   ")
+
+        # Invalid UUID format
+        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
+            client.send_chat_message("not-a-uuid", "What is testing?")
+
+        # 404 unauthorized / not found
+        mock_404 = MagicMock()
+        mock_404.status_code = 404
+        client._http.post = MagicMock(return_value=mock_404)
+        with pytest.raises(ValueError, match="Knowledge base not found or unauthorized"):
+            client.send_chat_message(str(uuid.uuid4()), "What is testing?")
+
+        # 503 provider failure
+        mock_503 = MagicMock()
+        mock_503.status_code = 503
+        mock_503.json.return_value = {
+            "detail": "Underlying AI model provider is temporarily unavailable."
+        }
+        client._http.post = MagicMock(return_value=mock_503)
+        with pytest.raises(ValueError, match="temporarily unavailable"):
+            client.send_chat_message(str(uuid.uuid4()), "What is testing?")
 
 
 class TestAppState:

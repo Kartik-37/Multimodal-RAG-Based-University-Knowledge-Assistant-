@@ -54,6 +54,9 @@ class CitationDTO(BaseModel):
     chunk_id: str
     relevance_score: float = Field(default=0.0, description="Rerank or fusion score")
     snippet: str
+    source_id: str | None = None
+    document_id: str | None = None
+    section_title: str | None = None
 
 
 class ChatMessageDTO(BaseModel):
@@ -64,6 +67,10 @@ class ChatMessageDTO(BaseModel):
     content: str
     citations: list[CitationDTO] = Field(default_factory=list)
     created_at: str = ""
+    is_grounded: bool | None = None
+    grounding_status: str | None = None
+    total_pipeline_ms: float | None = None
+    model: str | None = None
 
 
 class RetrievalResultDTO(BaseModel):

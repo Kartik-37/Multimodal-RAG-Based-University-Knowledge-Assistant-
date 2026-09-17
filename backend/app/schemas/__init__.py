@@ -8,6 +8,15 @@ from backend.app.schemas.auth import (
     UserRegisterRequest,
     UserResponse,
 )
+from backend.app.schemas.chat import (
+    ChatLatencyBreakdownDTO,
+    ChatQueryRequest,
+    ChatQueryResponse,
+    CitationItem,
+    ClaimSummaryDTO,
+    GroundingSummaryDTO,
+    KnowledgeBaseChatRequest,
+)
 from backend.app.schemas.context_assembly import (
     ContextAssemblyRequest,
     ContextAssemblyResult,
@@ -115,4 +124,11 @@ __all__ = [
     "QueryEvaluationResult",
     "MetricSummary",
     "BenchmarkReport",
+    "ChatQueryRequest",
+    "KnowledgeBaseChatRequest",
+    "ChatQueryResponse",
+    "CitationItem",
+    "ClaimSummaryDTO",
+    "GroundingSummaryDTO",
+    "ChatLatencyBreakdownDTO",
 ]

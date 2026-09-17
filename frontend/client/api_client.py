@@ -319,9 +319,15 @@ class FrontendAPIClient:
                 chunk_id=c["chunk_id"],
                 relevance_score=c["relevance_score"],
                 snippet=c["snippet"],
+                source_id=c.get("source_id"),
+                document_id=str(c["document_id"]) if c.get("document_id") else None,
+                section_title=c.get("section_title"),
             )
             for c in data.get("citations", [])
         ]
+
+        grounding_data = data.get("grounding") or {}
+        latency_data = data.get("latency") or {}
 
         return ChatMessageDTO(
             id=f"msg-{uuid.uuid4().hex[:8]}",
@@ -329,6 +335,10 @@ class FrontendAPIClient:
             content=data["answer"],
             citations=citations,
             created_at=datetime.now().strftime("%H:%M"),
+            is_grounded=grounding_data.get("is_grounded"),
+            grounding_status=grounding_data.get("status"),
+            total_pipeline_ms=latency_data.get("total_pipeline_ms"),
+            model=data.get("model"),
         )
 
     # --------------------------------------------------------------------------

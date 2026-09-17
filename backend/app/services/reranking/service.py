@@ -148,8 +148,49 @@ class RerankingService:
                 rrf_k=settings.RRF_K,
             )
 
-        # 3. Compute joint relevance scores via CrossEncoder provider
-        texts = [candidate.text for candidate in hybrid_candidates]
+        reranked_items = await self.rerank_candidates(
+            query=clean_query,
+            candidates=hybrid_candidates,
+            top_k=bounded_top_k,
+        )
+
+        return RerankResponse(
+            query=clean_query,
+            knowledge_base_id=kb_id,
+            model_name=self._reranker_provider.model_name,
+            total_candidates_reranked=len(hybrid_candidates),
+            total_results=len(reranked_items),
+            results=reranked_items,
+            rrf_k=settings.RRF_K,
+        )
+
+    async def rerank_candidates(
+        self,
+        query: str,
+        candidates: list[Any],
+        top_k: int = settings.RAG_TOP_K_RERANK,
+    ) -> list[RerankResultItem]:
+        """
+        Rerank a provided list of hybrid candidates using CrossEncoder semantic scoring.
+
+        Args:
+            query: User query string.
+            candidates: List of Step 9 HybridRetrievalResultItem instances.
+            top_k: Maximum number of top reranked chunks to return.
+
+        Returns:
+            List of RerankResultItem sorted strictly by reranker_score DESC.
+        """
+        if not candidates:
+            return []
+
+        clean_query = RerankValidator.validate_query(query)
+        bounded_top_k = max(
+            settings.RETRIEVAL_MIN_TOP_K,
+            min(settings.RETRIEVAL_MAX_TOP_K, top_k),
+        )
+
+        texts = [candidate.text for candidate in candidates]
         try:
             scores = await self._reranker_provider.compute_scores(
                 query=clean_query,
@@ -161,15 +202,10 @@ class RerankingService:
             logger.exception("Unexpected error during CrossEncoder scoring: %s", exc)
             raise RerankerProviderError(f"CrossEncoder scoring failure: {exc}") from exc
 
-        # 4. Pair candidate with raw score and sort strictly by score DESC
-        # Tie-breakers: chunk_index ASC, str(chunk_id) ASC
-        paired = list(zip(scores, hybrid_candidates, strict=True))
+        paired = list(zip(scores, candidates, strict=True))
         paired.sort(key=lambda item: (-item[0], item[1].chunk_index, str(item[1].chunk_id)))
-
-        # 5. Take top_k reranked candidates
         selected_paired = paired[:bounded_top_k]
 
-        # 6. Build RerankResultItem preserving all Step 9 provenance
         reranked_items: list[RerankResultItem] = []
         for rank_idx, (raw_score, candidate) in enumerate(selected_paired, start=1):
             metadata_copy: dict[str, Any] = (
@@ -194,20 +230,12 @@ class RerankingService:
                     cosine_distance=candidate.cosine_distance,
                     similarity=candidate.similarity,
                     lexical_score=candidate.lexical_score,
-                    reranker_score=float(raw_score),  # Raw float, unrounded
+                    reranker_score=float(raw_score),
                     reranker_rank=rank_idx,
                 )
             )
 
-        return RerankResponse(
-            query=clean_query,
-            knowledge_base_id=kb_id,
-            model_name=self._reranker_provider.model_name,
-            total_candidates_reranked=len(hybrid_candidates),
-            total_results=len(reranked_items),
-            results=reranked_items,
-            rrf_k=settings.RRF_K,
-        )
+        return reranked_items
 
 
 # Global singleton service instance

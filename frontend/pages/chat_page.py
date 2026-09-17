@@ -250,9 +250,20 @@ def register_chat_page() -> None:
                                             ui.label("Assistant").classes(
                                                 "text-xs font-bold text-gray-800"
                                             )
+                                            if msg.grounding_status:
+                                                status_color = (
+                                                    "positive" if msg.is_grounded else "warning"
+                                                )
+                                                ui.badge(
+                                                    msg.grounding_status, color=status_color
+                                                ).props("outline dense").classes("text-[10px]")
+                                            if msg.total_pipeline_ms:
+                                                ui.label(f"{msg.total_pipeline_ms:.0f}ms").classes(
+                                                    "text-[10px] text-gray-400 font-mono"
+                                                )
                                             if msg.created_at:
                                                 ui.label(msg.created_at).classes(
-                                                    "text-[10px] text-gray-400 font-mono"
+                                                    "text-[10px] text-gray-400 font-mono ml-auto"
                                                 )
 
                                         ui.markdown(msg.content).classes(
