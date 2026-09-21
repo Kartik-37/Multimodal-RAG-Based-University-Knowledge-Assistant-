@@ -5,6 +5,7 @@ Provides authenticated vector similarity search over document chunks within an
 authorized knowledge base using pgvector.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +23,8 @@ from backend.app.services.retrieval import (
     RetrievalValidationError,
     get_retrieval_service,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/knowledge-bases", tags=["retrieval"])
 
@@ -65,12 +68,14 @@ async def retrieve_knowledge_base_chunks(
             detail=str(exc),
         ) from exc
     except RetrievalProviderError as exc:
+        logger.error("Embedding provider unavailable: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Embedding provider unavailable: {exc}",
+            detail="Embedding provider unavailable. Please try again later.",
         ) from exc
     except RetrievalError as exc:
+        logger.error("Retrieval operation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Retrieval operation failed: {exc}",
+            detail="Retrieval operation failed due to an internal server error.",
         ) from exc

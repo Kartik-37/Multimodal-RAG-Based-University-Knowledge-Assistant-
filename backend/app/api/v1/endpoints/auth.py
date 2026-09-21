@@ -29,6 +29,7 @@ from backend.app.core.security import (
     get_password_hash,
     get_session_cookie_kwargs,
     hash_session_token,
+    verify_dummy_password,
     verify_password,
 )
 from backend.app.models.user import User, UserRole, UserSession
@@ -109,8 +110,17 @@ def login(
     stmt = select(User).where(User.email == clean_email)
     user = db.execute(stmt).scalar_one_or_none()
 
-    # Verify password against Argon2id hash
-    if not user or not verify_password(payload.password, user.password_hash):
+    # Timing-difference mitigation: if user does not exist, execute dummy Argon2id verification
+    if not user:
+        verify_dummy_password(payload.password)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Verify password against Argon2id hash for real user
+    if not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -127,7 +137,7 @@ def login(
     raw_token, token_hash = generate_session_token()
     expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    # Persist session hash in PostgreSQL
+    # Persist session hash in PostgreSQL (raw token is never stored in DB)
     session_record = UserSession(
         session_token_hash=token_hash,
         user_id=user.id,
@@ -136,12 +146,9 @@ def login(
     db.add(session_record)
     db.commit()
 
-    # Set secure HttpOnly cookie
+    # Set secure HttpOnly cookie (raw token is never exposed in response headers)
     cookie_kwargs = get_session_cookie_kwargs(expires_at)
     response.set_cookie(value=raw_token, **cookie_kwargs)
-
-    # Also expose token in header for API testing clients
-    response.headers["X-Session-Token"] = raw_token
 
     return SessionResponse(
         user=UserResponse.model_validate(user),

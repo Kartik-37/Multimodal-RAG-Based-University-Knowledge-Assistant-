@@ -24,19 +24,25 @@ def create_application() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
     )
 
-    # CORS configuration (safe for local development with NiceGUI frontend)
+    # Explicit CORS configuration (safe for local development with NiceGUI frontend and API clients)
+    # Wildcard is never combined with allow_credentials=True
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.DEBUG else ["http://localhost:8080"],
+        allow_origins=settings.CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
         allow_headers=["*"],
     )
 
-    # Observability & Correlation ID middleware (outermost layer)
+    # Observability & Correlation ID middleware (outermost request context)
     from backend.app.core.telemetry import CorrelationIdMiddleware
 
     app.add_middleware(CorrelationIdMiddleware)
+
+    # Defensive HTTP security headers
+    from backend.app.core.security import SecurityHeadersMiddleware
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Register API routes
     app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -57,13 +63,13 @@ def create_application() -> FastAPI:
         """
         Readiness probe: verifies that critical backing dependencies (PostgreSQL) are accessible.
         Returns 200 if ready to serve traffic, 503 if backing dependencies are unavailable.
-        Suppresses internal exception details to prevent credential or schema leakage.
+        Suppresses internal exception details and absolute server filesystem paths to prevent leakage.
         """
         db_ready = check_database_connection()
         checks = {
             "config": "ok",
             "database": "ok" if db_ready else "unavailable",
-            "storage_dir": str(settings.STORAGE_DIR),
+            "storage": "ready",
         }
 
         if not db_ready:

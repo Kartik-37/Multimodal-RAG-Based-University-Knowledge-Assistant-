@@ -5,6 +5,7 @@ Provides authenticated PostgreSQL full-text lexical search over document chunks 
 authorized knowledge base using native tsvector and ts_rank_cd facilities.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,6 +26,8 @@ from backend.app.services.lexical_retrieval import (
     get_lexical_retrieval_service,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/knowledge-bases", tags=["lexical-retrieval"])
 
 AuthorizedKB = Annotated[KnowledgeBase, Depends(get_authorized_knowledge_base)]
@@ -34,7 +37,7 @@ AuthorizedKB = Annotated[KnowledgeBase, Depends(get_authorized_knowledge_base)]
     "/{kb_id}/lexical-retrieve",
     response_model=LexicalRetrievalResponse,
     status_code=status.HTTP_200_OK,
-    summary="Retrieve lexically matched document chunks for an authorized knowledge base",
+    summary="Retrieve lexical full-text matched chunks for an authorized knowledge base",
 )
 def retrieve_knowledge_base_lexical_chunks(
     kb: AuthorizedKB,
@@ -67,7 +70,8 @@ def retrieve_knowledge_base_lexical_chunks(
             detail=str(exc),
         ) from exc
     except LexicalRetrievalError as exc:
+        logger.error("Lexical retrieval operation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Lexical retrieval operation failed: {exc}",
+            detail="Lexical retrieval operation failed due to an internal server error.",
         ) from exc

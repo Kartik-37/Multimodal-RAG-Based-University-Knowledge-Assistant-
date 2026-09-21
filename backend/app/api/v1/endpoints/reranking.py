@@ -6,6 +6,7 @@ knowledge base, taking candidates from Step 9 hybrid retrieval and sorting them
 by semantic relevance using a local CrossEncoder model.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,6 +28,8 @@ from backend.app.services.reranking import (
     get_reranking_service,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/knowledge-bases", tags=["reranking"])
 
 AuthorizedKB = Annotated[KnowledgeBase, Depends(get_authorized_knowledge_base)]
@@ -36,7 +39,7 @@ AuthorizedKB = Annotated[KnowledgeBase, Depends(get_authorized_knowledge_base)]
     "/{kb_id}/rerank",
     response_model=RerankResponse,
     status_code=status.HTTP_200_OK,
-    summary="Rerank hybrid retrieval candidate chunks using local CrossEncoder",
+    summary="Rerank candidate document chunks using CrossEncoder model",
 )
 async def rerank_knowledge_base_chunks(
     kb: AuthorizedKB,
@@ -46,7 +49,7 @@ async def rerank_knowledge_base_chunks(
 ) -> RerankResponse:
     """
     Execute CrossEncoder reranking on candidate chunks retrieved from hybrid retrieval
-    (vector + lexical RRF) within the specified knowledge base.
+    against an authorized knowledge base.
 
     Authorization:
     - ADMIN: Can search and rerank knowledge bases they administer.
@@ -71,12 +74,14 @@ async def rerank_knowledge_base_chunks(
             detail=str(exc),
         ) from exc
     except RerankerProviderError as exc:
+        logger.error("Inference provider unavailable during reranking: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Inference provider unavailable during reranking: {exc}",
+            detail="Inference provider unavailable during reranking. Please try again later.",
         ) from exc
     except RerankerError as exc:
+        logger.error("Reranking operation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Reranking operation failed: {exc}",
+            detail="Reranking operation failed due to an internal server error.",
         ) from exc

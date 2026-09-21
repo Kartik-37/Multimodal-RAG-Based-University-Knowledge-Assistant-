@@ -8,7 +8,7 @@ for development while enforcing strict validation in production.
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "testing", "production"] = "development"
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
+
+    # CORS Settings (Explicit origins for NiceGUI/API client communication)
+    CORS_ORIGINS: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ],
+        description="Allowed CORS origins for web clients. Wildcard is never combined with credentials.",
+    )
 
     # Security & Auth
     SECRET_KEY: str = Field(
@@ -257,6 +268,25 @@ class Settings(BaseSettings):
         default=False,
         description="Whether expensive RAG endpoints fail closed (HTTP 503) or fail open with telemetry error.",
     )
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        """
+        Enforce strict production configuration invariants:
+        1. In production, DEBUG must be False.
+        2. In production, SECRET_KEY must not be the default insecure development placeholder.
+        3. In production, SECRET_KEY must be at least 32 characters long.
+        """
+        if self.APP_ENV == "production":
+            if self.DEBUG:
+                raise ValueError("DEBUG must be False in production environment.")
+            if self.SECRET_KEY == "dev-insecure-secret-key-change-in-production":
+                raise ValueError(
+                    "SECRET_KEY cannot be the default insecure placeholder in production."
+                )
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters in production.")
+        return self
 
 
 # Singleton settings instance

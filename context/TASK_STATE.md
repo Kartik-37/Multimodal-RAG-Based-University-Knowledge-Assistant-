@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 18 COMPLETE — RATE LIMITING & ABUSE PROTECTION VERIFIED
+STEP 19 COMPLETE — COMPREHENSIVE BACKEND SECURITY AUDIT & HARDENING VERIFIED
 
 ## Rules
 
@@ -62,7 +62,7 @@ Non-negotiable requirements:
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
 - [x] Observability (COMPLETE — Step 17 Structured JSON Logging, Correlation IDs, CorrelationIdMiddleware, TelemetryManager, InMemoryTelemetryExporter, 7-Stage RAGOrchestrator Instrumentation, Multi-Layer Redaction, Security Sanitization, Concurrent Request Isolation)
 - [x] Rate limiting (COMPLETE — Step 18 PostgreSQL-Backed Atomic Rate Limiting, Anti-Spoofing Client IP Resolution, User Isolation, 429 Retry-After, Fail-Closed Auth & Fail-Open RAG, Step 17 Telemetry Integration)
-- [ ] Backend security audit
+- [x] Backend security audit (COMPLETE — Step 19 Comprehensive Backend Security Hardening & Zero-Secret Verification)
 - [ ] Backend quality gate
 - [x] Functional frontend (COMPLETE — Step 3 Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector UI + Step 8 Lexical UI + Step 9 Hybrid UI + Step 10 Rerank UI + Step 11 Query DTO)
 - [ ] Frontend design pass
@@ -74,6 +74,44 @@ Non-negotiable requirements:
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 19 Execution Record (Comprehensive Backend Security Audit & Hardening)
+
+* **Status**: COMPLETE
+* **Audit Dimensions & Hardening**:
+  1. **SEC-01: Authentication Timing-Difference Mitigation**:
+     - Precomputed dummy Argon2id hash (`DUMMY_ARGON2_HASH`) and `verify_dummy_password()`.
+     - Invoked when user does not exist so unauthenticated lookups incur comparable CPU/memory cost to real user lookups.
+     - Documented as timing-difference defense-in-depth mitigation, NOT mathematically constant-time behavior.
+  2. **SEC-02: Session Token Transmission & Persistence**:
+     - Removed `X-Session-Token` from `/api/v1/auth/login` response headers; session credentials issued solely via secure HttpOnly cookie.
+     - Confirmed raw tokens are never persisted: only SHA-256 digests (`session_token_hash`) stored in PostgreSQL.
+  3. **SEC-03: Readiness Probe Information Sanitization**:
+     - Sanitized `/ready` endpoint to return `"storage": "ready"` rather than leaking absolute local filesystem paths (`settings.STORAGE_DIR`).
+  4. **SEC-04: Defensive Security Headers Middleware**:
+     - Attached `SecurityHeadersMiddleware` applying `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), camera=(), microphone=()`.
+     - Strict-Transport-Security (`HSTS`) applied strictly conditionally when `request.url.scheme == "https"` or `x-forwarded-proto == "https"`; never sent over plain local HTTP.
+  5. **SEC-05: Explicit Configurable CORS**:
+     - Configurable `CORS_ORIGINS` setting added; explicit origins allowed for NiceGUI/API clients.
+     - Wildcard origins (`*`) are never combined with `allow_credentials=True`.
+  6. **SEC-06: Retrieval Error Message Sanitization**:
+     - Generic client-safe 500 messages across `retrieval.py`, `lexical_retrieval.py`, `hybrid_retrieval.py`, and `reranking.py`.
+     - Detailed exception traces logged server-side only; zero internal database/network exception interpolation into API responses.
+  7. **SEC-07: Production Configuration Guardrails**:
+     - Pydantic `@model_validator(mode="after")` `validate_production_security()` raises `ValueError` if `APP_ENV="production"` with `DEBUG=True`, default insecure `SECRET_KEY`, or `SECRET_KEY` < 32 characters.
+  8. **Step 13 Trust Boundary & Citation Security**:
+     - Tested `GroundedPromptBuilder` against adversarial delimiter collision (`--- END EVIDENCE`) and prompt injection overrides.
+     - Verified retrieved content is treated strictly as untrusted data within designated blocks, with system instructions retaining hierarchy of authority.
+     - Verified `CitationValidator` detects and invalidates out-of-context citation references.
+  9. **Zero Real Secrets Verification**:
+     - Audited codebase and repository history. Zero real API keys, secrets, or certificates committed.
+* **Verification & Testing**:
+  - `backend/tests/security/test_backend_security_audit.py`: 19/19 passed.
+  - `backend/tests/security/test_security_rbac.py`: 18/18 passed.
+  - Complete backend test suite: 437/437 passed (0 failures).
+  - Ruff check: 0 errors across all 195 files. Ruff format: 100% clean.
+* **Next Safe Task**: Step 20: Comprehensive Backend Quality Gate.
+
 
 ## Step 14 Execution Record (Citation and Grounding Validation Layer)
 
