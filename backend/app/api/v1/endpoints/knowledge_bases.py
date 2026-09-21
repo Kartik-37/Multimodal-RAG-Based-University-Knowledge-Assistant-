@@ -26,6 +26,8 @@ from backend.app.api.deps import (
     AuthenticatedAdmin,
     AuthenticatedUser,
     DatabaseSession,
+    RateLimitIndexing,
+    RateLimitUpload,
     get_authorized_knowledge_base,
     require_knowledge_base_admin,
 )
@@ -182,6 +184,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     response: Response,
     db: DatabaseSession,
+    _rate_limit: RateLimitUpload,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> DocumentResponse | dict[str, str]:
     """
@@ -362,6 +365,7 @@ def index_document_endpoint(
     document_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     db: DatabaseSession,
+    _rate_limit: RateLimitIndexing,
 ) -> DocumentResponse:
     """
     Trigger 1024-dimensional dense vector indexing for an ingested document.

@@ -22,6 +22,14 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import settings
+from backend.app.core.rate_limit import (
+    RateLimitPolicy,
+    RateLimitResult,
+    build_rate_limit_key,
+    get_client_ip,
+    get_rate_limiter,
+)
 from backend.app.core.security import SESSION_COOKIE_NAME, hash_session_token
 from backend.app.db.session import get_db
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
@@ -196,3 +204,135 @@ def require_knowledge_base_admin(
             detail="Knowledge base not found.",
         )
     return kb
+
+
+# =============================================================================
+# Rate Limiting & Abuse Protection Dependencies (Step 18)
+# =============================================================================
+
+
+def check_rate_limit_auth_login(request: Request) -> RateLimitResult:
+    """Rate-limit check for unauthenticated login attempts (IP-based, Fail-Closed)."""
+    client_ip = get_client_ip(request)
+    key = build_rate_limit_key("ip", client_ip, "auth_login")
+    policy = RateLimitPolicy(
+        name="auth_login",
+        max_requests=settings.RATE_LIMIT_LOGIN_MAX_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_LOGIN_WINDOW_SECONDS,
+        fail_closed=settings.RATE_LIMIT_AUTH_FAIL_CLOSED,
+    )
+    return get_rate_limiter().check(key=key, policy=policy, request=request)
+
+
+def check_rate_limit_auth_register(request: Request) -> RateLimitResult:
+    """Rate-limit check for unauthenticated registration attempts (IP-based, Fail-Closed)."""
+    client_ip = get_client_ip(request)
+    key = build_rate_limit_key("ip", client_ip, "auth_register")
+    policy = RateLimitPolicy(
+        name="auth_register",
+        max_requests=settings.RATE_LIMIT_REGISTER_MAX_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_REGISTER_WINDOW_SECONDS,
+        fail_closed=settings.RATE_LIMIT_AUTH_FAIL_CLOSED,
+    )
+    return get_rate_limiter().check(key=key, policy=policy, request=request)
+
+
+def check_rate_limit_chat(
+    current_user: AuthenticatedUser,
+    request: Request,
+) -> RateLimitResult:
+    """
+    Rate-limit check for authenticated chat RAG operations.
+    Strict Ordering: Depends on AuthenticatedUser first, ensuring unauthenticated
+    requests return 401 without consuming any user quota.
+    """
+    key = build_rate_limit_key("user", str(current_user.id), "chat")
+    policy = RateLimitPolicy(
+        name="chat",
+        max_requests=settings.RATE_LIMIT_CHAT_MAX_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_CHAT_WINDOW_SECONDS,
+        fail_closed=settings.RATE_LIMIT_EXPENSIVE_FAIL_CLOSED,
+    )
+    return get_rate_limiter().check(
+        key=key,
+        policy=policy,
+        request=request,
+        user_id=str(current_user.id),
+    )
+
+
+def check_rate_limit_retrieval(
+    current_user: AuthenticatedUser,
+    request: Request,
+) -> RateLimitResult:
+    """
+    Rate-limit check for authenticated vector/lexical/hybrid/rerank operations.
+    Strict Ordering: Evaluates AuthenticatedUser first before quota deduction.
+    """
+    key = build_rate_limit_key("user", str(current_user.id), "retrieval")
+    policy = RateLimitPolicy(
+        name="retrieval",
+        max_requests=settings.RATE_LIMIT_RETRIEVAL_MAX_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_RETRIEVAL_WINDOW_SECONDS,
+        fail_closed=settings.RATE_LIMIT_EXPENSIVE_FAIL_CLOSED,
+    )
+    return get_rate_limiter().check(
+        key=key,
+        policy=policy,
+        request=request,
+        user_id=str(current_user.id),
+    )
+
+
+def check_rate_limit_upload(
+    current_user: AuthenticatedAdmin,
+    request: Request,
+) -> RateLimitResult:
+    """
+    Rate-limit check for document upload operations.
+    Strict Ordering: Evaluates AuthenticatedAdmin first before quota deduction.
+    """
+    key = build_rate_limit_key("user", str(current_user.id), "upload")
+    policy = RateLimitPolicy(
+        name="upload",
+        max_requests=settings.RATE_LIMIT_UPLOAD_MAX_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_UPLOAD_WINDOW_SECONDS,
+        fail_closed=settings.RATE_LIMIT_EXPENSIVE_FAIL_CLOSED,
+    )
+    return get_rate_limiter().check(
+        key=key,
+        policy=policy,
+        request=request,
+        user_id=str(current_user.id),
+    )
+
+
+def check_rate_limit_indexing(
+    current_user: AuthenticatedAdmin,
+    request: Request,
+) -> RateLimitResult:
+    """
+    Rate-limit check for document indexing operations.
+    Strict Ordering: Evaluates AuthenticatedAdmin first before quota deduction.
+    """
+    key = build_rate_limit_key("user", str(current_user.id), "indexing")
+    policy = RateLimitPolicy(
+        name="indexing",
+        max_requests=settings.RATE_LIMIT_INDEXING_MAX_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_INDEXING_WINDOW_SECONDS,
+        fail_closed=settings.RATE_LIMIT_EXPENSIVE_FAIL_CLOSED,
+    )
+    return get_rate_limiter().check(
+        key=key,
+        policy=policy,
+        request=request,
+        user_id=str(current_user.id),
+    )
+
+
+RateLimitAuthLogin = Annotated[RateLimitResult, Depends(check_rate_limit_auth_login)]
+RateLimitAuthRegister = Annotated[RateLimitResult, Depends(check_rate_limit_auth_register)]
+RateLimitChat = Annotated[RateLimitResult, Depends(check_rate_limit_chat)]
+RateLimitRetrieval = Annotated[RateLimitResult, Depends(check_rate_limit_retrieval)]
+RateLimitUpload = Annotated[RateLimitResult, Depends(check_rate_limit_upload)]
+RateLimitIndexing = Annotated[RateLimitResult, Depends(check_rate_limit_indexing)]

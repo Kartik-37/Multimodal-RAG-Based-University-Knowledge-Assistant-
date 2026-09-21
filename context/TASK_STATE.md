@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 17 COMPLETE — OBSERVABILITY & STRUCTURED RAG LOGGING VERIFIED
+STEP 18 COMPLETE — RATE LIMITING & ABUSE PROTECTION VERIFIED
 
 ## Rules
 
@@ -61,7 +61,7 @@ Non-negotiable requirements:
 - [ ] Query/conversation persistence if required
 - [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
 - [x] Observability (COMPLETE — Step 17 Structured JSON Logging, Correlation IDs, CorrelationIdMiddleware, TelemetryManager, InMemoryTelemetryExporter, 7-Stage RAGOrchestrator Instrumentation, Multi-Layer Redaction, Security Sanitization, Concurrent Request Isolation)
-- [ ] Rate limiting
+- [x] Rate limiting (COMPLETE — Step 18 PostgreSQL-Backed Atomic Rate Limiting, Anti-Spoofing Client IP Resolution, User Isolation, 429 Retry-After, Fail-Closed Auth & Fail-Open RAG, Step 17 Telemetry Integration)
 - [ ] Backend security audit
 - [ ] Backend quality gate
 - [x] Functional frontend (COMPLETE — Step 3 Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector UI + Step 8 Lexical UI + Step 9 Hybrid UI + Step 10 Rerank UI + Step 11 Query DTO)
@@ -616,9 +616,47 @@ Non-negotiable requirements:
      - No secrets committed; sensitive field redaction explicitly tested.
 * **Next Safe Task**: Step 18 (next roadmap stage).
 
+## Step 18 Execution Record (Rate Limiting & Abuse Protection)
+
+* **Status**: COMPLETE
+* **Date**: 2026-09-21
+* **Goal**: Add production-quality, security-conscious server-side rate limiting and abuse protection while preserving the existing RAG architecture, Step 17 telemetry, and authentication/RBAC behavior.
+* **Architecture & Implemented Requirements**:
+  1. **PostgreSQL-Backed Atomic Rate Limiting Storage (`PostgresRateLimitStorage`)**:
+     - Authoritative persistence in `rate_limit_entries` table with composite primary key `(key, window_bucket)` and indexed `expires_at`.
+     - Uses row-level locked atomic upsert: `INSERT INTO rate_limit_entries ... ON CONFLICT (key, window_bucket) DO UPDATE SET count = rate_limit_entries.count + 1, updated_at = now() RETURNING count;`.
+     - Executes in dedicated short-lived connections committing immediately via `engine.connect()`, ensuring HTTP 429 exceptions or application transaction rollbacks cannot rollback rate-limit increments.
+     - Race-condition free and verified across concurrent worker threads.
+  2. **Anti-Spoofing Client IP Resolution (`get_client_ip`)**:
+     - Peer IP (`request.client.host`) is strictly authoritative.
+     - `X-Forwarded-For` and `X-Real-IP` proxy headers are completely ignored unless the immediate peer IP matches an entry in `settings.TRUSTED_PROXIES`.
+     - Spoofed headers from untrusted clients are safely discarded.
+  3. **Strict Dependency Ordering (No Quota Deduction for Unauthenticated Requests)**:
+     - On protected endpoints (`/chat/*`, `/retrieval/*`, `/upload`, `/index`), user authentication and RBAC dependencies (`AuthenticatedUser`, `AuthenticatedAdmin`) evaluate *before* the rate-limit dependency executes.
+     - Unauthenticated requests receive HTTP 401 without consuming the quota of any user.
+     - Legitimate users are metered by trusted server-side user ID (`user:{user_id}:{scope}`).
+  4. **Fail-Closed vs Fail-Open Policies**:
+     - Authentication endpoints (`/auth/login`, `/auth/register`) use `fail_closed=True`: if rate-limit storage fails, the system blocks potential brute-force attacks and returns HTTP 503 Service Unavailable.
+     - Expensive RAG endpoints (`/chat/*`, `/retrieval/*`, etc.) use `fail_closed=False` (configurable): if rate-limit storage fails, requests fail open with a logged warning and a `RATE_LIMIT_STORAGE_ERROR` telemetry event, ensuring service availability.
+  5. **Standard HTTP 429 & Retry-After Responses**:
+     - Exceeded limits return HTTP 429 Too Many Requests with standard `Retry-After` header indicating remaining window seconds.
+     - Safe error detail message (`Rate limit exceeded. Please try again in {retry_after} seconds.`) with zero credential, token, or stack trace leakage.
+  6. **Step 17 Telemetry Integration**:
+     - Rate-limit decisions emit `TelemetryEvent` (`status="SUCCESS"` for allowed, `status="FAILURE"` / `error_category="RATE_LIMIT_EXCEEDED"` for throttled, `error_category="RATE_LIMIT_STORAGE_ERROR"` for storage faults).
+     - Context variables propagate `request_id`, `user_id`, and `knowledge_base_id` automatically.
+     - `CorrelationIdMiddleware` and `categorize_exception` map HTTP 429 to `RATE_LIMIT_EXCEEDED`.
+  7. **Preserved Fast/Deterministic Endpoints**:
+     - Fast deterministic endpoints (`/query/process`) and non-expensive metadata GET endpoints are not throttled, preserving rapid normalizer performance.
+  8. **Comprehensive Verification**:
+     - 418 tests passing across the entire repository (18 unit tests in `test_rate_limit.py`, 13 integration tests in `test_rate_limit_integration.py`).
+     - Zero regressions introduced into Steps 7–17.
+     - Ruff check and format 100% clean across 194 files.
+     - No secrets committed; sensitive attribute redaction verified.
+* **Next Safe Task**: Step 19 (next roadmap stage / Backend security audit).
+
 ## Last verified
 
-2026-09-17 — Step 17 Observability & Structured RAG Logging verified with CorrelationIdMiddleware, TelemetryManager + InMemoryTelemetryExporter abstraction, 7-stage RAGOrchestrator pipeline instrumentation, multi-layer sensitive-data redaction, concurrent request isolation via contextvars, categorize_exception mapping, Pydantic v2 telemetry DTOs — 387/387 tests passing across entire repository, and ruff lint/format 100% clean across 189 files.
+2026-09-21 — Step 18 Rate Limiting & Abuse Protection verified with PostgresRateLimitStorage atomic row-locking upserts, anti-spoofing client IP resolution, strict authentication-first dependency ordering, fail-closed auth & fail-open RAG policies, HTTP 429 with Retry-After headers, Step 17 telemetry event recording, and rate limit isolation — 418/418 tests passing across entire repository, and ruff lint/format 100% clean across 194 files.
 
 
 

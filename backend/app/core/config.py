@@ -164,6 +164,100 @@ class Settings(BaseSettings):
         description="Maximum number of context evidence items processed for cross-verification.",
     )
 
+    # Step 18 Rate Limiting & Abuse Protection Configuration
+    RATE_LIMIT_ENABLED: bool = Field(
+        default=True,
+        description="Master switch to enable or disable server-side rate limiting.",
+    )
+    TRUSTED_PROXIES: set[str] = Field(
+        default_factory=set,
+        description="Explicit allowlist of trusted upstream reverse proxy IP addresses.",
+    )
+    RATE_LIMIT_STORAGE_TYPE: Literal["postgres", "memory"] = Field(
+        default="postgres",
+        description="Backend storage for rate-limit state ('postgres' or 'memory').",
+    )
+
+    # Authentication Endpoints (Unauthenticated, IP-based, Fail-Closed)
+    RATE_LIMIT_LOGIN_MAX_REQUESTS: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum allowed login attempts per IP within the window.",
+    )
+    RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Window duration in seconds for login rate limiting.",
+    )
+    RATE_LIMIT_REGISTER_MAX_REQUESTS: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum allowed registration attempts per IP within the window.",
+    )
+    RATE_LIMIT_REGISTER_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Window duration in seconds for registration rate limiting.",
+    )
+
+    # Chat & Full RAG Pipeline (Authenticated User-based)
+    RATE_LIMIT_CHAT_MAX_REQUESTS: int = Field(
+        default=30,
+        ge=1,
+        description="Maximum allowed chat RAG pipeline queries per authenticated user within the window.",
+    )
+    RATE_LIMIT_CHAT_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Window duration in seconds for chat rate limiting.",
+    )
+
+    # Retrieval Operations (Vector, Lexical, Hybrid, Reranking - Authenticated User-based)
+    RATE_LIMIT_RETRIEVAL_MAX_REQUESTS: int = Field(
+        default=60,
+        ge=1,
+        description="Maximum allowed retrieval inspection requests per user within the window.",
+    )
+    RATE_LIMIT_RETRIEVAL_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Window duration in seconds for retrieval rate limiting.",
+    )
+
+    # Document Upload (ADMIN Authenticated)
+    RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum allowed document uploads per admin within the window.",
+    )
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Window duration in seconds for document upload rate limiting.",
+    )
+
+    # Document Indexing (ADMIN Authenticated)
+    RATE_LIMIT_INDEXING_MAX_REQUESTS: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum allowed indexing triggers per admin within the window.",
+    )
+    RATE_LIMIT_INDEXING_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Window duration in seconds for document indexing rate limiting.",
+    )
+
+    # Security Failure Modes (Fail-Closed vs Fail-Open)
+    RATE_LIMIT_AUTH_FAIL_CLOSED: bool = Field(
+        default=True,
+        description="Whether authentication endpoints fail closed (HTTP 503) if rate-limit storage fails.",
+    )
+    RATE_LIMIT_EXPENSIVE_FAIL_CLOSED: bool = Field(
+        default=False,
+        description="Whether expensive RAG endpoints fail closed (HTTP 503) or fail open with telemetry error.",
+    )
+
 
 # Singleton settings instance
 settings = Settings()

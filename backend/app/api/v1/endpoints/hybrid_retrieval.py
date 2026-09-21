@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.api.deps import (
     DatabaseSession,
+    RateLimitRetrieval,
     get_authorized_knowledge_base,
 )
 from backend.app.models.knowledge_base import KnowledgeBase
@@ -41,6 +42,7 @@ async def retrieve_knowledge_base_hybrid_chunks(
     kb: AuthorizedKB,
     payload: HybridRetrievalRequest,
     db: DatabaseSession,
+    _rate_limit: RateLimitRetrieval,
 ) -> HybridRetrievalResponse:
     """
     Execute hybrid retrieval (dense vector + PostgreSQL full-text lexical)

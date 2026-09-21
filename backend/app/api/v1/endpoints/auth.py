@@ -16,7 +16,12 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 
-from backend.app.api.deps import AuthenticatedUser, DatabaseSession
+from backend.app.api.deps import (
+    AuthenticatedUser,
+    DatabaseSession,
+    RateLimitAuthLogin,
+    RateLimitAuthRegister,
+)
 from backend.app.core.config import settings
 from backend.app.core.security import (
     SESSION_COOKIE_NAME,
@@ -46,6 +51,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(
     payload: UserRegisterRequest,
     db: DatabaseSession,
+    _rate_limit: RateLimitAuthRegister,
 ) -> UserResponse:
     """
     Register a new user account.
@@ -92,6 +98,7 @@ def login(
     payload: UserLoginRequest,
     response: Response,
     db: DatabaseSession,
+    _rate_limit: RateLimitAuthLogin,
 ) -> SessionResponse:
     """
     Authenticate user credentials against Argon2id hash.

@@ -48,6 +48,18 @@ def configure_test_db(db_engine) -> Generator[None, None, None]:
     db_session_module.SessionLocal.configure(bind=old_engine)
 
 
+@pytest.fixture(scope="function", autouse=True)
+def clean_rate_limit_entries(db_engine) -> Generator[None, None, None]:
+    """Ensure rate limit counters do not leak across test cases."""
+    from sqlalchemy import text
+
+    with db_engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE rate_limit_entries;"))
+    yield
+    with db_engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE rate_limit_entries;"))
+
+
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Generator:
     """Fixture providing an isolated database session per test function."""

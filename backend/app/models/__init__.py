@@ -6,6 +6,7 @@ Exports all ORM entities for centralized imports and Alembic migration autogener
 
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
+from backend.app.models.rate_limit import RateLimitEntry
 from backend.app.models.user import User, UserRole, UserSession
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "DocumentChunk",
     "DocumentStatus",
     "IndexingStatus",
+    "RateLimitEntry",
 ]

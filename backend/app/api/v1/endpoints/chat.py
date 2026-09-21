@@ -15,7 +15,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.app.api.deps import AuthenticatedUser, DatabaseSession, get_authorized_knowledge_base
+from backend.app.api.deps import (
+    AuthenticatedUser,
+    DatabaseSession,
+    RateLimitChat,
+    get_authorized_knowledge_base,
+)
 from backend.app.core.telemetry import (
     kb_id_ctx,
     set_current_kb_id,
@@ -131,6 +136,7 @@ async def query_knowledge_base_legacy(
     current_user: AuthenticatedUser,
     db: DatabaseSession,
     orchestrator: Annotated[RAGOrchestrator, Depends(get_rag_orchestrator)],
+    _rate_limit: RateLimitChat,
 ) -> ChatQueryResponse:
     """
     Submit a query against an authorized knowledge base with explicit KB ID in body.
@@ -164,6 +170,7 @@ async def chat_with_knowledge_base(
     current_user: AuthenticatedUser,
     db: DatabaseSession,
     orchestrator: Annotated[RAGOrchestrator, Depends(get_rag_orchestrator)],
+    _rate_limit: RateLimitChat,
 ) -> ChatQueryResponse:
     """
     Submit a query against an authorized knowledge base with KB ID in URL path.

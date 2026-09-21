@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.api.deps import (
     DatabaseSession,
+    RateLimitRetrieval,
     get_authorized_knowledge_base,
 )
 from backend.app.models.knowledge_base import KnowledgeBase
@@ -41,6 +42,7 @@ async def rerank_knowledge_base_chunks(
     kb: AuthorizedKB,
     payload: RerankRequest,
     db: DatabaseSession,
+    _rate_limit: RateLimitRetrieval,
 ) -> RerankResponse:
     """
     Execute CrossEncoder reranking on candidate chunks retrieved from hybrid retrieval

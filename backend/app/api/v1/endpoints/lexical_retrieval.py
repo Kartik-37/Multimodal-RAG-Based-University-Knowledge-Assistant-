@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.api.deps import (
     DatabaseSession,
+    RateLimitRetrieval,
     get_authorized_knowledge_base,
 )
 from backend.app.models.knowledge_base import KnowledgeBase
@@ -39,6 +40,7 @@ def retrieve_knowledge_base_lexical_chunks(
     kb: AuthorizedKB,
     payload: LexicalRetrievalRequest,
     db: DatabaseSession,
+    _rate_limit: RateLimitRetrieval,
 ) -> LexicalRetrievalResponse:
     """
     Execute PostgreSQL full-text lexical search against chunks in the specified knowledge base.

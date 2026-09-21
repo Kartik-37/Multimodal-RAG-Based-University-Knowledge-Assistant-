@@ -267,11 +267,13 @@ def categorize_exception(exc: Exception) -> str:
     ):
         return "DATABASE_ERROR"
 
-    # 5. HTTP errors / Authorization
+    # 5. HTTP errors / Authorization / Rate Limiting
     if "http" in exc_name.lower():
         status_code = getattr(exc, "status_code", None)
         if status_code in (401, 403, 404):
             return "AUTHORIZATION_ERROR"
+        if status_code == 429:
+            return "RATE_LIMIT_EXCEEDED"
         return "HTTP_ERROR"
 
     return "UNEXPECTED_ERROR"
@@ -552,6 +554,8 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
                     error_cat = "PROVIDER_ERROR"
                 elif status_code in (401, 403):
                     error_cat = "AUTHORIZATION_ERROR"
+                elif status_code == 429:
+                    error_cat = "RATE_LIMIT_EXCEEDED"
                 elif status_code == 422:
                     error_cat = "VALIDATION_ERROR"
                 elif status_code >= 500:
