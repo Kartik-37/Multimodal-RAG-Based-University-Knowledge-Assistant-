@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Computed,
     DateTime,
     Enum,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -123,6 +125,15 @@ class Document(Base):
         Enum(IndexingStatus, name="indexing_status", native_enum=True),
         nullable=False,
         default=IndexingStatus.PENDING,
+        index=True,
+    )
+    # Publication / retrieval eligibility flag (Step 21B)
+    # Inactive documents remain stored for admins but never participate in student retrieval
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+        nullable=False,
         index=True,
     )
     # Diagnostic error details if ingestion/parsing fails

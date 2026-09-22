@@ -20,6 +20,7 @@ from backend.app.api.deps import (
     DatabaseSession,
     RateLimitChat,
     get_authorized_knowledge_base,
+    get_authorized_knowledge_base_ids,
 )
 from backend.app.core.telemetry import (
     kb_id_ctx,
@@ -61,7 +62,7 @@ router = APIRouter(tags=["chat"])
 async def _execute_orchestrated_chat(
     orchestrator: RAGOrchestrator,
     db: DatabaseSession,
-    kb_id: uuid.UUID,
+    kb_id: uuid.UUID | list[uuid.UUID],
     question: str,
     user_id: uuid.UUID | None = None,
 ) -> ChatQueryResponse:
@@ -69,7 +70,11 @@ async def _execute_orchestrated_chat(
     Execute RAG orchestration with strict error mapping and correlation context binding.
     """
     user_token = set_current_user_id(str(user_id)) if user_id else None
-    kb_token = set_current_kb_id(str(kb_id))
+    if isinstance(kb_id, list):
+        kb_str = str(kb_id[0]) if len(kb_id) == 1 else "global"
+    else:
+        kb_str = str(kb_id)
+    kb_token = set_current_kb_id(kb_str)
     try:
         return await orchestrator.execute_query(
             db=db,
@@ -129,7 +134,7 @@ async def _execute_orchestrated_chat(
     "/chat/query",
     response_model=ChatQueryResponse,
     status_code=status.HTTP_200_OK,
-    summary="Submit query to authorized knowledge base (Legacy endpoint)",
+    summary="Submit query to authorized knowledge base or global course materials",
 )
 async def query_knowledge_base_legacy(
     payload: ChatQueryRequest,
@@ -139,20 +144,63 @@ async def query_knowledge_base_legacy(
     _rate_limit: RateLimitChat,
 ) -> ChatQueryResponse:
     """
-    Submit a query against an authorized knowledge base with explicit KB ID in body.
-    Maintains backward compatibility with earlier API consumers.
+    Submit a conversational query against authorized course material.
+    - If knowledge_base_id is explicitly provided: Preserves exact scoped behavior and 404 isolation check.
+    - If knowledge_base_id is omitted: Resolves all authorized knowledge bases for current_user.
     """
-    # Enforces multi-user isolation check: returns 404 if user has no access
-    kb = get_authorized_knowledge_base(
-        kb_id=payload.knowledge_base_id,
-        current_user=current_user,
-        db=db,
-    )
+    if payload.knowledge_base_id is not None:
+        # Exact backward-compatible scoped query: enforces multi-user isolation check (returns 404 if unauthorized)
+        kb = get_authorized_knowledge_base(
+            kb_id=payload.knowledge_base_id,
+            current_user=current_user,
+            db=db,
+        )
+        target_kb: uuid.UUID | list[uuid.UUID] = kb.id
+    else:
+        # Global query across all authorized active course materials
+        authorized_kb_ids = get_authorized_knowledge_base_ids(current_user=current_user, db=db)
+        if not authorized_kb_ids:
+            # Student has 0 enrolled/authorized knowledge bases: immediate safe refusal
+            from backend.app.schemas.chat import (
+                ChatLatencyBreakdownDTO,
+                GroundingSummaryDTO,
+            )
+
+            return ChatQueryResponse(
+                query=payload.question,
+                processed_query=payload.question,
+                knowledge_base_id=None,
+                answer="No course material is currently available to your account.",
+                is_empty_context=True,
+                citations=[],
+                grounding=GroundingSummaryDTO(
+                    is_grounded=True,
+                    status="REFUSAL",
+                    citation_validity_rate=0.0,
+                    citation_coverage=0.0,
+                    claim_support_rate=0.0,
+                    unsupported_claim_rate=0.0,
+                    has_conflicts=False,
+                    claims=[],
+                ),
+                latency=ChatLatencyBreakdownDTO(
+                    query_processing_ms=0.0,
+                    retrieval_ms=0.0,
+                    reranking_ms=0.0,
+                    context_assembly_ms=0.0,
+                    llm_generation_ms=0.0,
+                    grounding_validation_ms=0.0,
+                    total_pipeline_ms=0.0,
+                ),
+                model="system",
+                metadata={"reason": "no_authorized_knowledge_bases"},
+            )
+        target_kb = authorized_kb_ids
 
     return await _execute_orchestrated_chat(
         orchestrator=orchestrator,
         db=db,
-        kb_id=kb.id,
+        kb_id=target_kb,
         question=payload.question,
         user_id=current_user.id,
     )

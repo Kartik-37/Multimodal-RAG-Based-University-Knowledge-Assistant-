@@ -243,6 +243,7 @@ async def upload_document(
         file_size_bytes=doc.file_size_bytes,
         status=doc.status,
         indexing_status=doc.indexing_status,
+        is_active=doc.is_active,
         error_message=doc.error_message,
         indexing_error=doc.indexing_error,
         created_at=doc.created_at,
@@ -292,6 +293,7 @@ def list_documents(
                 file_size_bytes=doc.file_size_bytes,
                 status=doc.status,
                 indexing_status=doc.indexing_status,
+                is_active=doc.is_active,
                 error_message=doc.error_message,
                 indexing_error=doc.indexing_error,
                 created_at=doc.created_at,
@@ -345,6 +347,136 @@ def get_document(
         file_size_bytes=doc.file_size_bytes,
         status=doc.status,
         indexing_status=doc.indexing_status,
+        is_active=doc.is_active,
+        error_message=doc.error_message,
+        indexing_error=doc.indexing_error,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        indexed_at=doc.indexed_at,
+        chunk_count=chunk_count,
+    )
+
+
+@router.patch(
+    "/{kb_id}/documents/{document_id}/activate",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Activate a document for retrieval (ADMIN only)",
+)
+def activate_document(
+    kb: AdminKB,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+) -> DocumentResponse:
+    """
+    Activate an ingested and indexed document so it becomes eligible for vector
+    and lexical retrieval. Restricted strictly to the administering ADMIN.
+    Returns 409 Conflict if the document is already active.
+    """
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if doc.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="DOCUMENT_ALREADY_ACTIVE",
+        )
+
+    doc.is_active = True
+    db.commit()
+    db.refresh(doc)
+
+    chunk_count = db.execute(
+        select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
+    ).scalar_one()
+
+    return DocumentResponse(
+        id=doc.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        original_filename=doc.original_filename,
+        file_type=doc.file_type,
+        mime_type=doc.mime_type,
+        file_size_bytes=doc.file_size_bytes,
+        status=doc.status,
+        indexing_status=doc.indexing_status,
+        is_active=doc.is_active,
+        error_message=doc.error_message,
+        indexing_error=doc.indexing_error,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        indexed_at=doc.indexed_at,
+        chunk_count=chunk_count,
+    )
+
+
+@router.patch(
+    "/{kb_id}/documents/{document_id}/deactivate",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Deactivate a document from retrieval (ADMIN only)",
+)
+def deactivate_document(
+    kb: AdminKB,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+) -> DocumentResponse:
+    """
+    Deactivate a document so it is excluded from vector and lexical retrieval
+    while preserving chunks and historical audit trails.
+    Restricted strictly to the administering ADMIN.
+    Returns 409 Conflict if the document is already inactive.
+    """
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if not doc.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="DOCUMENT_ALREADY_INACTIVE",
+        )
+
+    doc.is_active = False
+    db.commit()
+    db.refresh(doc)
+
+    chunk_count = db.execute(
+        select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
+    ).scalar_one()
+
+    return DocumentResponse(
+        id=doc.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        original_filename=doc.original_filename,
+        file_type=doc.file_type,
+        mime_type=doc.mime_type,
+        file_size_bytes=doc.file_size_bytes,
+        status=doc.status,
+        indexing_status=doc.indexing_status,
+        is_active=doc.is_active,
         error_message=doc.error_message,
         indexing_error=doc.indexing_error,
         created_at=doc.created_at,
@@ -420,6 +552,7 @@ def index_document_endpoint(
         file_size_bytes=doc.file_size_bytes,
         status=doc.status,
         indexing_status=doc.indexing_status,
+        is_active=doc.is_active,
         error_message=doc.error_message,
         indexing_error=doc.indexing_error,
         created_at=doc.created_at,

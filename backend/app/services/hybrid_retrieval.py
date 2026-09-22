@@ -231,7 +231,7 @@ class HybridRetrievalService:
     async def retrieve(
         self,
         db: Session,
-        kb_id: uuid.UUID,
+        kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
     ) -> HybridRetrievalResponse:
@@ -241,7 +241,7 @@ class HybridRetrievalService:
 
         Args:
             db: Active SQLAlchemy database session.
-            kb_id: Authorized knowledge base UUID.
+            kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             query: Natural-language query string.
             top_k: Maximum number of top fused chunks to return.
 
@@ -255,6 +255,12 @@ class HybridRetrievalService:
         """
         clean_query = self.validate_query(query)
         bounded_top_k = self.validate_top_k(top_k)
+
+        if isinstance(kb_id, (list, tuple, set)):
+            kb_ids_list = list(kb_id)
+            response_kb_id = kb_ids_list[0] if len(kb_ids_list) == 1 else None
+        else:
+            response_kb_id = kb_id
 
         # Candidate pool limit requested from each retrieval branch
         candidate_limit = max(bounded_top_k, settings.RAG_TOP_K_RETRIEVAL)
@@ -303,7 +309,7 @@ class HybridRetrievalService:
 
         return HybridRetrievalResponse(
             query=clean_query,
-            knowledge_base_id=kb_id,
+            knowledge_base_id=response_kb_id,
             total_results=len(fused_items),
             results=fused_items,
             rrf_k=self._rrf_k,
@@ -312,7 +318,7 @@ class HybridRetrievalService:
     def retrieve_sync(
         self,
         db: Session,
-        kb_id: uuid.UUID,
+        kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
     ) -> HybridRetrievalResponse:

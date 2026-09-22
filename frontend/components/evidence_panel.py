@@ -17,6 +17,7 @@ def render_evidence_panel(
     citations: list[CitationDTO],
     selected_citation: CitationDTO | None = None,
     on_select: Callable[[CitationDTO], None] | None = None,
+    is_admin: bool = False,
 ) -> None:
     """
     Render the evidence inspection panel with source snippets and provenance metadata.
@@ -27,19 +28,17 @@ def render_evidence_panel(
         ):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("find_in_page", size="sm").classes("text-blue-600")
-                ui.label("Retrieved Evidence & Citations").classes(
-                    "text-sm font-bold text-slate-800"
-                )
+                ui.label("Sources & Citations").classes("text-sm font-bold text-slate-800")
             ui.label(f"{len(citations)} source(s)").classes("text-xs text-slate-500 font-mono")
 
         if not citations:
             with ui.column().classes("w-full py-8 items-center justify-center text-center"):
-                ui.icon("info", size="md").classes("text-slate-300 mb-1.5")
-                ui.label("No evidence attached to current view.").classes(
+                ui.icon("menu_book", size="md").classes("text-slate-300 mb-1.5")
+                ui.label("Sources will appear here after you ask a question.").classes(
                     "text-xs font-semibold text-slate-600"
                 )
                 ui.label(
-                    "Retrieved source chunks and citations will display here when a grounded answer is produced."
+                    "When an answer is synthesized, verified citations and original excerpts from course materials will appear here."
                 ).classes("text-[11px] text-slate-400 max-w-xs mt-0.5 leading-normal")
             return
 
@@ -75,9 +74,10 @@ def render_evidence_panel(
                                     "text-[10px] px-1.5 py-0.5"
                                 ):
                                     ui.label(f"p.{cit.page_number}")
-                            ui.label(f"{cit.relevance_score:.3f}").classes(
-                                "text-[11px] font-mono font-semibold text-slate-600"
-                            ).tooltip("Rerank / Fusion Relevance Score")
+                            if is_admin:
+                                ui.label(f"{cit.relevance_score:.3f}").classes(
+                                    "text-[11px] font-mono font-semibold text-slate-600"
+                                ).tooltip("Rerank / Fusion Relevance Score")
 
                     if cit.section_title:
                         ui.label(f"Section: {cit.section_title}").classes(

@@ -20,7 +20,6 @@ from frontend.components.lexical_inspect import open_lexical_retrieval_dialog
 from frontend.components.rerank_inspect import open_rerank_inspection_dialog
 from frontend.components.retrieval_inspect import open_vector_retrieval_dialog
 from frontend.components.status_badge import render_grounding_status_badge
-from frontend.components.ui_kit import render_empty_state
 from frontend.state.app_state import state
 
 
@@ -55,39 +54,53 @@ def register_chat_page() -> None:
 
     @ui.page("/chat")
     def chat_page() -> None:
+        user = state.current_user
+        is_admin = bool(user and user.role == "ADMIN")
+        page_title = "Chat & Semantic Search" if is_admin else "Ask Assistant"
+        page_subtitle = (
+            "Ask questions grounded in university course materials and inspect retrieval evidence."
+            if is_admin
+            else "Ask questions across all active course materials with verified citations."
+        )
+
         with page_layout(
-            title="Chat & Semantic Search",
-            subtitle="Ask questions grounded in the active knowledge base documents with verified source citations.",
+            title=page_title,
+            subtitle=page_subtitle,
             active_route="/chat",
             require_auth=True,
         ):
             active_kb = state.active_kb
-            is_admin = bool(state.current_user and state.current_user.role == "ADMIN")
-
-            if not active_kb:
-                render_empty_state(
-                    icon="folder_off",
-                    title="No Active Knowledge Base Selected",
-                    description="Select an active subject corpus to begin conversational question answering.",
-                    action_label="Select Knowledge Base",
-                    on_action=lambda: ui.navigate.to("/knowledge-bases"),
-                )
-                return
 
             # Top Context & Controls Bar
             with ui.card().classes(
                 "w-full p-3.5 bg-white border border-slate-200 rounded-lg shadow-xs"
             ):
-                with ui.row().classes("w-full justify-between items-center gap-2"):
+                with ui.row().classes("w-full justify-between items-center gap-2 flex-wrap"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("school", size="sm").classes("text-blue-600")
-                        ui.label("Target Corpus:").classes(
+                        scope_label = "Target Scope:" if is_admin else "Searching In:"
+                        ui.label(scope_label).classes(
                             "text-xs font-semibold text-slate-500 uppercase tracking-wider"
                         )
-                        ui.label(active_kb.name).classes("text-sm font-bold text-slate-900")
+                        current_scope_name = active_kb.name if active_kb else "All Course Materials"
+                        ui.label(current_scope_name).classes("text-sm font-bold text-slate-900")
 
-                    with ui.row().classes("items-center gap-2"):
-                        if is_admin:
+                        if active_kb and not is_admin:
+
+                            def reset_to_all_courses() -> None:
+                                state.active_kb = None
+                                ui.navigate.to("/chat")
+
+                            ui.button(
+                                "Search All Courses",
+                                icon="clear",
+                                on_click=reset_to_all_courses,
+                            ).props("flat dense no-caps text-color=primary").classes(
+                                "text-xs font-medium ml-2"
+                            )
+
+                    with ui.row().classes("items-center gap-2 flex-wrap"):
+                        if is_admin and active_kb:
                             ui.button(
                                 "Dense Vector",
                                 icon="manage_search",
@@ -147,18 +160,23 @@ def register_chat_page() -> None:
                     with loading_row:
                         ui.spinner(size="sm", color="primary")
                         ui.label(
-                            "Retrieving context, reranking candidates, and synthesizing grounded answer..."
+                            "Searching course materials and synthesizing verified answer..."
                         ).classes("text-xs font-medium text-blue-900")
                     loading_row.visible = False
 
                     # Input Bar
+                    input_placeholder = (
+                        "Ask a question about your courses (e.g. syllabus, prerequisites, grading)..."
+                        if not is_admin
+                        else "Ask a question to test retrieval, reranking, and citation synthesis..."
+                    )
                     with ui.card().classes(
                         "w-full p-2 bg-white border border-slate-200 rounded-lg shadow-xs"
                     ):
                         with ui.row().classes("w-full items-center gap-2"):
                             input_box = (
                                 ui.input(
-                                    placeholder="Ask a question grounded in this course corpus...",
+                                    placeholder=input_placeholder,
                                 )
                                 .props("outlined dense")
                                 .classes("flex-1 text-sm")
@@ -189,16 +207,17 @@ def register_chat_page() -> None:
                 send_btn.disable()
 
                 try:
-                    # Centralized API client execution
+                    # Centralized API client execution - pass None for global search
+                    target_kb_id = active_kb.id if active_kb else None
                     response = api_client.send_chat_message(
-                        kb_id=active_kb.id,
+                        kb_id=target_kb_id,
                         question=q,
                     )
                     state.add_assistant_message(response)
                     if response.citations:
                         state.selected_citation = response.citations[0]
                 except ValueError as err:
-                    ui.notify(f"Query error: {err}", type="negative")
+                    ui.notify(f"{err}", type="negative")
                 finally:
                     loading_row.visible = False
                     send_btn.enable()
@@ -230,6 +249,7 @@ def register_chat_page() -> None:
                         citations=citations,
                         selected_citation=state.selected_citation,
                         on_select=select_citation,
+                        is_admin=is_admin,
                     )
 
             def render_messages() -> None:

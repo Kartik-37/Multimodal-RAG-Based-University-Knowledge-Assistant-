@@ -57,3 +57,28 @@ class SessionResponse(BaseModel):
     user: UserResponse
     expires_at: datetime
     message: str = "Authenticated successfully"
+
+
+class AdminCreateRequest(BaseModel):
+    """Admin-only administrator creation request contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128, description="Minimum 8 characters")
+    full_name: str = Field(min_length=1, max_length=255)
+
+
+class AdminUserResponse(BaseModel):
+    """
+    Privacy-preserving administrator representation for admin management interfaces.
+    Never exposes internal database UUIDs, password_hash, or session credentials.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    email: str
+    full_name: str
+    role: UserRole = UserRole.ADMIN
+    is_active: bool = True
+    created_at: datetime

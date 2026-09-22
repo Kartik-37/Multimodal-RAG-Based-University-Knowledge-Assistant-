@@ -21,7 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
-from backend.app.models.document import Document, DocumentChunk
+from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
 from backend.app.schemas.retrieval import RetrievalResponse, RetrievalResultItem
 from backend.app.services.embedding.base import BaseEmbeddingProvider
 from backend.app.services.embedding.exceptions import (
@@ -103,16 +103,16 @@ class VectorRetrievalService:
     async def retrieve(
         self,
         db: Session,
-        kb_id: uuid.UUID,
+        kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
     ) -> RetrievalResponse:
         """
-        Execute vector retrieval for an authorized knowledge base.
+        Execute vector retrieval for an authorized knowledge base or collection of knowledge bases.
 
         Args:
             db: Active SQLAlchemy database session.
-            kb_id: Authorized knowledge base UUID.
+            kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             query: Natural-language query string.
             top_k: Maximum number of top candidates to retrieve.
 
@@ -126,6 +126,22 @@ class VectorRetrievalService:
         """
         clean_query = self.validate_query(query)
         bounded_top_k = self.validate_top_k(top_k)
+
+        # Scoping resolution: Empty collection MUST return zero results immediately (never an unscoped query)
+        if isinstance(kb_id, (list, tuple, set)):
+            kb_ids_list = list(kb_id)
+            if len(kb_ids_list) == 0:
+                return RetrievalResponse(
+                    query=clean_query,
+                    knowledge_base_id=None,
+                    total_results=0,
+                    results=[],
+                )
+            kb_filter = DocumentChunk.knowledge_base_id.in_(kb_ids_list)
+            response_kb_id = kb_ids_list[0] if len(kb_ids_list) == 1 else None
+        else:
+            kb_filter = DocumentChunk.knowledge_base_id == kb_id
+            response_kb_id = kb_id
 
         # 1. Generate query embedding through the configured embedding provider
         try:
@@ -154,6 +170,7 @@ class VectorRetrievalService:
         # The `<=>` operator calculates cosine distance: 1 - cosine_similarity
         distance_expr = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
 
+        # Invariant: Only ACTIVE, successfully ingested (COMPLETED), and indexed documents participate
         stmt = (
             select(
                 DocumentChunk,
@@ -163,7 +180,10 @@ class VectorRetrievalService:
             .join(Document, DocumentChunk.document_id == Document.id)
             .where(
                 and_(
-                    DocumentChunk.knowledge_base_id == kb_id,
+                    kb_filter,
+                    Document.is_active.is_(True),
+                    Document.status == DocumentStatus.COMPLETED,
+                    Document.indexing_status == IndexingStatus.COMPLETED,
                     DocumentChunk.embedding.is_not(None),
                 )
             )
@@ -181,11 +201,10 @@ class VectorRetrievalService:
             logger.exception("Database error occurred during vector retrieval for KB %s", kb_id)
             raise RetrievalError("Database query failed during vector similarity search.") from exc
 
-        # 4. Map rows to RetrievalResultItem schemas
+        # 4. Map rows to RetrievalResultItem schemas (preserving individual chunk knowledge_base_id)
         results: list[RetrievalResultItem] = []
         for chunk, original_filename, distance_val in rows:
             dist = float(distance_val)
-            # Direct mathematical conversion without clamping
             similarity = 1.0 - dist
 
             item = RetrievalResultItem(
@@ -205,7 +224,7 @@ class VectorRetrievalService:
 
         return RetrievalResponse(
             query=clean_query,
-            knowledge_base_id=kb_id,
+            knowledge_base_id=response_kb_id,
             total_results=len(results),
             results=results,
         )
@@ -213,7 +232,7 @@ class VectorRetrievalService:
     def retrieve_sync(
         self,
         db: Session,
-        kb_id: uuid.UUID,
+        kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
     ) -> RetrievalResponse:

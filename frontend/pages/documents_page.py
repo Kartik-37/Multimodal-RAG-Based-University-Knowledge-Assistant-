@@ -202,6 +202,7 @@ def register_documents_page() -> None:
                             ):
                                 with ui.element("tr"):
                                     ui.element("th").classes("py-2.5 px-3").text = "Document"
+                                    ui.element("th").classes("py-2.5 px-3").text = "State"
                                     ui.element("th").classes("py-2.5 px-3").text = "Format"
                                     ui.element("th").classes("py-2.5 px-3").text = "Size"
                                     ui.element("th").classes("py-2.5 px-3").text = "Ingestion"
@@ -230,6 +231,20 @@ def register_documents_page() -> None:
                                                         "text-[10px] text-rose-600"
                                                     ).tooltip(doc.error_message)
 
+                                        with ui.element("td").classes("py-2.5 px-3"):
+                                            if doc.is_active:
+                                                ui.badge("ACTIVE", color="emerald-700").classes(
+                                                    "text-[10px] font-bold"
+                                                ).tooltip(
+                                                    "Included in student vector & lexical retrieval"
+                                                )
+                                            else:
+                                                ui.badge("INACTIVE", color="slate-500").classes(
+                                                    "text-[10px] font-bold"
+                                                ).tooltip(
+                                                    "Excluded from retrieval (historical material preserved)"
+                                                )
+
                                         with ui.element("td").classes("py-2.5 px-3 font-mono"):
                                             ui.badge(
                                                 doc.file_type.upper(), color="slate-600"
@@ -257,6 +272,62 @@ def register_documents_page() -> None:
                                                 with ui.row().classes(
                                                     "items-center justify-end gap-1"
                                                 ):
+                                                    # Version Activation / Deactivation Toggle
+                                                    if doc.is_active:
+
+                                                        def trigger_deactivate(
+                                                            d_id=doc.id, d_name=doc.filename
+                                                        ) -> None:
+                                                            try:
+                                                                api_client.deactivate_document(
+                                                                    active_kb.id, d_id
+                                                                )
+                                                                ui.notify(
+                                                                    f"Deactivated '{d_name}'. Excluded from retrieval.",
+                                                                    type="info",
+                                                                )
+                                                                refresh_doc_list()
+                                                            except ValueError as err:
+                                                                ui.notify(str(err), type="negative")
+
+                                                        ui.button(
+                                                            "Deactivate",
+                                                            icon="pause_circle",
+                                                            on_click=trigger_deactivate,
+                                                        ).props(
+                                                            "outline dense no-caps color=warning"
+                                                        ).classes(
+                                                            "text-[11px] px-2 py-0.5"
+                                                        ).tooltip(
+                                                            "Deactivate to exclude from search while preserving file"
+                                                        )
+                                                    else:
+
+                                                        def trigger_activate(
+                                                            d_id=doc.id, d_name=doc.filename
+                                                        ) -> None:
+                                                            try:
+                                                                api_client.activate_document(
+                                                                    active_kb.id, d_id
+                                                                )
+                                                                ui.notify(
+                                                                    f"Activated '{d_name}'. Available for retrieval.",
+                                                                    type="positive",
+                                                                )
+                                                                refresh_doc_list()
+                                                            except ValueError as err:
+                                                                ui.notify(str(err), type="negative")
+
+                                                        ui.button(
+                                                            "Activate",
+                                                            icon="play_circle",
+                                                            on_click=trigger_activate,
+                                                        ).props(
+                                                            "outline dense no-caps color=positive"
+                                                        ).classes(
+                                                            "text-[11px] px-2 py-0.5"
+                                                        ).tooltip("Activate to include in search")
+
                                                     # Vector Indexing Trigger
                                                     if (
                                                         doc.status == "COMPLETED"

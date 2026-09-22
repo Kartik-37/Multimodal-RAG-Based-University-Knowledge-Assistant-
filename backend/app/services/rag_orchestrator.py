@@ -157,18 +157,18 @@ class RAGOrchestrator:
     async def execute_query(
         self,
         db: Session,
-        kb_id: uuid.UUID,
+        kb_id: uuid.UUID | list[uuid.UUID],
         raw_query: str,
         k_retrieval: int = settings.RAG_TOP_K_RETRIEVAL,
         k_rerank: int = settings.RAG_TOP_K_RERANK,
         token_budget: int = settings.MAX_CONTEXT_TOKENS,
     ) -> ChatQueryResponse:
         """
-        Execute the complete 9-stage RAG pipeline for an authorized knowledge base query.
+        Execute the complete 9-stage RAG pipeline for an authorized knowledge base query or global query.
 
         Args:
             db: Active SQLAlchemy session.
-            kb_id: Authorized knowledge base UUID.
+            kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             raw_query: Natural-language query string from user.
             k_retrieval: Number of hybrid candidates to retrieve.
             k_rerank: Number of top reranked chunks to select for context.
@@ -392,6 +392,7 @@ class RAGOrchestrator:
                             source_id=item.source_id,
                             document_name=item.document_title,
                             document_id=item.document_id,
+                            knowledge_base_id=item.knowledge_base_id,
                             chunk_id=str(item.chunk_id),
                             page_number=item.page_number,
                             section_title=item.section_title,
@@ -400,13 +401,20 @@ class RAGOrchestrator:
                         )
                     )
 
+            # Scoping resolution for top-level chat container
+            if isinstance(kb_id, (list, tuple, set)):
+                kb_ids_list = list(kb_id)
+                response_kb_id = kb_ids_list[0] if len(kb_ids_list) == 1 else None
+            else:
+                response_kb_id = kb_id
+
             # -------------------------------------------------------------
             # 9. Emit Structured Pipeline Telemetry
             # -------------------------------------------------------------
             pipeline_telemetry = RAGPipelineTelemetry(
                 request_id=get_request_id(),
                 user_id=get_current_user_id(),
-                knowledge_base_id=str(kb_id),
+                knowledge_base_id=str(response_kb_id) if response_kb_id else "global",
                 status="SUCCESS",
                 total_duration_ms=total_pipeline_ms,
                 stages=stages,
@@ -428,7 +436,7 @@ class RAGOrchestrator:
             return ChatQueryResponse(
                 query=raw_query,
                 processed_query=processed_query,
-                knowledge_base_id=kb_id,
+                knowledge_base_id=response_kb_id,
                 answer=llm_res.answer,
                 is_empty_context=llm_res.is_empty_context,
                 citations=citations,

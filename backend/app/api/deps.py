@@ -206,6 +206,36 @@ def require_knowledge_base_admin(
     return kb
 
 
+def get_authorized_knowledge_base_ids(
+    current_user: User,
+    db: Session,
+) -> list[uuid.UUID]:
+    """
+    Retrieve all knowledge base UUIDs authorized for the current user.
+    Uses the exact authoritative server-side RBAC and isolation rules:
+    - ADMIN: All knowledge bases created/owned by this administrator.
+    - STUDENT: All knowledge bases where explicit membership was granted.
+    """
+    if current_user.role == UserRole.ADMIN:
+        stmt = (
+            select(KnowledgeBase.id)
+            .where(KnowledgeBase.created_by_id == current_user.id)
+            .order_by(KnowledgeBase.created_at.desc())
+        )
+    else:
+        stmt = (
+            select(KnowledgeBase.id)
+            .join(
+                KnowledgeBaseMember,
+                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+            )
+            .where(KnowledgeBaseMember.user_id == current_user.id)
+            .order_by(KnowledgeBase.created_at.desc())
+        )
+
+    return list(db.execute(stmt).scalars().all())
+
+
 # =============================================================================
 # Rate Limiting & Abuse Protection Dependencies (Step 18)
 # =============================================================================

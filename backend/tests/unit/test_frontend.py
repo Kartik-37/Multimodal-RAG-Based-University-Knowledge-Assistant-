@@ -620,3 +620,62 @@ def test_profile_page_registration_and_auth() -> None:
     assert user.role == "ADMIN"
     assert hasattr(user, "full_name")
     api_client.logout()
+
+
+def test_error_normalization() -> None:
+    """Verify normalize_error properly normalizes HTTP status codes, Pydantic errors, and context."""
+    from frontend.client.error_handler import normalize_error
+
+    # Auth context
+    assert "already exists" in normalize_error("AUTH_EMAIL_EXISTS", context="auth").lower()
+    assert "invalid email or password" in normalize_error(401, context="auth").lower()
+
+    # Document context
+    assert (
+        "already active" in normalize_error("DOCUMENT_ALREADY_ACTIVE", context="document").lower()
+    )
+    assert (
+        "already inactive"
+        in normalize_error("DOCUMENT_ALREADY_INACTIVE", context="document").lower()
+    )
+    assert "size" in normalize_error(413, context="document").lower()
+    assert "format" in normalize_error(415, context="document").lower()
+
+    # Pydantic validation list
+    validation_errs = [
+        {
+            "loc": ["body", "password"],
+            "type": "string_too_short",
+            "msg": "String should have at least 8 characters",
+        },
+        {
+            "loc": ["body", "email"],
+            "type": "value_error",
+            "msg": "value is not a valid email address",
+        },
+    ]
+    norm_val = normalize_error(validation_errs)
+    assert "Password must be at least 8 characters long." in norm_val
+    assert "Please enter a valid email address." in norm_val
+
+    # SQL / Traceback suppression
+    leaky_err = "Syntax error in SQL: SELECT * FROM users WHERE id='1234' Traceback (most recent call last):"
+    assert "server processing error" in normalize_error(leaky_err).lower()
+    assert "SELECT" not in normalize_error(leaky_err)
+    assert "Traceback" not in normalize_error(leaky_err)
+
+
+def test_admin_user_dto_privacy() -> None:
+    """Verify AdminUserDTO strictly preserves privacy and omits internal IDs and hashes."""
+    from frontend.client.models import AdminUserDTO
+
+    dto = AdminUserDTO(
+        email="faculty@univ.edu",
+        full_name="Faculty Member",
+        role="ADMIN",
+        is_active=True,
+        created_at="2026-09-22",
+    )
+    assert not hasattr(dto, "id") or "id" not in dto.model_fields
+    assert not hasattr(dto, "password") or "password" not in dto.model_fields
+    assert not hasattr(dto, "hashed_password") or "hashed_password" not in dto.model_fields

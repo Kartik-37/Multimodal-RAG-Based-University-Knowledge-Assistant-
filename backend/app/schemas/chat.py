@@ -41,12 +41,13 @@ class KnowledgeBaseChatRequest(BaseModel):
 
 class ChatQueryRequest(KnowledgeBaseChatRequest):
     """
-    Request model for conversational RAG queries with explicit KB ID in payload.
+    Request model for conversational RAG queries with explicit or omitted KB ID in payload.
+    When knowledge_base_id is omitted, queries across all authorized active course materials.
     """
 
-    knowledge_base_id: uuid.UUID = Field(
-        ...,
-        description="Target authorized knowledge base UUID.",
+    knowledge_base_id: uuid.UUID | None = Field(
+        default=None,
+        description="Target authorized knowledge base UUID, or None for global search.",
     )
 
 
@@ -68,6 +69,10 @@ class CitationItem(BaseModel):
     document_id: uuid.UUID = Field(
         ...,
         description="Unique identifier of the source document.",
+    )
+    knowledge_base_id: uuid.UUID | None = Field(
+        default=None,
+        description="Unique identifier of the knowledge base containing the source document.",
     )
     chunk_id: str = Field(
         ...,
@@ -221,9 +226,9 @@ class ChatQueryResponse(BaseModel):
         ...,
         description="Normalized query utilized across retrieval pipelines.",
     )
-    knowledge_base_id: uuid.UUID = Field(
-        ...,
-        description="Knowledge base identifier queried.",
+    knowledge_base_id: uuid.UUID | None = Field(
+        default=None,
+        description="Knowledge base identifier queried, or None if global.",
     )
     answer: str = Field(
         ...,

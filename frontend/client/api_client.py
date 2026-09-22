@@ -14,11 +14,14 @@ and PostgreSQL database:
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
+    AdminUserDTO,
     ChatMessageDTO,
     CitationDTO,
     DocumentDTO,
@@ -192,6 +195,7 @@ class FrontendAPIClient:
                 file_size_bytes=item["file_size_bytes"],
                 status=item["status"],
                 indexing_status=item.get("indexing_status", "PENDING"),
+                is_active=item.get("is_active", True),
                 error_message=item.get("error_message"),
                 indexing_error=item.get("indexing_error"),
                 chunk_count=item.get("chunk_count", 0),
@@ -233,6 +237,7 @@ class FrontendAPIClient:
             file_size_bytes=item.get("file_size_bytes", size),
             status=item.get("status", "COMPLETED"),
             indexing_status=item.get("indexing_status", "PENDING"),
+            is_active=item.get("is_active", True),
             error_message=item.get("error_message"),
             indexing_error=item.get("indexing_error"),
             chunk_count=item.get("chunk_count", 0),
@@ -263,6 +268,67 @@ class FrontendAPIClient:
             file_size_bytes=item.get("file_size_bytes", 0),
             status=item.get("status", "COMPLETED"),
             indexing_status=item.get("indexing_status", "PROCESSING"),
+            is_active=item.get("is_active", True),
+            error_message=item.get("error_message"),
+            indexing_error=item.get("indexing_error"),
+            chunk_count=item.get("chunk_count", 0),
+            created_at=item.get("created_at", "")[:16].replace("T", " "),
+            indexed_at=item.get("indexed_at")[:16].replace("T", " ")
+            if item.get("indexed_at")
+            else None,
+        )
+
+    def activate_document(self, kb_id: str, document_id: str) -> DocumentDTO:
+        """
+        Activate an ingested and indexed document for retrieval.
+        Restricted strictly to administering ADMIN.
+        """
+        resp = self._http.patch(f"/knowledge-bases/{kb_id}/documents/{document_id}/activate")
+        if resp.status_code == 403:
+            raise ValueError(normalize_error(403, context="admin"))
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="document"))
+
+        item = resp.json()
+        return DocumentDTO(
+            id=str(item["id"]),
+            kb_id=str(item["knowledge_base_id"]),
+            filename=item["original_filename"],
+            file_type=item["file_type"],
+            file_size_bytes=item.get("file_size_bytes", 0),
+            status=item.get("status", "COMPLETED"),
+            indexing_status=item.get("indexing_status", "PENDING"),
+            is_active=item.get("is_active", True),
+            error_message=item.get("error_message"),
+            indexing_error=item.get("indexing_error"),
+            chunk_count=item.get("chunk_count", 0),
+            created_at=item.get("created_at", "")[:16].replace("T", " "),
+            indexed_at=item.get("indexed_at")[:16].replace("T", " ")
+            if item.get("indexed_at")
+            else None,
+        )
+
+    def deactivate_document(self, kb_id: str, document_id: str) -> DocumentDTO:
+        """
+        Deactivate a document so it is excluded from retrieval while preserving data.
+        Restricted strictly to administering ADMIN.
+        """
+        resp = self._http.patch(f"/knowledge-bases/{kb_id}/documents/{document_id}/deactivate")
+        if resp.status_code == 403:
+            raise ValueError(normalize_error(403, context="admin"))
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="document"))
+
+        item = resp.json()
+        return DocumentDTO(
+            id=str(item["id"]),
+            kb_id=str(item["knowledge_base_id"]),
+            filename=item["original_filename"],
+            file_type=item["file_type"],
+            file_size_bytes=item.get("file_size_bytes", 0),
+            status=item.get("status", "COMPLETED"),
+            indexing_status=item.get("indexing_status", "PENDING"),
+            is_active=item.get("is_active", False),
             error_message=item.get("error_message"),
             indexing_error=item.get("indexing_error"),
             chunk_count=item.get("chunk_count", 0),
@@ -282,34 +348,39 @@ class FrontendAPIClient:
             raise ValueError("Students are not permitted to delete documents.")
         if resp.status_code != 200:
             detail = resp.json().get("detail", "Failed to delete document.")
-            raise ValueError(detail)
+            raise ValueError(normalize_error(detail, context="document"))
 
     # --------------------------------------------------------------------------
     # Conversational RAG Query Boundary
     # --------------------------------------------------------------------------
 
-    def send_chat_message(self, kb_id: str, question: str) -> ChatMessageDTO:
+    def send_chat_message(self, kb_id: str | None, question: str) -> ChatMessageDTO:
         """
         Submit question to conversational query endpoint.
+        If kb_id is provided, queries the scoped knowledge base.
+        If kb_id is None, queries across all authorized active knowledge bases.
         Both ADMIN and authorized STUDENT users can query.
         """
         if not question.strip():
             raise ValueError("Question cannot be empty.")
 
-        try:
-            kb_uuid = uuid.UUID(kb_id)
-        except ValueError:
-            raise ValueError("Invalid knowledge base ID format.") from None
+        payload: dict[str, Any] = {"question": question.strip()}
+        if kb_id:
+            try:
+                kb_uuid = uuid.UUID(kb_id)
+                payload["knowledge_base_id"] = str(kb_uuid)
+            except ValueError:
+                raise ValueError("Invalid knowledge base ID format.") from None
 
         resp = self._http.post(
             "/chat/query",
-            json={"knowledge_base_id": str(kb_uuid), "question": question.strip()},
+            json=payload,
         )
         if resp.status_code == 404:
             raise ValueError("Knowledge base not found or unauthorized.")
         if resp.status_code != 200:
             detail = resp.json().get("detail", "Query failed.")
-            raise ValueError(detail)
+            raise ValueError(normalize_error(detail, context="chat"))
 
         data = resp.json()
         citations = [
@@ -322,6 +393,9 @@ class FrontendAPIClient:
                 source_id=c.get("source_id"),
                 document_id=str(c["document_id"]) if c.get("document_id") else None,
                 section_title=c.get("section_title"),
+                knowledge_base_id=str(c["knowledge_base_id"])
+                if c.get("knowledge_base_id")
+                else None,
             )
             for c in data.get("citations", [])
         ]
@@ -592,6 +666,57 @@ class FrontendAPIClient:
             has_technical_tokens=item.get("has_technical_tokens", False),
             metadata=item.get("metadata", {}),
         )
+
+    # --------------------------------------------------------------------------
+    # Administrator Management Boundary
+    # --------------------------------------------------------------------------
+
+    def create_admin(self, email: str, password: str, full_name: str) -> AdminUserDTO:
+        """
+        Create a new ADMIN user account. Restricted strictly to authenticated ADMINs.
+        """
+        if not email or not password or not full_name:
+            raise ValueError("All fields are required.")
+
+        resp = self._http.post(
+            "/auth/admin",
+            json={
+                "email": email.strip(),
+                "password": password,
+                "full_name": full_name.strip(),
+            },
+        )
+        if resp.status_code != 201:
+            raise ValueError(normalize_error(resp.json(), context="admin"))
+
+        data = resp.json()
+        return AdminUserDTO(
+            email=data["email"],
+            full_name=data["full_name"],
+            role=data["role"],
+            is_active=data.get("is_active", True),
+            created_at=data.get("created_at", "")[:10],
+        )
+
+    def get_admins(self) -> list[AdminUserDTO]:
+        """
+        List all administrator accounts. Restricted strictly to authenticated ADMINs.
+        """
+        resp = self._http.get("/auth/admins")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="admin"))
+
+        items = resp.json()
+        return [
+            AdminUserDTO(
+                email=item["email"],
+                full_name=item["full_name"],
+                role=item["role"],
+                is_active=item.get("is_active", True),
+                created_at=item.get("created_at", "")[:10],
+            )
+            for item in items
+        ]
 
 
 # Global default client instance for the frontend presentation layer

@@ -100,16 +100,16 @@ class LexicalRetrievalService:
     def retrieve(
         self,
         db: Session,
-        kb_id: uuid.UUID,
+        kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.LEXICAL_TOP_K,
     ) -> LexicalRetrievalResponse:
         """
-        Execute PostgreSQL full-text lexical search against an authorized knowledge base.
+        Execute PostgreSQL full-text lexical search against an authorized knowledge base or collection.
 
         Args:
             db: Active SQLAlchemy database session.
-            kb_id: Authorized knowledge base UUID.
+            kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             query: Natural-language search query string.
             top_k: Maximum number of top candidates to retrieve.
 
@@ -123,6 +123,22 @@ class LexicalRetrievalService:
         clean_query = self.validate_query(query)
         bounded_top_k = self.validate_top_k(top_k)
 
+        # Scoping resolution: Empty collection MUST return zero results immediately (never an unscoped query)
+        if isinstance(kb_id, (list, tuple, set)):
+            kb_ids_list = list(kb_id)
+            if len(kb_ids_list) == 0:
+                return LexicalRetrievalResponse(
+                    query=clean_query,
+                    knowledge_base_id=None,
+                    total_results=0,
+                    results=[],
+                )
+            kb_filter = DocumentChunk.knowledge_base_id.in_(kb_ids_list)
+            response_kb_id = kb_ids_list[0] if len(kb_ids_list) == 1 else None
+        else:
+            kb_filter = DocumentChunk.knowledge_base_id == kb_id
+            response_kb_id = kb_id
+
         # Build PostgreSQL websearch tsquery
         query_tsquery = func.websearch_to_tsquery(self._language, clean_query)
 
@@ -131,9 +147,7 @@ class LexicalRetrievalService:
             "lexical_score"
         )
 
-        # Query operates on DocumentChunk joined to Document for original_filename
-        # and verifies Document.status == DocumentStatus.COMPLETED
-        # NOTE: Does NOT require embedding IS NOT NULL (unindexed chunks are searchable lexically)
+        # Invariant: Only ACTIVE and successfully ingested (COMPLETED) documents participate
         stmt = (
             select(
                 DocumentChunk,
@@ -143,8 +157,10 @@ class LexicalRetrievalService:
             .join(Document, DocumentChunk.document_id == Document.id)
             .where(
                 and_(
-                    DocumentChunk.knowledge_base_id == kb_id,
+                    kb_filter,
+                    Document.is_active.is_(True),
                     Document.status == DocumentStatus.COMPLETED,
+                    DocumentChunk.searchable_text.is_not(None),
                     DocumentChunk.searchable_text.op("@@")(query_tsquery),
                 )
             )
@@ -183,7 +199,7 @@ class LexicalRetrievalService:
 
         return LexicalRetrievalResponse(
             query=clean_query,
-            knowledge_base_id=kb_id,
+            knowledge_base_id=response_kb_id,
             total_results=len(results),
             results=results,
         )

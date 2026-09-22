@@ -42,6 +42,7 @@ class DocumentDTO(BaseModel):
     error_message: str | None = None
     indexing_error: str | None = None
     chunk_count: int = 0
+    is_active: bool = True
     created_at: str = ""
     indexed_at: str | None = None
 
@@ -57,6 +58,18 @@ class CitationDTO(BaseModel):
     source_id: str | None = None
     document_id: str | None = None
     section_title: str | None = None
+    knowledge_base_id: str | None = None
+    course_name: str | None = None
+
+
+class AdminUserDTO(BaseModel):
+    """Admin user representation in admin management view (strictly privacy-preserving)."""
+
+    email: str
+    full_name: str
+    role: str = "ADMIN"
+    is_active: bool = True
+    created_at: str = ""
 
 
 class ChatMessageDTO(BaseModel):

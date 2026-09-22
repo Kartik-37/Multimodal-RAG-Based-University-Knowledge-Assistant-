@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 
 from backend.app.api.deps import (
+    AuthenticatedAdmin,
     AuthenticatedUser,
     DatabaseSession,
     RateLimitAuthLogin,
@@ -34,6 +35,8 @@ from backend.app.core.security import (
 )
 from backend.app.models.user import User, UserRole, UserSession
 from backend.app.schemas.auth import (
+    AdminCreateRequest,
+    AdminUserResponse,
     SessionResponse,
     UserLoginRequest,
     UserRegisterRequest,
@@ -209,3 +212,65 @@ def get_current_user_profile(
     Return identity and role of currently authenticated user.
     """
     return UserResponse.model_validate(current_user)
+
+
+@router.post(
+    "/admin",
+    response_model=AdminUserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new administrator account (ADMIN only)",
+)
+def create_admin(
+    payload: AdminCreateRequest,
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> AdminUserResponse:
+    """
+    Provision a new administrator account.
+    Restricted strictly to authenticated administrators.
+    Students or anonymous callers receive 403 or 401.
+    """
+    clean_email = payload.email.strip().lower()
+
+    stmt = select(User).where(User.email == clean_email)
+    existing_user = db.execute(stmt).scalar_one_or_none()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists.",
+        )
+
+    password_hash = get_password_hash(payload.password)
+
+    user = User(
+        email=clean_email,
+        password_hash=password_hash,
+        full_name=payload.full_name.strip(),
+        role=UserRole.ADMIN,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return AdminUserResponse.model_validate(user)
+
+
+@router.get(
+    "/admins",
+    response_model=list[AdminUserResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all administrator accounts (ADMIN only)",
+)
+def list_admins(
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> list[AdminUserResponse]:
+    """
+    List all administrator accounts.
+    Restricted strictly to authenticated administrators.
+    Privacy: Exposes only full_name, email, role, is_active, created_at.
+    """
+    stmt = select(User).where(User.role == UserRole.ADMIN).order_by(User.created_at.desc())
+    admins = db.execute(stmt).scalars().all()
+    return [AdminUserResponse.model_validate(a) for a in admins]

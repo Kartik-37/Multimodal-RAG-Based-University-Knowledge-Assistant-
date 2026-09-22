@@ -26,21 +26,23 @@ def get_nav_items(user: UserDTO | None) -> list[tuple[str, str, str]]:
     if not user:
         return []
 
-    items = [
-        ("Dashboard", "/dashboard", "dashboard"),
-        ("Knowledge Bases", "/knowledge-bases", "menu_book"),
-    ]
-    # Document management is an administrator-only management capability
     if user.role == "ADMIN":
-        items.append(("Documents", "/documents", "description"))
-
-    items.extend(
-        [
+        return [
+            ("Dashboard", "/dashboard", "dashboard"),
+            ("Courses", "/knowledge-bases", "menu_book"),
+            ("Documents", "/documents", "description"),
+            ("Administrators", "/administrators", "admin_panel_settings"),
             ("Chat & Search", "/chat", "chat"),
             ("Profile", "/profile", "account_circle"),
         ]
-    )
-    return items
+
+    # Student navigation
+    return [
+        ("Home", "/dashboard", "home"),
+        ("Ask Assistant", "/chat", "chat"),
+        ("Courses", "/knowledge-bases", "menu_book"),
+        ("Profile", "/profile", "account_circle"),
+    ]
 
 
 def _handle_logout() -> None:
@@ -75,10 +77,10 @@ def _render_navbar(active_route: str) -> None:
                     "flat round dense text-color=white"
                 ).classes("text-gray-400 hover:text-white")
 
-            # Active KB Selector in Mobile Drawer
-            if kbs:
+            # Active KB Selector in Mobile Drawer (Admin only)
+            if user.role == "ADMIN" and kbs:
                 with ui.column().classes("w-full gap-1 my-2"):
-                    ui.label("ACTIVE KNOWLEDGE BASE").classes(
+                    ui.label("ACTIVE COURSE / KB").classes(
                         "text-[11px] font-semibold text-slate-400 tracking-wider"
                     )
                     active_id = state.active_kb.id if state.active_kb else kbs[0].id
@@ -180,8 +182,8 @@ def _render_navbar(active_route: str) -> None:
         # Right: Active KB Selector + User Profile / Logout
         with ui.row().classes("items-center gap-3"):
             if user:
-                # Desktop Active KB Selector (hidden on mobile, handled in drawer)
-                if kbs:
+                # Desktop Active KB Selector (Admin only, hidden on mobile)
+                if user.role == "ADMIN" and kbs:
                     active_id = state.active_kb.id if state.active_kb else kbs[0].id
                     kb_options = {kb.id: kb.name for kb in kbs}
 

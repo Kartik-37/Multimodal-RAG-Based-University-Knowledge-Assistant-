@@ -104,9 +104,9 @@ class RetrievalResponse(BaseModel):
         ...,
         description="The submitted search query.",
     )
-    knowledge_base_id: uuid.UUID = Field(
-        ...,
-        description="Target knowledge base identifier searched.",
+    knowledge_base_id: uuid.UUID | None = Field(
+        default=None,
+        description="Target knowledge base identifier searched, or None if global.",
     )
     total_results: int = Field(
         ...,

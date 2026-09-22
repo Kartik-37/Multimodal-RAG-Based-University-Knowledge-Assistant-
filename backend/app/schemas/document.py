@@ -27,6 +27,7 @@ class DocumentResponse(BaseModel):
     file_size_bytes: int
     status: DocumentStatus
     indexing_status: IndexingStatus = IndexingStatus.PENDING
+    is_active: bool = True
     error_message: str | None = None
     indexing_error: str | None = None
     created_at: datetime

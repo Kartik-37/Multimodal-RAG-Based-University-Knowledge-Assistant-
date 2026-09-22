@@ -129,9 +129,9 @@ class HybridRetrievalResponse(BaseModel):
         ...,
         description="Normalized query string evaluated by the retrieval branches.",
     )
-    knowledge_base_id: uuid.UUID = Field(
-        ...,
-        description="Knowledge base identifier searched.",
+    knowledge_base_id: uuid.UUID | None = Field(
+        default=None,
+        description="Knowledge base identifier searched, or None if global.",
     )
     total_results: int = Field(
         ...,

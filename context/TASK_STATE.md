@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 21 COMPLETE — FRONTEND DESIGN & ACCESSIBILITY VERIFIED
+STEP 21B COMPLETE — PRODUCT UX & WORKFLOW CORRECTION FOR UNIVERSITY RAG ASSISTANT
 
 ## Rules
 
@@ -68,12 +68,51 @@ Non-negotiable requirements:
 - [x] Frontend design pass (COMPLETE — Step 21 Restrained Academic Theme, Responsive Shell, Accessible Multi-Modal Status, Zero N+1 Queries, Safe Markdown, Role Tailored Views)
 - [x] Accessibility QA (COMPLETE — Step 21 WCAG 2.1 AA Engineering Design Target, Visible Focus Rings, Keyboard Navigation, Semantic Multi-Modal Badges)
 - [x] Responsive QA (COMPLETE — Step 21 Unified Navigation Definition, Mobile Left Drawer, Responsive Table Wrappers)
+- [x] Product UX & Workflow Correction (COMPLETE — Step 21B Distinct Student vs Admin Experiences, Global Student Search Across All Enrolled Courses, Document Activation Lifecycle, Privacy-Preserving Admin Management)
 - [ ] End-to-end QA
 - [ ] Deployment verification
 - [ ] Final security audit
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 21B Execution Record (Product UX & Workflow Correction)
+
+* **Status**: COMPLETE
+* **Core Accomplishments**:
+  1. **Separation of Student vs Administrator Experiences**:
+     - **Student Experience**: Directly ask questions across all enrolled course materials (`POST /api/v1/chat/query` with omitted `knowledge_base_id`) without being forced into a corpus/folder selector; verified source citations and clean answers; zero internal RAG controls/jargon.
+     - **Admin Experience**: Manage courses (`/knowledge-bases`), manage document lifecycle and versions (`/documents`), publish/deactivate materials without deleting, manage administrators (`/administrators`), and audit retrieval performance.
+  2. **Document Activation Lifecycle (`is_active` Flag & Database Migration)**:
+     - Added indexed `is_active: bool` column with server default `true` to `documents` table via Alembic migration `d4e5f6a7b8c9_add_is_active_to_documents.py`.
+     - Tested on both `rag_assistant_db` and `rag_assistant_test_db`; verified zero schema drift via `alembic check`.
+     - Integrated `is_active` into `VectorRetrievalService` and `LexicalRetrievalService` ensuring deactivated historical materials (e.g. 2025 syllabus) are strictly excluded from retrieval while preserving files and chunks.
+     - Added `PATCH /knowledge-bases/{kb_id}/documents/{document_id}/activate` and `deactivate` endpoints (ADMIN only, returning 409 Conflict on duplicate state transitions).
+  3. **Multi-KB Global Retrieval & Provenance Retention**:
+     - Updated `VectorRetrievalService`, `LexicalRetrievalService`, `HybridRetrievalService`, and `RAGOrchestrator` to accept single KB UUID or collection of authorized KB UUIDs.
+     - Direct retrieval-service query with empty list `[]` returns `[]` immediately without executing unscoped SQL queries.
+     - Preserved canonical `POST /api/v1/knowledge-bases/{kb_id}/chat` endpoint 100% untouched.
+     - In `POST /api/v1/chat/query`, preserved exact scoped behavior when `knowledge_base_id` is supplied, and dynamically resolves all authorized KBs server-side using SQL-based membership logic when omitted.
+     - Individual chunk and citation items strictly retain non-null `knowledge_base_id`, `document_id`, and full provenance.
+  4. **Dedicated Privacy-Preserving Administrator Management (`/administrators`)**:
+     - Added `POST /api/v1/auth/admin` allowing an authenticated ADMIN to provision another ADMIN. Public registration remains strictly STUDENT.
+     - Added `GET /api/v1/auth/admins` for listing active administrators.
+     - Strict privacy enforcement: endpoints and DTOs never expose internal database UUIDs, password hashes, or session tokens.
+     - Added dedicated `/administrators` frontend management page with creation form and active admin table.
+  5. **Contextual Frontend Error Normalization (`frontend/client/error_handler.py`)**:
+     - Built `normalize_error(err, context)` converting HTTP status codes, Pydantic validation error lists, and backend error tokens into user-friendly messages.
+     - Suppresses raw SQL, syntax errors, stack traces, and internal UUIDs.
+  6. **UI & Navigation Modernization**:
+     - Updated `frontend/components/layout.py`: Student navigation (`Home`, `Ask Assistant`, `Courses`, `Profile`) vs Admin navigation (`Dashboard`, `Courses`, `Documents`, `Administrators`, `Chat & Search`, `Profile`). Active KB dropdown restricted strictly to ADMIN.
+     - Updated `frontend/pages/chat_page.py`: Clean student experience with no forced corpus selector, initial zero-evidence state, and clear scope indicators.
+     - Updated `frontend/pages/dashboard_page.py`: Student Hero CTA ("Ask a Question") and enrolled course cards vs Admin system metrics.
+     - Updated `frontend/pages/documents_page.py`: Added `ACTIVE`/`INACTIVE` badges and `[Activate]` / `[Deactivate]` controls.
+     - Updated `frontend/components/evidence_panel.py`: Clean empty state ("Sources will appear here after you ask a question.") and clean student citations.
+* **Verification**:
+  - `backend/tests/integration/test_global_retrieval_and_isolation.py`: 7/7 passed in 18s.
+  - `backend/tests/unit/test_frontend.py`: 30/30 passed in 10s.
+  - Complete backend test suite: 469/469 passed (0 failures).
+  - Ruff check & format: 0 errors, clean working tree.
 
 ## Step 21 Execution Record (Frontend Design & Accessibility)
 
