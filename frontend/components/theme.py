@@ -145,4 +145,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 def init_theme() -> None:
     """Inject global design system styling into the NiceGUI application head."""
-    ui.add_head_html(GLOBAL_THEME_CSS)
+    ui.add_head_html(GLOBAL_THEME_CSS, shared=True)
