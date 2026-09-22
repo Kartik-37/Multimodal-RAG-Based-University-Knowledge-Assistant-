@@ -91,17 +91,25 @@ def _normalize_pydantic_errors(errors: list[Any], context: str | None = None) ->
             continue
         loc = item.get("loc", [])
         field_name = str(loc[-1]) if loc else ""
-        err_type = item.get("type", "")
-        msg = item.get("msg", "")
+        err_type = str(item.get("type", "")).lower()
+        msg = str(item.get("msg", "")).lower()
 
         # Password rules
         if "password" in field_name.lower():
-            if "too_short" in err_type or "min_length" in err_type:
-                messages.append("Password must be at least 8 characters long.")
+            if "too_short" in err_type or "min_length" in err_type or "at least 8" in msg:
+                messages.append("Password must be at least 8 characters.")
             else:
-                messages.append("Please enter a valid password.")
+                messages.append("Password must be at least 8 characters.")
         elif "email" in field_name.lower():
-            messages.append("Please enter a valid email address.")
+            if (
+                "already exists" in msg
+                or "unique" in err_type
+                or "duplicate" in err_type
+                or "already registered" in msg
+            ):
+                messages.append("An account with this email already exists.")
+            else:
+                messages.append("Please enter a valid email address.")
         elif "full_name" in field_name.lower():
             messages.append("Full name is required.")
         elif "name" in field_name.lower():
@@ -112,14 +120,14 @@ def _normalize_pydantic_errors(errors: list[Any], context: str | None = None) ->
             messages.append(f"The provided {field_name or 'input'} is too short.")
         elif "missing" in err_type:
             messages.append(f"Missing required field: {field_name or 'input'}.")
-        elif msg:
-            messages.append(msg)
+        elif item.get("msg"):
+            messages.append(str(item.get("msg")))
 
     if messages:
         # Return deduplicated, clean messages
         unique_msgs = list(dict.fromkeys(messages))
         return " ".join(unique_msgs)
-    return "Validation error. Please verify the submitted information."
+    return "Please verify that all fields are filled out correctly."
 
 
 def _normalize_detail(
@@ -129,10 +137,30 @@ def _normalize_detail(
     if isinstance(detail, list):
         return _normalize_pydantic_errors(detail, context=context)
 
+    if isinstance(detail, dict):
+        if "detail" in detail:
+            return _normalize_detail(detail["detail"], status_code=status_code, context=context)
+        return _normalize_pydantic_errors([detail], context=context)
+
     if not isinstance(detail, str):
         detail_str = str(detail)
     else:
         detail_str = detail.strip()
+
+    # Defensive parsing of stringified Pydantic or Python dicts/lists
+    if ("'type':" in detail_str or '"type":' in detail_str) and (
+        "loc" in detail_str or "msg" in detail_str
+    ):
+        import ast
+
+        try:
+            parsed = ast.literal_eval(detail_str)
+            if isinstance(parsed, list):
+                return _normalize_pydantic_errors(parsed, context=context)
+            if isinstance(parsed, dict):
+                return _normalize_pydantic_errors([parsed], context=context)
+        except Exception:
+            pass
 
     # Exact known backend error tokens
     if detail_str == "AUTH_EMAIL_EXISTS" or (status_code == 409 and context in ("auth", "admin")):
@@ -151,7 +179,7 @@ def _normalize_detail(
     if "invalid email or password" in lower or "invalid credentials" in lower:
         return "Invalid email or password."
     if "password must be at least" in lower:
-        return "Password must be at least 8 characters long."
+        return "Password must be at least 8 characters."
     if "file size exceeds" in lower or "too large" in lower:
         return "The uploaded file exceeds the allowed size limit."
     if "unsupported file" in lower or "not allowed" in lower:

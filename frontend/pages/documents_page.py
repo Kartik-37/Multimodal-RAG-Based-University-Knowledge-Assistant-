@@ -1,10 +1,13 @@
 """
 Documents Management Page.
 
-Provides document upload UI with supported format indicators, lifecycle status
-tracking badges, responsive table layout, and role-based action controls.
-Upload limits are read dynamically from backend settings (MAX_UPLOAD_SIZE_BYTES).
-All operations route through FrontendAPIClient.
+Provides course-specific document management:
+- Upload documents (PDF, DOCX, TXT, MD, CSV) with real-time lifecycle tracking.
+- Distinct states: Uploading/Uploaded, Ingestion (PENDING, PROCESSING, COMPLETED, FAILED),
+  and Retrieval Publication (ACTIVE, INACTIVE).
+- Document-level publication controls (Activate / Deactivate) for version management.
+- Dynamic polling while any document is in PENDING or PROCESSING.
+- Strictly replaces dynamic content in a single container to guarantee rendering integrity.
 """
 
 from nicegui import events, ui
@@ -33,43 +36,106 @@ def register_documents_page() -> None:
     """Register /documents route with NiceGUI."""
 
     @ui.page("/documents")
-    def documents_page() -> None:
+    def documents_page(kb_id: str | None = None) -> None:
+        user = state.current_user
+        is_admin = bool(user and user.role == "ADMIN")
+
+        all_courses = api_client.get_knowledge_bases() if user else []
+
+        # Resolve selected course strictly from kb_id parameter
+        selected_course = None
+        if kb_id:
+            for c in all_courses:
+                if c.id == kb_id:
+                    selected_course = c
+                    break
+
+        page_title = (
+            f"Documents — {selected_course.name}" if selected_course else "Course Documents"
+        )
+        page_subtitle = (
+            "Upload and manage learning material, activate versions for retrieval, and track processing status."
+            if selected_course
+            else "Select a university course to view and manage its learning materials."
+        )
+
         with page_layout(
-            title="Documents",
-            subtitle="Upload and inspect source documents for parsing, chunking, and dense vector indexing.",
+            title=page_title,
+            subtitle=page_subtitle,
             active_route="/documents",
             require_auth=True,
         ):
-            user = state.current_user
-            is_admin = bool(user and user.role == "ADMIN")
-            active_kb = state.active_kb
+            # If no course is selected, display clear course selection state (no silent defaults)
+            if not selected_course:
+                with ui.card().classes(
+                    "w-full max-w-2xl mx-auto p-6 bg-white border border-slate-200 rounded-lg shadow-xs text-center items-center"
+                ):
+                    ui.icon("menu_book", size="3rem").classes("text-blue-600 mb-2")
+                    ui.label("Select a Course").classes("text-lg font-bold text-slate-900 mb-1")
+                    ui.label(
+                        "Please choose a course below to manage its documents and learning materials."
+                    ).classes("text-xs text-slate-500 mb-5 max-w-md")
 
-            if not active_kb:
-                render_empty_state(
-                    icon="folder_off",
-                    title="No Active Knowledge Base Selected",
-                    description="Please select or create a knowledge base before uploading or inspecting documents.",
-                    action_label="Select Knowledge Base",
-                    on_action=lambda: ui.navigate.to("/knowledge-bases"),
-                )
+                    if not all_courses:
+                        render_empty_state(
+                            icon="folder_off",
+                            title="No Courses Available",
+                            description="No courses are currently available. Create a course first to upload materials.",
+                            action_label="Manage Courses" if is_admin else None,
+                            on_action=lambda: ui.navigate.to("/knowledge-bases"),
+                        )
+                    else:
+                        with ui.column().classes("w-full gap-2 text-left"):
+                            for c in all_courses:
+                                with (
+                                    ui.row()
+                                    .classes(
+                                        "w-full items-center justify-between p-3 bg-slate-50 hover:bg-blue-50/50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
+                                    )
+                                    .on(
+                                        "click",
+                                        lambda course_id=c.id: ui.navigate.to(
+                                            f"/documents?kb_id={course_id}"
+                                        ),
+                                    )
+                                ):
+                                    with ui.row().classes("items-center gap-3"):
+                                        ui.icon("school", size="sm").classes("text-blue-600")
+                                        with ui.column().classes("gap-0"):
+                                            ui.label(c.name).classes(
+                                                "text-sm font-bold text-slate-900"
+                                            )
+                                            if c.description:
+                                                ui.label(c.description).classes(
+                                                    "text-xs text-slate-500 line-clamp-1"
+                                                )
+                                    ui.button(
+                                        "Open Course",
+                                        icon="arrow_forward",
+                                        on_click=lambda course_id=c.id: ui.navigate.to(
+                                            f"/documents?kb_id={course_id}"
+                                        ),
+                                    ).props("flat dense no-caps color=primary").classes("text-xs")
                 return
 
-            # Active KB Header Card
+            # Course Context & Supported Formats Banner
             with ui.card().classes(
                 "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs"
             ):
-                with ui.row().classes("w-full justify-between items-center gap-2"):
+                with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap"):
                     with ui.row().classes("items-center gap-2"):
-                        ui.icon("folder", size="sm").classes("text-blue-600")
-                        ui.label("Active Target Corpus:").classes(
-                            "text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                        ui.icon("school", size="sm").classes("text-blue-600")
+                        ui.label(f"Course: {selected_course.name}").classes(
+                            "text-sm font-bold text-slate-900"
                         )
-                        ui.label(active_kb.name).classes("text-sm font-bold text-slate-900")
+                        ui.button(
+                            "Switch Course",
+                            icon="swap_horiz",
+                            on_click=lambda: ui.navigate.to("/documents"),
+                        ).props("flat dense no-caps").classes("text-xs text-blue-600 ml-2")
 
-                    with ui.row().classes("items-center gap-1.5"):
-                        ui.label("Supported Formats:").classes(
-                            "text-xs font-semibold text-slate-500 mr-1"
-                        )
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label("Supported:").classes("text-xs font-semibold text-slate-500")
                         formats = [
                             ("PDF", "rose-700"),
                             ("DOCX", "blue-700"),
@@ -81,11 +147,9 @@ def register_documents_page() -> None:
                             ui.badge(fmt_label, color=fmt_color).classes(
                                 "text-[10px] font-mono px-1.5 py-0.5"
                             )
+                        ui.label("• Max 20 MB").classes("text-xs text-slate-400 font-mono")
 
-            # Dynamic document list container
-            doc_container = ui.column().classes("w-full gap-4")
-
-            # Document Upload Section (Admin Only)
+            # Upload Course Material Section (Admin Only)
             if is_admin:
                 max_upload_bytes = settings.MAX_UPLOAD_SIZE_BYTES
                 max_mb = max_upload_bytes // (1024 * 1024)
@@ -94,7 +158,7 @@ def register_documents_page() -> None:
                     "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs"
                 ):
                     with ui.row().classes("items-center justify-between mb-1"):
-                        ui.label("Upload New Document (Administrator)").classes(
+                        ui.label("Upload Course Material").classes(
                             "text-sm font-bold text-slate-900"
                         )
                         ui.label(f"Maximum File Size: {max_mb} MB").classes(
@@ -102,70 +166,100 @@ def register_documents_page() -> None:
                         )
 
                     ui.label(
-                        "Upload course documents to initiate automated parsing, metadata extraction, and semantic chunking."
+                        f"Upload syllabus, lecture notes, or textbooks directly into '{selected_course.name}'. "
+                        "Ingestion pipeline automatically performs parsing, normalization, semantic chunking, and indexing."
                     ).classes("text-xs text-slate-500 mb-3")
 
                     upload_alert = ui.column().classes("w-full mb-2")
 
                     async def handle_upload(e: events.UploadEventArguments) -> None:
                         upload_alert.clear()
-                        fname = e.name.strip()
+                        # Use current NiceGUI FileUpload API directly
+                        file_obj = e.file
+                        fname = file_obj.name.strip()
                         lower_fname = fname.lower()
                         if not any(lower_fname.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
                             with upload_alert:
                                 render_alert(
-                                    f"Unsupported file format for '{fname}'. Only PDF, DOCX, TXT, MD, and CSV files are accepted.",
+                                    f"Unsupported file format for '{fname}'. Supported formats: PDF, DOCX, TXT, MD, CSV.",
                                     level="negative",
                                 )
                             return
 
                         try:
-                            content = await e.read()
-                            size = len(content)
-                        except Exception:
-                            content = b""
-                            size = 0
+                            content = await file_obj.read()
+                            size = (
+                                file_obj.size()
+                                if hasattr(file_obj, "size") and callable(file_obj.size)
+                                else len(content)
+                            )
+                        except Exception as read_err:
+                            with upload_alert:
+                                render_alert(
+                                    f"Failed to read file: {read_err}",
+                                    level="negative",
+                                )
+                            return
 
                         try:
                             doc = api_client.upload_document(
-                                kb_id=active_kb.id,
+                                kb_id=selected_course.id,
                                 filename=fname,
                                 content=content,
                                 content_size_bytes=size,
                             )
                             ui.notify(
-                                f"Uploaded '{doc.filename}' (Status: {doc.status})", type="positive"
+                                f"Uploaded '{doc.filename}'. Processing initiated in background.",
+                                type="positive",
                             )
                             refresh_doc_list()
+                            poll_timer.activate()
                         except ValueError as err:
                             with upload_alert:
                                 render_alert(str(err), level="negative")
 
                     ui.upload(
-                        label=f"Drop files here or click to browse (up to {max_mb} MB)",
+                        label=f"Drop course files here or click to browse (up to {max_mb} MB)",
                         on_upload=handle_upload,
                         auto_upload=True,
                         max_file_size=max_upload_bytes,
                     ).props('accept=".pdf,.docx,.txt,.md,.csv"').classes("w-full")
-            else:
-                with ui.card().classes("w-full p-4 bg-blue-50 border border-blue-200 rounded-lg"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("lock", size="sm").classes("text-blue-700")
-                        ui.label("Student Access (Read-Only)").classes(
-                            "text-sm font-bold text-blue-900"
-                        )
-                    ui.label(
-                        "You have student access to browse course materials and query context. "
-                        "Document upload, ingestion, and deletion are reserved for Course Administrators."
-                    ).classes("text-xs text-blue-800 mt-1 leading-relaxed")
+
+            # ------------------------------------------------------------------
+            # Stable Dynamic Document List Container (Guarantees Single Table)
+            # ------------------------------------------------------------------
+            doc_container = ui.column().classes("w-full gap-4")
 
             def refresh_doc_list() -> None:
+                """Rebuild document list strictly inside doc_container."""
                 doc_container.clear()
                 with doc_container:
-                    render_documents_table()
+                    render_documents_view()
 
-            def render_documents_table() -> None:
-                docs = api_client.get_documents(active_kb.id)
+            def poll_check() -> None:
+                """Periodic poll to update document processing state."""
+                docs = api_client.get_documents(selected_course.id)
+                has_active_processing = any(
+                    d.status in ("PENDING", "PROCESSING") or d.indexing_status == "PROCESSING"
+                    for d in docs
+                )
+                refresh_doc_list()
+                if not has_active_processing:
+                    poll_timer.deactivate()
+
+            poll_timer = ui.timer(3.0, poll_check, active=False)
+
+            def render_documents_view() -> None:
+                docs = api_client.get_documents(selected_course.id)
+
+                # Check if any documents are currently processing
+                active_processing = [
+                    d
+                    for d in docs
+                    if d.status in ("PENDING", "PROCESSING") or d.indexing_status == "PROCESSING"
+                ]
+                if active_processing and not poll_timer.active:
+                    poll_timer.activate()
 
                 with ui.card().classes(
                     "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs"
@@ -178,6 +272,13 @@ def register_documents_page() -> None:
                             ui.label(f"{len(docs)} Document(s) Ingested").classes(
                                 "text-sm font-bold text-slate-800"
                             )
+                            if active_processing:
+                                with ui.row().classes(
+                                    "items-center gap-1 text-xs text-blue-600 font-medium ml-2"
+                                ):
+                                    ui.spinner(size="xs")
+                                    ui.label("Processing active...")
+
                         ui.button(icon="refresh", on_click=refresh_doc_list).props(
                             "flat round dense"
                         ).classes("text-slate-500 hover:text-slate-800").tooltip(
@@ -188,11 +289,11 @@ def register_documents_page() -> None:
                         render_empty_state(
                             icon="description",
                             title="No Documents Uploaded",
-                            description="Upload syllabus, notes, or textbook materials above to populate this knowledge base.",
+                            description=f"No learning materials have been uploaded to '{selected_course.name}' yet.",
                         )
                         return
 
-                    # Responsive Table Wrapper
+                    # Responsive Document Table
                     with ui.element("div").classes("responsive-table-wrapper"):
                         with ui.element("table").classes(
                             "w-full text-left text-xs border-collapse"
@@ -201,18 +302,25 @@ def register_documents_page() -> None:
                                 "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
                             ):
                                 with ui.element("tr"):
-                                    ui.element("th").classes("py-2.5 px-3").text = "Document"
-                                    ui.element("th").classes("py-2.5 px-3").text = "State"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Format"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Size"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Ingestion"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Vectors"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Chunks"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Uploaded"
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Document")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Retrieval")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Format")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Size")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Processing")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Vectors")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Chunks")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Uploaded")
                                     if is_admin:
-                                        ui.element("th").classes(
-                                            "py-2.5 px-3 text-right"
-                                        ).text = "Actions"
+                                        with ui.element("th").classes("py-2.5 px-3 text-right"):
+                                            ui.label("Actions")
 
                             with ui.element("tbody").classes(
                                 "divide-y divide-slate-100 text-slate-800"
@@ -221,52 +329,59 @@ def register_documents_page() -> None:
                                     with ui.element("tr").classes(
                                         "hover:bg-slate-50 transition-colors"
                                     ):
+                                        # Filename & Ingestion failure
                                         with ui.element("td").classes("py-2.5 px-3 font-medium"):
                                             with ui.column().classes("gap-0"):
                                                 ui.label(doc.filename).classes(
-                                                    "truncate max-w-[200px] font-semibold text-slate-900"
+                                                    "truncate max-w-[220px] font-semibold text-slate-900"
                                                 )
                                                 if doc.error_message and doc.status == "FAILED":
-                                                    ui.label("Ingestion error").classes(
-                                                        "text-[10px] text-rose-600"
+                                                    ui.label(f"Error: {doc.error_message}").classes(
+                                                        "text-[10px] text-rose-600 truncate max-w-[200px]"
                                                     ).tooltip(doc.error_message)
 
+                                        # Retrieval Publication State (Active / Inactive)
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             if doc.is_active:
                                                 ui.badge("ACTIVE", color="emerald-700").classes(
                                                     "text-[10px] font-bold"
-                                                ).tooltip(
-                                                    "Included in student vector & lexical retrieval"
-                                                )
+                                                ).tooltip("Active: Included in student queries")
                                             else:
                                                 ui.badge("INACTIVE", color="slate-500").classes(
                                                     "text-[10px] font-bold"
                                                 ).tooltip(
-                                                    "Excluded from retrieval (historical material preserved)"
+                                                    "Inactive: Historical version excluded from retrieval"
                                                 )
 
+                                        # Format
                                         with ui.element("td").classes("py-2.5 px-3 font-mono"):
                                             ui.badge(
                                                 doc.file_type.upper(), color="slate-600"
                                             ).classes("text-[10px]")
 
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 font-mono"
-                                        ).text = format_bytes(doc.file_size_bytes)
+                                        # Size
+                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
+                                            ui.label(format_bytes(doc.file_size_bytes))
 
+                                        # Processing Status
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             render_status_badge(doc.status)
 
+                                        # Vectors Status
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             render_indexing_status_badge(doc.indexing_status)
 
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 font-mono"
-                                        ).text = str(doc.chunk_count)
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 font-mono text-slate-500"
-                                        ).text = doc.created_at
+                                        # Chunks
+                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
+                                            ui.label(str(doc.chunk_count))
 
+                                        # Uploaded Date
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 font-mono text-slate-500"
+                                        ):
+                                            ui.label(doc.created_at)
+
+                                        # Admin Actions
                                         if is_admin:
                                             with ui.element("td").classes("py-2.5 px-3 text-right"):
                                                 with ui.row().classes(
@@ -280,7 +395,7 @@ def register_documents_page() -> None:
                                                         ) -> None:
                                                             try:
                                                                 api_client.deactivate_document(
-                                                                    active_kb.id, d_id
+                                                                    selected_course.id, d_id
                                                                 )
                                                                 ui.notify(
                                                                     f"Deactivated '{d_name}'. Excluded from retrieval.",
@@ -308,7 +423,7 @@ def register_documents_page() -> None:
                                                         ) -> None:
                                                             try:
                                                                 api_client.activate_document(
-                                                                    active_kb.id, d_id
+                                                                    selected_course.id, d_id
                                                                 )
                                                                 ui.notify(
                                                                     f"Activated '{d_name}'. Available for retrieval.",
@@ -328,7 +443,7 @@ def register_documents_page() -> None:
                                                             "text-[11px] px-2 py-0.5"
                                                         ).tooltip("Activate to include in search")
 
-                                                    # Vector Indexing Trigger
+                                                    # Vector Indexing Trigger if parsing succeeded
                                                     if (
                                                         doc.status == "COMPLETED"
                                                         and doc.indexing_status != "COMPLETED"
@@ -337,13 +452,14 @@ def register_documents_page() -> None:
                                                         def trigger_index(d_id=doc.id) -> None:
                                                             try:
                                                                 api_client.index_document(
-                                                                    active_kb.id, d_id
+                                                                    selected_course.id, d_id
                                                                 )
                                                                 ui.notify(
                                                                     "Indexing task initiated in background.",
                                                                     type="positive",
                                                                 )
                                                                 refresh_doc_list()
+                                                                poll_timer.activate()
                                                             except ValueError as err:
                                                                 ui.notify(str(err), type="negative")
 
@@ -361,7 +477,7 @@ def register_documents_page() -> None:
                                                     ) -> None:
                                                         try:
                                                             api_client.delete_document(
-                                                                active_kb.id, d_id
+                                                                selected_course.id, d_id
                                                             )
                                                             ui.notify(
                                                                 f"Deleted '{d_name}'", type="info"
@@ -377,5 +493,5 @@ def register_documents_page() -> None:
                                                         "text-slate-400 hover:text-rose-600"
                                                     ).tooltip("Delete Document")
 
-            # Initial render
-            render_documents_table()
+            # Strictly execute initial render inside doc_container via refresh_doc_list
+            refresh_doc_list()

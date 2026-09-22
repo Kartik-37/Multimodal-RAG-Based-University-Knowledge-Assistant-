@@ -24,6 +24,8 @@ from frontend.client.models import (
     AdminUserDTO,
     ChatMessageDTO,
     CitationDTO,
+    CourseDocumentPreviewDTO,
+    CourseSummaryDTO,
     DocumentDTO,
     HybridRetrievalResultDTO,
     KnowledgeBaseDTO,
@@ -64,8 +66,12 @@ class FrontendAPIClient:
             json={"email": email.strip(), "password": password},
         )
         if resp.status_code != 200:
-            detail = resp.json().get("detail", "Authentication failed.")
-            raise ValueError(detail)
+            try:
+                err_data = resp.json()
+                detail = err_data.get("detail", err_data)
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="auth"))
 
         data = resp.json()
         user_data = data["user"]
@@ -94,8 +100,12 @@ class FrontendAPIClient:
             },
         )
         if resp.status_code != 201:
-            detail = resp.json().get("detail", "Registration failed.")
-            raise ValueError(detail)
+            try:
+                err_data = resp.json()
+                detail = err_data.get("detail", err_data)
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="auth"))
 
         # Automatically authenticate the new user
         return self.login(email=email, password=password)
@@ -159,10 +169,14 @@ class FrontendAPIClient:
             json={"name": name.strip(), "description": description.strip()},
         )
         if resp.status_code == 403:
-            raise ValueError("Administrator privileges required to create knowledge bases.")
+            raise ValueError(normalize_error(403, context="admin"))
         if resp.status_code != 201:
-            detail = resp.json().get("detail", "Failed to create knowledge base.")
-            raise ValueError(detail)
+            try:
+                err_data = resp.json()
+                detail = err_data.get("detail", err_data)
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="admin"))
 
         data = resp.json()
         kb = KnowledgeBaseDTO(
@@ -174,6 +188,38 @@ class FrontendAPIClient:
         )
         self._documents[kb.id] = []
         return kb
+
+    def get_course_summaries(self) -> list[CourseSummaryDTO]:
+        """
+        Fetch aggregated course summaries with document metrics and previews.
+        Single backend request to avoid N+1 queries.
+        """
+        resp = self._http.get("/knowledge-bases/summaries")
+        if resp.status_code != 200:
+            return []
+        items = resp.json()
+        return [
+            CourseSummaryDTO(
+                id=str(item["id"]),
+                name=item["name"],
+                description=item.get("description", ""),
+                created_at=item["created_at"][:10],
+                total_documents=item.get("total_documents", 0),
+                active_documents=item.get("active_documents", 0),
+                inactive_documents=item.get("inactive_documents", 0),
+                document_previews=[
+                    CourseDocumentPreviewDTO(
+                        id=str(p["id"]),
+                        filename=p["filename"],
+                        file_type=p["file_type"],
+                        status=p["status"],
+                        is_active=p["is_active"],
+                    )
+                    for p in item.get("document_previews", [])
+                ],
+            )
+            for item in items
+        ]
 
     # --------------------------------------------------------------------------
     # Documents Boundary
@@ -223,10 +269,14 @@ class FrontendAPIClient:
 
         resp = self._http.post(f"/knowledge-bases/{kb_id}/documents", files=files)
         if resp.status_code == 403:
-            raise ValueError("Students are not permitted to upload documents.")
+            raise ValueError(normalize_error(403, context="admin"))
         if resp.status_code not in (200, 201):
-            detail = resp.json().get("detail", "Document upload rejected.")
-            raise ValueError(detail)
+            try:
+                err_data = resp.json()
+                detail = err_data.get("detail", err_data)
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="document"))
 
         item = resp.json()
         return DocumentDTO(

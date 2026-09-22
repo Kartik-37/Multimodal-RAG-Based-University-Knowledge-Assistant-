@@ -57,7 +57,6 @@ def _handle_logout() -> None:
 def _render_navbar(active_route: str) -> None:
     """Render the application navigation header and responsive mobile drawer."""
     user = state.current_user
-    kbs = api_client.get_knowledge_bases() if user else []
     nav_items = get_nav_items(user)
 
     # Mobile Drawer (toggled via hamburger button)
@@ -76,31 +75,6 @@ def _render_navbar(active_route: str) -> None:
                 ui.button(icon="close", on_click=lambda: mobile_drawer.set_value(False)).props(
                     "flat round dense text-color=white"
                 ).classes("text-gray-400 hover:text-white")
-
-            # Active KB Selector in Mobile Drawer (Admin only)
-            if user.role == "ADMIN" and kbs:
-                with ui.column().classes("w-full gap-1 my-2"):
-                    ui.label("ACTIVE COURSE / KB").classes(
-                        "text-[11px] font-semibold text-slate-400 tracking-wider"
-                    )
-                    active_id = state.active_kb.id if state.active_kb else kbs[0].id
-                    kb_options = {kb.id: kb.name for kb in kbs}
-
-                    def on_kb_change_mobile(e: object) -> None:
-                        val = getattr(e, "value", None)
-                        for kb in kbs:
-                            if kb.id == val:
-                                state.active_kb = kb
-                                ui.notify(f"Active KB: {kb.name}", type="info")
-                                break
-
-                    ui.select(
-                        options=kb_options,
-                        value=active_id,
-                        on_change=on_kb_change_mobile,
-                    ).props("dense outlined dark options-dense").classes(
-                        "w-full text-xs text-white"
-                    )
 
             # Navigation Links in Mobile Drawer
             with ui.column().classes("w-full gap-1 my-2"):
@@ -182,31 +156,6 @@ def _render_navbar(active_route: str) -> None:
         # Right: Active KB Selector + User Profile / Logout
         with ui.row().classes("items-center gap-3"):
             if user:
-                # Desktop Active KB Selector (Admin only, hidden on mobile)
-                if user.role == "ADMIN" and kbs:
-                    active_id = state.active_kb.id if state.active_kb else kbs[0].id
-                    kb_options = {kb.id: kb.name for kb in kbs}
-
-                    def on_kb_change(e: object) -> None:
-                        val = getattr(e, "value", None)
-                        for kb in kbs:
-                            if kb.id == val:
-                                state.active_kb = kb
-                                ui.notify(f"Active KB: {kb.name}", type="info")
-                                break
-
-                    with ui.row().classes(
-                        "hidden lg:flex items-center gap-1 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700"
-                    ):
-                        ui.icon("folder", size="xs").classes("text-blue-400")
-                        ui.select(
-                            options=kb_options,
-                            value=active_id,
-                            on_change=on_kb_change,
-                        ).props("dense borderless dark options-dense").classes(
-                            "text-xs text-white w-40"
-                        )
-
                 # User Profile pill & Sign Out
                 with ui.row().classes("items-center gap-2 border-l border-slate-700 pl-3"):
                     with (

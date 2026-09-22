@@ -3,15 +3,15 @@ Dashboard Presentation Page with Role-Tailored Perspectives.
 
 Provides distinct experiences:
 - STUDENT: Direct inquiry entry point, course overview cards, grounded search access.
-- ADMIN: Course management, document lifecycle stats, system indexing shortcuts, administrator access.
-Strictly avoids N+1 API calls.
+- ADMIN: University Knowledge Management with courses, document lifecycle, and administrators.
+Strictly avoids N+1 API calls and uses no obsolete active-corpus concepts.
 """
 
 from nicegui import ui
 
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
-from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
+from frontend.components.status_badge import render_status_badge
 from frontend.components.ui_kit import render_empty_state, render_stat_card
 from frontend.state.app_state import state
 
@@ -33,12 +33,12 @@ def register_dashboard_page() -> None:
         is_admin = bool(user and user.role == "ADMIN")
 
         page_title = (
-            "Administrator Dashboard"
+            "University Knowledge Management"
             if is_admin
             else f"Welcome, {user.full_name if user else 'Student'}"
         )
         page_subtitle = (
-            "Central administration for courses, document lifecycle, and retrieval configuration."
+            "Manage courses, learning material, document lifecycle, and administrators."
             if is_admin
             else "University Knowledge Assistant — search course materials with verified citations."
         )
@@ -49,12 +49,12 @@ def register_dashboard_page() -> None:
             active_route="/dashboard",
             require_auth=True,
         ):
-            kbs = api_client.get_knowledge_bases() if user else []
-
             # ------------------------------------------------------------------
             # STUDENT PERSPECTIVE
             # ------------------------------------------------------------------
             if not is_admin:
+                kbs = api_client.get_knowledge_bases() if user else []
+
                 # 1. Primary Ask Hero Card
                 with ui.card().classes(
                     "w-full p-6 bg-gradient-to-r from-blue-900 to-indigo-900 text-white rounded-xl shadow-sm gap-3"
@@ -117,17 +117,12 @@ def register_dashboard_page() -> None:
                                         or "Official course materials, syllabus, and lecture notes."
                                     ).classes("text-xs text-slate-600 line-clamp-2 leading-relaxed")
 
-                                    def make_ask_course_handler(course=kb):
-                                        def handler():
-                                            state.active_kb = course
-                                            ui.navigate.to("/chat")
-
-                                        return handler
-
                                     ui.button(
                                         "Ask about this course",
                                         icon="chat_bubble_outline",
-                                        on_click=make_ask_course_handler(),
+                                        on_click=lambda course_id=kb.id: ui.navigate.to(
+                                            f"/chat?kb_id={course_id}"
+                                        ),
                                     ).props("flat dense no-caps text-color=primary").classes(
                                         "text-xs font-semibold self-start mt-1 p-0"
                                     )
@@ -136,96 +131,89 @@ def register_dashboard_page() -> None:
             # ------------------------------------------------------------------
             # ADMINISTRATOR PERSPECTIVE
             # ------------------------------------------------------------------
-            active_kb = state.active_kb
-            docs = api_client.get_documents(active_kb.id) if active_kb else []
+            course_summaries = api_client.get_course_summaries()
+            try:
+                admins = api_client.get_admins()
+            except Exception:
+                admins = []
 
-            # 1. Admin Stat Cards
+            total_courses = len(course_summaries)
+            total_documents = sum(c.total_documents for c in course_summaries)
+            active_documents = sum(c.active_documents for c in course_summaries)
+            total_admins = len(admins)
+
+            # 1. Summary Cards (Courses, Documents, Active Documents, Administrators)
             with ui.row().classes("w-full gap-4"):
                 render_stat_card(
-                    title="Courses / Knowledge Bases",
-                    value=len(kbs),
-                    subtitle="Managed university corpora",
-                    icon="folder",
+                    title="Courses",
+                    value=total_courses,
+                    subtitle="Registered university courses",
+                    icon="menu_book",
                     icon_color="blue-600",
                 )
-
                 render_stat_card(
-                    title="Active Course Scope",
-                    value=active_kb.name if active_kb else "None Selected",
-                    subtitle=f"{len(docs)} document(s) in active scope"
-                    if active_kb
-                    else "Select a course to inspect",
-                    icon="radio_button_checked",
-                    icon_color="emerald-600",
-                )
-
-                render_stat_card(
-                    title="Active Scope Documents",
-                    value=len(docs) if active_kb else 0,
-                    subtitle="Eligible for semantic & lexical retrieval"
-                    if active_kb
-                    else "No active scope selected",
+                    title="Documents",
+                    value=total_documents,
+                    subtitle="Course learning materials",
                     icon="description",
                     icon_color="indigo-600",
                 )
+                render_stat_card(
+                    title="Active Documents",
+                    value=active_documents,
+                    subtitle="Published & retrieval eligible",
+                    icon="verified",
+                    icon_color="emerald-600",
+                )
+                render_stat_card(
+                    title="Administrators",
+                    value=total_admins,
+                    subtitle="Faculty administrators",
+                    icon="admin_panel_settings",
+                    icon_color="purple-600",
+                )
 
-            # 2. Admin Action Cards
-            with ui.row().classes("w-full gap-4 mt-1"):
-                # Course Management
-                with ui.card().classes(
-                    "flex-1 min-w-[240px] p-4 bg-white border border-slate-200 rounded-lg shadow-xs hover:border-blue-300 transition-colors"
+            # 2. Quick Actions
+            with ui.card().classes(
+                "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs mt-1"
+            ):
+                with ui.row().classes(
+                    "items-center justify-between w-full mb-3 pb-2 border-b border-slate-100"
                 ):
-                    with ui.row().classes("items-center gap-2 mb-1"):
-                        ui.icon("menu_book", size="sm").classes("text-blue-600")
-                        ui.label("Courses").classes("text-sm font-bold text-slate-900")
-                    ui.label("Create new courses and manage student enrollment access.").classes(
-                        "text-xs text-slate-600 mb-3"
-                    )
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("bolt", size="sm").classes("text-amber-500")
+                        ui.label("Quick Actions").classes("text-sm font-bold text-slate-800")
+
+                with ui.row().classes("w-full gap-3 flex-wrap"):
+                    ui.button(
+                        "Create Course",
+                        icon="add",
+                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
+                    ).props("color=primary no-caps dense").classes("text-xs font-medium px-4 py-2")
+
+                    ui.button(
+                        "Upload Document",
+                        icon="upload_file",
+                        on_click=lambda: ui.navigate.to("/documents"),
+                    ).props("color=positive no-caps dense").classes("text-xs font-medium px-4 py-2")
+
                     ui.button(
                         "Manage Courses",
-                        icon="arrow_forward",
+                        icon="menu_book",
                         on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                    ).props("color=primary no-caps dense").classes(
-                        "text-xs font-medium px-3 py-1.5"
+                    ).props("outline color=primary no-caps dense").classes(
+                        "text-xs font-medium px-4 py-2"
                     )
 
-                # Document Management
-                with ui.card().classes(
-                    "flex-1 min-w-[240px] p-4 bg-white border border-slate-200 rounded-lg shadow-xs hover:border-emerald-300 transition-colors"
-                ):
-                    with ui.row().classes("items-center gap-2 mb-1"):
-                        ui.icon("upload_file", size="sm").classes("text-emerald-600")
-                        ui.label("Documents").classes("text-sm font-bold text-slate-900")
-                    ui.label(
-                        "Upload syllabi, activate new versions, or deactivate historical material."
-                    ).classes("text-xs text-slate-600 mb-3")
                     ui.button(
-                        "Manage Documents",
-                        icon="arrow_forward",
-                        on_click=lambda: ui.navigate.to("/documents"),
-                    ).props("color=positive no-caps dense").classes(
-                        "text-xs font-medium px-3 py-1.5"
-                    )
-
-                # Administrator Management
-                with ui.card().classes(
-                    "flex-1 min-w-[240px] p-4 bg-white border border-slate-200 rounded-lg shadow-xs hover:border-purple-300 transition-colors"
-                ):
-                    with ui.row().classes("items-center gap-2 mb-1"):
-                        ui.icon("admin_panel_settings", size="sm").classes("text-purple-600")
-                        ui.label("Administrators").classes("text-sm font-bold text-slate-900")
-                    ui.label(
-                        "Provision new faculty administrators and audit active admin accounts."
-                    ).classes("text-xs text-slate-600 mb-3")
-                    ui.button(
-                        "Manage Admins",
-                        icon="arrow_forward",
+                        "Manage Administrators",
+                        icon="admin_panel_settings",
                         on_click=lambda: ui.navigate.to("/administrators"),
                     ).props("outline color=purple no-caps dense").classes(
-                        "text-xs font-medium px-3 py-1.5"
+                        "text-xs font-medium px-4 py-2"
                     )
 
-            # 3. Active Corpus Document Table Preview
+            # 3. Courses Overview
             with ui.card().classes(
                 "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
             ):
@@ -233,29 +221,107 @@ def register_dashboard_page() -> None:
                     "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
                 ):
                     with ui.row().classes("items-center gap-2"):
-                        ui.icon("table_chart", size="sm").classes("text-slate-600")
-                        ui.label(
-                            f"Documents in '{active_kb.name if active_kb else 'Active Scope'}'"
-                        ).classes("text-sm font-bold text-slate-800")
+                        ui.icon("school", size="sm").classes("text-blue-600")
+                        ui.label("Courses").classes("text-sm font-bold text-slate-800")
                     ui.button(
-                        "Manage Documents",
+                        "View All Courses",
                         icon="arrow_forward",
-                        on_click=lambda: ui.navigate.to("/documents"),
+                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
                     ).props("flat dense no-caps").classes("text-xs text-blue-600")
 
-                if not active_kb:
+                if not course_summaries:
                     render_empty_state(
-                        icon="folder_off",
-                        title="No Course Selected",
-                        description="Select a course to inspect documents and vector indexing status.",
-                        action_label="Select Course",
+                        icon="menu_book",
+                        title="No Courses Registered",
+                        description="Create university courses to begin uploading materials.",
+                        action_label="Create Course",
                         on_action=lambda: ui.navigate.to("/knowledge-bases"),
                     )
-                elif not docs:
+                else:
+                    with ui.element("div").classes("responsive-table-wrapper"):
+                        with ui.element("table").classes(
+                            "w-full text-left text-xs border-collapse"
+                        ):
+                            with ui.element("thead").classes(
+                                "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
+                            ):
+                                with ui.element("tr"):
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Course Name")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Total Materials")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Active (Published)")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Inactive (Historical)")
+                                    with ui.element("th").classes("py-2.5 px-3 text-right"):
+                                        ui.label("Action")
+
+                            with ui.element("tbody").classes(
+                                "divide-y divide-slate-100 text-slate-800"
+                            ):
+                                for c in course_summaries:
+                                    with ui.element("tr").classes(
+                                        "hover:bg-slate-50 transition-colors"
+                                    ):
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 font-semibold text-slate-900"
+                                        ):
+                                            ui.label(c.name)
+                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
+                                            ui.label(str(c.total_documents))
+                                        with ui.element("td").classes("py-2.5 px-3"):
+                                            ui.badge(
+                                                f"{c.active_documents} Active", color="emerald-700"
+                                            ).classes("text-[10px] font-bold")
+                                        with ui.element("td").classes("py-2.5 px-3"):
+                                            ui.badge(
+                                                f"{c.inactive_documents} Inactive",
+                                                color="slate-500",
+                                            ).classes("text-[10px]")
+                                        with ui.element("td").classes("py-2.5 px-3 text-right"):
+                                            ui.button(
+                                                "Manage Documents",
+                                                icon="arrow_forward",
+                                                on_click=lambda course_id=c.id: ui.navigate.to(
+                                                    f"/documents?kb_id={course_id}"
+                                                ),
+                                            ).props("flat dense no-caps color=primary").classes(
+                                                "text-xs"
+                                            )
+
+            # 4. Recent Document Activity
+            recent_docs = []
+            for c in course_summaries:
+                for preview in c.document_previews:
+                    recent_docs.append(
+                        {
+                            "course_name": c.name,
+                            "course_id": c.id,
+                            "filename": preview.filename,
+                            "file_type": preview.file_type,
+                            "status": preview.status,
+                            "is_active": preview.is_active,
+                        }
+                    )
+
+            with ui.card().classes(
+                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
+            ):
+                with ui.row().classes(
+                    "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("history", size="sm").classes("text-slate-600")
+                        ui.label("Recent Document Activity").classes(
+                            "text-sm font-bold text-slate-800"
+                        )
+
+                if not recent_docs:
                     render_empty_state(
                         icon="description",
-                        title="No Documents Uploaded",
-                        description="This course does not contain any uploaded documents yet.",
+                        title="No Recent Documents",
+                        description="Uploaded documents across all courses will appear here.",
                         action_label="Upload Document",
                         on_action=lambda: ui.navigate.to("/documents"),
                     )
@@ -268,42 +334,42 @@ def register_dashboard_page() -> None:
                                 "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
                             ):
                                 with ui.element("tr"):
-                                    ui.element("th").classes("py-2.5 px-3").text = "Filename"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Version State"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Format"
-                                    ui.element("th").classes(
-                                        "py-2.5 px-3"
-                                    ).text = "Ingestion Status"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Vectors"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Chunks"
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Filename")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Course")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Format")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Processing")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Retrieval Status")
 
                             with ui.element("tbody").classes(
                                 "divide-y divide-slate-100 text-slate-800"
                             ):
-                                for doc in docs[:10]:
+                                for d in recent_docs[:10]:
                                     with ui.element("tr").classes(
                                         "hover:bg-slate-50 transition-colors"
                                     ):
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 font-medium truncate max-w-[220px]"
-                                        ).text = doc.filename
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 font-medium text-slate-900 truncate max-w-[220px]"
+                                        ):
+                                            ui.label(d["filename"])
+                                        with ui.element("td").classes("py-2.5 px-3 text-slate-600"):
+                                            ui.label(d["course_name"])
+                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
+                                            ui.badge(
+                                                d["file_type"].upper(), color="slate-600"
+                                            ).classes("text-[10px]")
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            if doc.is_active:
+                                            render_status_badge(d["status"])
+                                        with ui.element("td").classes("py-2.5 px-3"):
+                                            if d["is_active"]:
                                                 ui.badge("ACTIVE", color="emerald-700").classes(
                                                     "text-[10px] font-bold"
                                                 )
                                             else:
                                                 ui.badge("INACTIVE", color="slate-500").classes(
-                                                    "text-[10px] font-bold"
+                                                    "text-[10px]"
                                                 )
-                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
-                                            ui.badge(
-                                                doc.file_type.upper(), color="slate-500"
-                                            ).classes("text-[10px]")
-                                        with ui.element("td").classes("py-2.5 px-3"):
-                                            render_status_badge(doc.status)
-                                        with ui.element("td").classes("py-2.5 px-3"):
-                                            render_indexing_status_badge(doc.indexing_status)
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 font-mono"
-                                        ).text = str(doc.chunk_count)

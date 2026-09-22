@@ -44,3 +44,26 @@ class MemberResponse(BaseModel):
     knowledge_base_id: uuid.UUID
     user_id: uuid.UUID
     granted_at: datetime
+
+
+class CourseDocumentPreview(BaseModel):
+    """Schema for compact course document preview."""
+
+    id: uuid.UUID
+    filename: str
+    file_type: str
+    status: str
+    is_active: bool
+
+
+class CourseSummaryResponse(BaseModel):
+    """Schema for course summary with document counts and previews."""
+
+    id: uuid.UUID
+    name: str
+    description: str
+    created_at: datetime
+    total_documents: int
+    active_documents: int
+    inactive_documents: int
+    document_previews: list[CourseDocumentPreview]

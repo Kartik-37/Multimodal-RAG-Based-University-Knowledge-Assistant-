@@ -37,6 +37,8 @@ from backend.app.models.user import User, UserRole
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
 from backend.app.schemas.knowledge_base import (
     AddMemberRequest,
+    CourseDocumentPreview,
+    CourseSummaryResponse,
     KnowledgeBaseCreate,
     KnowledgeBaseResponse,
     MemberResponse,
@@ -111,6 +113,84 @@ def list_knowledge_bases(
 
     kbs = db.execute(stmt).scalars().all()
     return [KnowledgeBaseResponse.model_validate(k) for k in kbs]
+
+
+@router.get(
+    "/summaries",
+    response_model=list[CourseSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get aggregated course summaries with document metrics and previews",
+)
+def get_course_summaries(
+    current_user: AuthenticatedUser,
+    db: DatabaseSession,
+) -> list[CourseSummaryResponse]:
+    """
+    Retrieve courses accessible to current user with aggregated document counts
+    and compact file previews. Strictly avoids N+1 database queries.
+    """
+    if current_user.role == UserRole.ADMIN:
+        kb_stmt = (
+            select(KnowledgeBase)
+            .where(KnowledgeBase.created_by_id == current_user.id)
+            .order_by(KnowledgeBase.created_at.desc())
+        )
+    else:
+        kb_stmt = (
+            select(KnowledgeBase)
+            .join(
+                KnowledgeBaseMember,
+                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+            )
+            .where(KnowledgeBaseMember.user_id == current_user.id)
+            .order_by(KnowledgeBase.created_at.desc())
+        )
+
+    kbs = db.execute(kb_stmt).scalars().all()
+    if not kbs:
+        return []
+
+    kb_ids = [kb.id for kb in kbs]
+    doc_stmt = (
+        select(Document)
+        .where(Document.knowledge_base_id.in_(kb_ids))
+        .order_by(Document.created_at.desc())
+    )
+    all_docs = db.execute(doc_stmt).scalars().all()
+
+    docs_by_kb: dict[uuid.UUID, list[Document]] = {k.id: [] for k in kbs}
+    for d in all_docs:
+        docs_by_kb[d.knowledge_base_id].append(d)
+
+    results: list[CourseSummaryResponse] = []
+    for kb in kbs:
+        kb_docs = docs_by_kb.get(kb.id, [])
+        total = len(kb_docs)
+        active = sum(1 for d in kb_docs if d.is_active)
+        inactive = total - active
+        previews = [
+            CourseDocumentPreview(
+                id=d.id,
+                filename=d.original_filename,
+                file_type=d.file_type,
+                status=d.status.value if hasattr(d.status, "value") else str(d.status),
+                is_active=d.is_active,
+            )
+            for d in kb_docs[:4]
+        ]
+        results.append(
+            CourseSummaryResponse(
+                id=kb.id,
+                name=kb.name,
+                description=kb.description,
+                created_at=kb.created_at,
+                total_documents=total,
+                active_documents=active,
+                inactive_documents=inactive,
+                document_previews=previews,
+            )
+        )
+    return results
 
 
 @router.get(

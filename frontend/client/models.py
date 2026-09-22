@@ -153,3 +153,26 @@ class QueryProcessingResultDTO(BaseModel):
     has_quotes: bool = False
     has_technical_tokens: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CourseDocumentPreviewDTO(BaseModel):
+    """Compact preview of a document for course overview cards."""
+
+    id: str
+    filename: str
+    file_type: str
+    status: str
+    is_active: bool
+
+
+class CourseSummaryDTO(BaseModel):
+    """Enriched course model with aggregated document metrics and file previews."""
+
+    id: str
+    name: str
+    description: str = ""
+    created_at: str = ""
+    total_documents: int = 0
+    active_documents: int = 0
+    inactive_documents: int = 0
+    document_previews: list[CourseDocumentPreviewDTO] = Field(default_factory=list)

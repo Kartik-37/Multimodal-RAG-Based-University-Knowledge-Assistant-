@@ -655,7 +655,7 @@ def test_error_normalization() -> None:
         },
     ]
     norm_val = normalize_error(validation_errs)
-    assert "Password must be at least 8 characters long." in norm_val
+    assert "Password must be at least 8 characters" in norm_val
     assert "Please enter a valid email address." in norm_val
 
     # SQL / Traceback suppression
@@ -679,3 +679,148 @@ def test_admin_user_dto_privacy() -> None:
     assert not hasattr(dto, "id") or "id" not in dto.model_fields
     assert not hasattr(dto, "password") or "password" not in dto.model_fields
     assert not hasattr(dto, "hashed_password") or "hashed_password" not in dto.model_fields
+
+
+class TestStep21CProductUXRepair:
+    """Step 21C regression tests verifying product UX repair and rendering integrity."""
+
+    def test_password_validation_error_normalization_no_raw_dict(self) -> None:
+        """Verify password validation rejects <8 chars and returns human string, not raw Pydantic dict."""
+        from frontend.client.error_handler import normalize_error
+
+        # Pydantic raw dict from FastAPI 422
+        raw_pydantic_error = [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "password"],
+                "msg": "String should have at least 8 characters",
+                "input": "short",
+                "ctx": {"min_length": 8},
+            }
+        ]
+        norm = normalize_error(raw_pydantic_error, context="auth")
+        assert norm == "Password must be at least 8 characters."
+        assert "{'type':" not in norm
+        assert "string_too_short" not in norm
+
+        # Stringified raw dict (defensive handling)
+        stringified_raw = str(raw_pydantic_error)
+        norm_str = normalize_error(stringified_raw, context="auth")
+        assert norm_str == "Password must be at least 8 characters."
+        assert "{'type':" not in norm_str
+
+    def test_registration_short_password_rejection(self) -> None:
+        """Verify API client register method rejects short password with human-readable error."""
+        client = FrontendAPIClient()
+        unique_email = f"shortpass_{uuid.uuid4().hex[:6]}@univ.edu"
+
+        with pytest.raises(ValueError) as excinfo:
+            client.register(unique_email, "123", "Short Pass User")
+
+        err_msg = str(excinfo.value)
+        assert "Password must be at least 8 characters" in err_msg
+        assert "{'type':" not in err_msg
+
+    def test_nicegui_file_upload_api_contract(self) -> None:
+        """Verify installed NiceGUI FileUpload API exposes .name, .read(), and .size()."""
+        from nicegui.elements.upload_files import SmallFileUpload
+
+        test_data = b"%PDF-1.4 test bytes"
+        upload_file = SmallFileUpload(
+            name="syllabus.pdf", content_type="application/pdf", _data=test_data
+        )
+
+        assert upload_file.name == "syllabus.pdf"
+        assert hasattr(upload_file, "read")
+        assert hasattr(upload_file, "size")
+        assert upload_file.size() == len(test_data)
+
+    def test_course_summaries_endpoint_and_dto(self) -> None:
+        """Verify course summaries endpoint returns aggregated document counts and previews without N+1."""
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+
+        # Create a course and upload a document to verify summary calculation
+        course_name = f"Summary Course {uuid.uuid4().hex[:6]}"
+        course = client.create_knowledge_base(course_name, "Testing summary endpoint")
+
+        pdf_bytes = create_sample_pdf_bytes()
+        _ = client.upload_document(
+            kb_id=course.id,
+            filename="syllabus_2026.pdf",
+            content=pdf_bytes,
+        )
+
+        summaries = client.get_course_summaries()
+        assert len(summaries) >= 1
+        target_summary = next((s for s in summaries if s.id == course.id), None)
+        assert target_summary is not None
+        assert target_summary.name == course_name
+        assert target_summary.total_documents >= 1
+        assert target_summary.active_documents >= 1
+        assert target_summary.inactive_documents == 0
+        assert len(target_summary.document_previews) >= 1
+        assert target_summary.document_previews[0].filename == "syllabus_2026.pdf"
+        assert target_summary.document_previews[0].is_active is True
+
+    def test_admin_list_dto_fields(self) -> None:
+        """Verify get_admins returns DTOs with all required identity fields."""
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+
+        admins = client.get_admins()
+        assert len(admins) >= 1
+        admin = admins[0]
+        assert admin.full_name is not None and len(admin.full_name) > 0
+        assert admin.email is not None and "@" in admin.email
+        assert admin.role == "ADMIN"
+        assert admin.is_active is True
+        assert admin.created_at is not None
+
+    def test_no_obsolete_active_corpus_strings_in_frontend(self) -> None:
+        """Verify obsolete active-corpus UI strings have been completely removed from frontend pages."""
+        from pathlib import Path
+
+        pages_to_check = [
+            Path("frontend/pages/documents_page.py"),
+            Path("frontend/pages/knowledge_bases_page.py"),
+            Path("frontend/pages/dashboard_page.py"),
+            Path("frontend/components/layout.py"),
+        ]
+
+        forbidden_phrases = [
+            "Active Target Corpus",
+            "ACTIVE TARGET CORPUS",
+            "Set Active",
+            "Chat with Corpus",
+            "Active Course Scope",
+            "Active Scope Documents",
+            "ACTIVE COURSE / KB",
+        ]
+
+        for file_path in pages_to_check:
+            content = file_path.read_text(encoding="utf-8")
+            for phrase in forbidden_phrases:
+                assert phrase not in content, f"Found obsolete phrase '{phrase}' in {file_path}"
+
+    def test_cleanup_dev_test_data_safety_guards(self) -> None:
+        """Verify cleanup script refuses test database and protects legitimate courses."""
+        from scripts.cleanup_dev_test_data import (
+            PROTECTED_COURSE_NAMES,
+            verify_database_safety,
+        )
+
+        # Rejects test database
+        with pytest.raises(SystemExit):
+            verify_database_safety(
+                "postgresql+psycopg://user:pass@localhost:5432/rag_assistant_test_db"
+            )
+
+        # Rejects arbitrary database
+        with pytest.raises(SystemExit):
+            verify_database_safety("postgresql+psycopg://user:pass@localhost:5432/production_db")
+
+        # Protected course names contain legitimate courses
+        assert "computer architecture" in PROTECTED_COURSE_NAMES
+        assert "official university regulations" in PROTECTED_COURSE_NAMES
+        assert "bca" in PROTECTED_COURSE_NAMES

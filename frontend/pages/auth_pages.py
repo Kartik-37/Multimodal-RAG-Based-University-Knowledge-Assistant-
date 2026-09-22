@@ -66,7 +66,7 @@ def register_auth_pages() -> None:
                             )
                         return
 
-                    submit_btn.props("loading")
+                    submit_btn.props("loading disable")
                     try:
                         user = api_client.login(email, password)
                         ui.notify(f"Welcome, {user.full_name}!", type="positive")
@@ -75,7 +75,7 @@ def register_auth_pages() -> None:
                         with error_container:
                             render_alert(str(err), "negative")
                     finally:
-                        submit_btn.props(remove="loading")
+                        submit_btn.props(remove="loading disable")
 
                 # Keyboard accessibility: Enter key triggers submission
                 email_input.on("keydown.enter", handle_submit)
@@ -110,7 +110,7 @@ def register_auth_pages() -> None:
                         "text-xl font-bold text-slate-900 tracking-tight"
                     )
                     ui.label(
-                        "Public registration establishes a student profile with access to enrolled corpora."
+                        "Public registration establishes a student profile with access to enrolled courses."
                     ).classes("text-xs text-slate-500 max-w-xs")
 
                 error_container = ui.column().classes("w-full mb-3")
@@ -128,7 +128,7 @@ def register_auth_pages() -> None:
                     ui.label("Email Address").classes("text-xs font-semibold text-slate-700")
                     email_input = (
                         ui.input(placeholder="student@university.edu")
-                        .props("outlined dense")
+                        .props("outlined dense type=email")
                         .classes("w-full")
                     )
 
@@ -136,7 +136,7 @@ def register_auth_pages() -> None:
                     ui.label("Password").classes("text-xs font-semibold text-slate-700")
                     password_input = (
                         ui.input(
-                            placeholder="••••••••",
+                            placeholder="At least 8 characters",
                             password=True,
                             password_toggle_button=True,
                         )
@@ -150,14 +150,22 @@ def register_auth_pages() -> None:
                     email = (email_input.value or "").strip()
                     password = password_input.value or ""
 
-                    if not name or not email or not password:
+                    if not name:
                         with error_container:
-                            render_alert(
-                                "All fields are required to register an account.", "warning"
-                            )
+                            render_alert("Full name is required.", "warning")
                         return
 
-                    reg_btn.props("loading")
+                    if not email or "@" not in email or "." not in email.split("@")[-1]:
+                        with error_container:
+                            render_alert("Please enter a valid email address.", "warning")
+                        return
+
+                    if len(password) < 8:
+                        with error_container:
+                            render_alert("Password must be at least 8 characters.", "warning")
+                        return
+
+                    reg_btn.props("loading disable")
                     try:
                         user = api_client.register(
                             email=email,
@@ -172,7 +180,7 @@ def register_auth_pages() -> None:
                         with error_container:
                             render_alert(str(err), "negative")
                     finally:
-                        reg_btn.props(remove="loading")
+                        reg_btn.props(remove="loading disable")
 
                 name_input.on("keydown.enter", handle_register)
                 email_input.on("keydown.enter", handle_register)

@@ -4,6 +4,7 @@ Administrator Management Presentation Page.
 Restricted strictly to authenticated Course Administrators.
 Allows provisioning additional faculty administrators and reviewing active administrative accounts.
 Strictly respects privacy: does not expose internal database UUIDs, passwords, or tokens.
+Guarantees rendering integrity with a single persistent table container.
 """
 
 from nicegui import ui
@@ -20,8 +21,8 @@ def register_admin_users_page() -> None:
     @ui.page("/administrators")
     def admin_users_page() -> None:
         with page_layout(
-            title="Administrator Management",
-            subtitle="Provision and audit faculty administrators with management access to university courses.",
+            title="Administrators",
+            subtitle="Manage faculty administrators who can manage university courses and documents.",
             active_route="/administrators",
             require_auth=True,
         ):
@@ -49,17 +50,17 @@ def register_admin_users_page() -> None:
                     ui.icon("person_add", size="sm").classes("text-purple-600")
                     ui.label("Add New Administrator").classes("text-sm font-bold text-slate-900")
                 ui.label(
-                    "Faculty administrators can manage course documents, publish syllabi, and provision other administrators."
+                    "Faculty administrators can manage course documents, publish materials, and provision other administrators."
                 ).classes("text-xs text-slate-500 mb-4")
 
                 with ui.row().classes("w-full gap-4 items-start flex-wrap"):
                     name_input = (
-                        ui.input(label="Full Name", placeholder="e.g. Dr. Jane Smith")
+                        ui.input(label="Full Name", placeholder="e.g. Kartik Makwana")
                         .props("outlined dense")
                         .classes("flex-1 min-w-[220px]")
                     )
                     email_input = (
-                        ui.input(label="Email Address", placeholder="faculty@university.edu")
+                        ui.input(label="Email Address", placeholder="kartik@example.com")
                         .props("outlined dense type=email")
                         .classes("flex-1 min-w-[220px]")
                     )
@@ -76,11 +77,12 @@ def register_admin_users_page() -> None:
                 )
 
             # ------------------------------------------------------------------
-            # 2. Administrator Accounts Table
+            # 2. Administrator Accounts Table Container (Single Dynamic Container)
             # ------------------------------------------------------------------
             admin_table_container = ui.column().classes("w-full gap-2")
 
             def refresh_admins() -> None:
+                """Strictly rebuild table inside admin_table_container."""
                 admin_table_container.clear()
                 with admin_table_container:
                     render_admins_table()
@@ -91,19 +93,19 @@ def register_admin_users_page() -> None:
                 email = (email_input.value or "").strip()
                 pwd = password_input.value or ""
 
-                if not name or not email or not pwd:
+                if not name:
                     with form_alert:
-                        render_alert(
-                            "All fields are required to create an administrator account.",
-                            level="warning",
-                        )
+                        render_alert("Full name is required.", level="warning")
+                    return
+
+                if not email or "@" not in email or "." not in email.split("@")[-1]:
+                    with form_alert:
+                        render_alert("Please enter a valid email address.", level="warning")
                     return
 
                 if len(pwd) < 8:
                     with form_alert:
-                        render_alert(
-                            "Password must be at least 8 characters long.", level="warning"
-                        )
+                        render_alert("Password must be at least 8 characters.", level="warning")
                     return
 
                 try:
@@ -158,11 +160,16 @@ def register_admin_users_page() -> None:
                                 "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
                             ):
                                 with ui.element("tr"):
-                                    ui.element("th").classes("py-2.5 px-3").text = "Full Name"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Email"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Role"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Status"
-                                    ui.element("th").classes("py-2.5 px-3").text = "Created Date"
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Full Name")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Email")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Role")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Status")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Created Date")
 
                             with ui.element("tbody").classes(
                                 "divide-y divide-slate-100 text-slate-800"
@@ -171,22 +178,31 @@ def register_admin_users_page() -> None:
                                     with ui.element("tr").classes(
                                         "hover:bg-slate-50 transition-colors"
                                     ):
-                                        ui.element("td").classes(
+                                        with ui.element("td").classes(
                                             "py-2.5 px-3 font-semibold text-slate-900"
-                                        ).text = adm.full_name
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 text-slate-600 font-mono"
-                                        ).text = adm.email
+                                        ):
+                                            ui.label(adm.full_name)
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 text-slate-600 font-mono text-xs"
+                                        ):
+                                            ui.label(adm.email)
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            ui.badge("ADMIN", color="purple-700").classes(
+                                            ui.badge("Administrator", color="purple-700").classes(
                                                 "text-[10px] font-bold"
                                             )
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            ui.badge("ACTIVE", color="emerald-700").classes(
-                                                "text-[10px] font-bold"
-                                            )
-                                        ui.element("td").classes(
-                                            "py-2.5 px-3 text-slate-500 font-mono"
-                                        ).text = adm.created_at
+                                            if adm.is_active:
+                                                ui.badge("● Active", color="emerald-700").classes(
+                                                    "text-[10px] font-bold"
+                                                )
+                                            else:
+                                                ui.badge("Inactive", color="slate-500").classes(
+                                                    "text-[10px] font-bold"
+                                                )
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 text-slate-500 font-mono text-xs"
+                                        ):
+                                            ui.label(f"Created {adm.created_at}")
 
-            render_admins_table()
+            # Strictly execute initial render inside admin_table_container via refresh_admins
+            refresh_admins()

@@ -68,3 +68,6 @@ build/
 dist/
 *.egg-info/
 
+# Scratch & temporary workspace files
+scratch/
+

@@ -84,7 +84,7 @@ def register_profile_page() -> None:
                     # Notice on Role Privileges
                     if user.role == "ADMIN":
                         render_alert(
-                            message="You have Administrator privileges. You can create knowledge bases, upload course documents, and manage corpus members.",
+                            message="You have Administrator privileges. You can create courses, upload course documents, and manage course materials.",
                             level="info",
                         )
                     else:
