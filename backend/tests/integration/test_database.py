@@ -144,10 +144,10 @@ def test_readiness_probe_database_available(client: TestClient) -> None:
 
 
 def test_readiness_probe_database_unavailable() -> None:
-    """8b: Verify /ready returns 503 when database is unreachable without exposing secrets."""
-    with patch("backend.app.main.check_database_connection", return_value=False):
-        app = create_application()
-        with TestClient(app) as test_client:
+    """8b: Verify /ready returns 503 when database is unreachable at runtime without exposing secrets."""
+    app = create_application()
+    with TestClient(app) as test_client:
+        with patch("backend.app.main.check_database_connection", return_value=False):
             # Liveness remains healthy even if DB is down
             health_res = test_client.get("/health")
             assert health_res.status_code == status.HTTP_200_OK

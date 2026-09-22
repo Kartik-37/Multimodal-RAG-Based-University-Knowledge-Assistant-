@@ -5,13 +5,43 @@ Configures application lifecycle, CORS, routing, and system health checks.
 Follows the modular monolith pattern where route handlers remain thin.
 """
 
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.api.v1.router import api_router
 from backend.app.core.config import settings
-from backend.app.db.session import check_database_connection
+from backend.app.db.session import check_database_connection, engine
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Application lifespan context manager:
+    - Startup: Verifies authoritative PostgreSQL connectivity using existing health check probe.
+      Fails fast without exposing connection secrets if database is unreachable.
+    - Shutdown: Disposes SQLAlchemy engine connection pool on both normal exit and exceptions,
+      preventing connection or socket leakage.
+    """
+    # 1. Startup: Verify database connection using existing health check mechanism
+    if not check_database_connection():
+        engine.dispose()
+        raise RuntimeError("Database connection could not be established at application startup.")
+
+    logger.info("Application startup: database connectivity verified successfully.")
+
+    try:
+        yield
+    finally:
+        # 2. Shutdown: Dispose engine connection pool on normal exit and exception
+        logger.info("Application shutdown: disposing database connection pool.")
+        engine.dispose()
 
 
 def create_application() -> FastAPI:
@@ -22,6 +52,7 @@ def create_application() -> FastAPI:
         description="Production-grade RAG application for university knowledge bases",
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url="/redoc" if settings.DEBUG else None,
+        lifespan=lifespan,
     )
 
     # Explicit CORS configuration (safe for local development with NiceGUI frontend and API clients)
