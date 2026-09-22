@@ -30,6 +30,12 @@ class AppState:
         return api_client.get_current_user()
 
     @property
+    def is_admin(self) -> bool:
+        """Check if current authenticated user has administrator privileges."""
+        user = self.current_user
+        return user is not None and user.role == "ADMIN"
+
+    @property
     def active_kb(self) -> KnowledgeBaseDTO | None:
         """Get currently active knowledge base, defaulting to first available if none selected."""
         if self._active_kb is None:

@@ -1,14 +1,15 @@
 """
-Authentication Presentation Pages.
+Authentication Presentation Pages with Accessible Form Controls.
 
-Provides login and registration forms for the presentation shell.
-Communicates strictly via the FrontendAPIClient boundary.
+Provides sign-in and registration interfaces adhering to WCAG 2.1 AA keyboard
+accessibility and visible labeling guidelines. Communicates strictly via FrontendAPIClient.
 """
 
 from nicegui import ui
 
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
+from frontend.components.ui_kit import render_alert
 
 
 def register_auth_pages() -> None:
@@ -18,107 +19,178 @@ def register_auth_pages() -> None:
     def login_page() -> None:
         with page_layout(title="", require_auth=False):
             with ui.card().classes(
-                "w-full max-w-md mx-auto p-6 border border-gray-200 shadow-sm mt-8"
+                "w-full max-w-md mx-auto p-6 sm:p-8 bg-white border border-slate-200 rounded-lg shadow-sm mt-8"
             ):
-                with ui.column().classes("w-full gap-1 mb-4"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("lock", size="md").classes("text-blue-600")
-                        ui.label("Sign In").classes("text-xl font-bold text-gray-900")
-                    ui.label("Enter your credentials to access knowledge bases and chat.").classes(
-                        "text-xs text-gray-500"
+                with ui.column().classes("w-full gap-1 mb-6 text-center items-center"):
+                    ui.icon("school", size="2.5rem").classes("text-blue-600 mb-1")
+                    ui.label("University RAG Assistant").classes(
+                        "text-xl font-bold text-slate-900 tracking-tight"
+                    )
+                    ui.label(
+                        "Sign in with your institutional credentials to access knowledge bases."
+                    ).classes("text-xs text-slate-500 max-w-xs")
+
+                # Inline error container
+                error_container = ui.column().classes("w-full mb-3")
+
+                # Accessible Form Fields with Explicit Labels
+                with ui.column().classes("w-full gap-1 mb-3"):
+                    ui.label("Email Address").classes("text-xs font-semibold text-slate-700")
+                    email_input = (
+                        ui.input(placeholder="user@university.edu")
+                        .props("outlined dense")
+                        .classes("w-full")
                     )
 
-                email_input = ui.input(
-                    label="Email Address",
-                    placeholder="user@example.com",
-                ).classes("w-full mb-2")
-
-                password_input = ui.input(
-                    label="Password",
-                    password=True,
-                    password_toggle_button=True,
-                ).classes("w-full mb-4")
+                with ui.column().classes("w-full gap-1 mb-5"):
+                    ui.label("Password").classes("text-xs font-semibold text-slate-700")
+                    password_input = (
+                        ui.input(
+                            placeholder="••••••••",
+                            password=True,
+                            password_toggle_button=True,
+                        )
+                        .props("outlined dense")
+                        .classes("w-full")
+                    )
 
                 def handle_submit() -> None:
+                    error_container.clear()
+                    email = (email_input.value or "").strip()
+                    password = password_input.value or ""
+
+                    if not email or not password:
+                        with error_container:
+                            render_alert(
+                                "Please provide both email address and password.", "warning"
+                            )
+                        return
+
+                    submit_btn.props("loading")
                     try:
-                        email = email_input.value or ""
-                        password = password_input.value or ""
-                        user = api_client.login(email.strip(), password)
-                        ui.notify(f"Welcome back, {user.full_name}!", type="positive")
+                        user = api_client.login(email, password)
+                        ui.notify(f"Welcome, {user.full_name}!", type="positive")
                         ui.navigate.to("/dashboard")
                     except ValueError as err:
-                        ui.notify(str(err), type="negative")
+                        with error_container:
+                            render_alert(str(err), "negative")
+                    finally:
+                        submit_btn.props(remove="loading")
 
-                def handle_demo_login() -> None:
-                    email_input.value = "admin@university.edu"
-                    password_input.value = "DemoPass123!"
-                    handle_submit()
+                # Keyboard accessibility: Enter key triggers submission
+                email_input.on("keydown.enter", handle_submit)
+                password_input.on("keydown.enter", handle_submit)
 
-                with ui.column().classes("w-full gap-2"):
-                    ui.button("Sign In", icon="login", on_click=handle_submit).props(
-                        "color=primary"
-                    ).classes("w-full")
+                with ui.column().classes("w-full gap-2.5"):
+                    submit_btn = (
+                        ui.button(
+                            "Sign In",
+                            icon="login",
+                            on_click=handle_submit,
+                        )
+                        .props("color=primary no-caps")
+                        .classes("w-full py-2 font-medium text-sm")
+                    )
 
-                    ui.button(
-                        "Quick Sign-In (Demo User)",
-                        icon="bolt",
-                        on_click=handle_demo_login,
-                    ).props("outline color=secondary").classes("w-full text-xs")
-
-                with ui.row().classes("w-full justify-center text-xs text-gray-500 mt-4"):
+                with ui.row().classes("w-full justify-center text-xs text-slate-500 mt-5"):
                     ui.label("Don't have an account?")
-                    ui.link("Register here", "/register").classes("text-blue-600 font-semibold")
+                    ui.link("Register here", "/register").classes(
+                        "text-blue-600 font-semibold hover:underline ml-1"
+                    )
 
     @ui.page("/register")
     def register_page() -> None:
         with page_layout(title="", require_auth=False):
             with ui.card().classes(
-                "w-full max-w-md mx-auto p-6 border border-gray-200 shadow-sm mt-8"
+                "w-full max-w-md mx-auto p-6 sm:p-8 bg-white border border-slate-200 rounded-lg shadow-sm mt-8"
             ):
-                with ui.column().classes("w-full gap-1 mb-4"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("person_add", size="md").classes("text-blue-600")
-                        ui.label("Create Account").classes("text-xl font-bold text-gray-900")
-                    ui.label("Register a new user account for the RAG Assistant.").classes(
-                        "text-xs text-gray-500"
+                with ui.column().classes("w-full gap-1 mb-4 text-center items-center"):
+                    ui.icon("person_add", size="2.5rem").classes("text-blue-600 mb-1")
+                    ui.label("Create Student Account").classes(
+                        "text-xl font-bold text-slate-900 tracking-tight"
+                    )
+                    ui.label(
+                        "Public registration establishes a student profile with access to enrolled corpora."
+                    ).classes("text-xs text-slate-500 max-w-xs")
+
+                error_container = ui.column().classes("w-full mb-3")
+
+                # Accessible Form Fields
+                with ui.column().classes("w-full gap-1 mb-3"):
+                    ui.label("Full Name").classes("text-xs font-semibold text-slate-700")
+                    name_input = (
+                        ui.input(placeholder="Student Name")
+                        .props("outlined dense")
+                        .classes("w-full")
                     )
 
-                name_input = ui.input(
-                    label="Full Name",
-                    placeholder="Prof. John Doe",
-                ).classes("w-full mb-2")
+                with ui.column().classes("w-full gap-1 mb-3"):
+                    ui.label("Email Address").classes("text-xs font-semibold text-slate-700")
+                    email_input = (
+                        ui.input(placeholder="student@university.edu")
+                        .props("outlined dense")
+                        .classes("w-full")
+                    )
 
-                email_input = ui.input(
-                    label="Email Address",
-                    placeholder="john@example.edu",
-                ).classes("w-full mb-2")
-
-                password_input = ui.input(
-                    label="Password",
-                    password=True,
-                    password_toggle_button=True,
-                ).classes("w-full mb-4")
+                with ui.column().classes("w-full gap-1 mb-5"):
+                    ui.label("Password").classes("text-xs font-semibold text-slate-700")
+                    password_input = (
+                        ui.input(
+                            placeholder="••••••••",
+                            password=True,
+                            password_toggle_button=True,
+                        )
+                        .props("outlined dense")
+                        .classes("w-full")
+                    )
 
                 def handle_register() -> None:
+                    error_container.clear()
+                    name = (name_input.value or "").strip()
+                    email = (email_input.value or "").strip()
+                    password = password_input.value or ""
+
+                    if not name or not email or not password:
+                        with error_container:
+                            render_alert(
+                                "All fields are required to register an account.", "warning"
+                            )
+                        return
+
+                    reg_btn.props("loading")
                     try:
-                        name = name_input.value or ""
-                        email = email_input.value or ""
-                        password = password_input.value or ""
                         user = api_client.register(
-                            email=email.strip(),
+                            email=email,
                             password=password,
-                            full_name=name.strip(),
+                            full_name=name,
                         )
-                        ui.notify(f"Account created! Welcome, {user.full_name}!", type="positive")
+                        ui.notify(
+                            f"Account registered! Welcome, {user.full_name}!", type="positive"
+                        )
                         ui.navigate.to("/dashboard")
                     except ValueError as err:
-                        ui.notify(str(err), type="negative")
+                        with error_container:
+                            render_alert(str(err), "negative")
+                    finally:
+                        reg_btn.props(remove="loading")
 
-                with ui.column().classes("w-full gap-2"):
-                    ui.button("Register", icon="person_add", on_click=handle_register).props(
-                        "color=primary"
-                    ).classes("w-full")
+                name_input.on("keydown.enter", handle_register)
+                email_input.on("keydown.enter", handle_register)
+                password_input.on("keydown.enter", handle_register)
 
-                with ui.row().classes("w-full justify-center text-xs text-gray-500 mt-4"):
-                    ui.label("Already have an account?")
-                    ui.link("Sign in here", "/login").classes("text-blue-600 font-semibold")
+                with ui.column().classes("w-full gap-2.5"):
+                    reg_btn = (
+                        ui.button(
+                            "Create Account",
+                            icon="person_add",
+                            on_click=handle_register,
+                        )
+                        .props("color=primary no-caps")
+                        .classes("w-full py-2 font-medium text-sm")
+                    )
+
+                with ui.row().classes("w-full justify-center text-xs text-slate-500 mt-5"):
+                    ui.label("Already registered?")
+                    ui.link("Sign in here", "/login").classes(
+                        "text-blue-600 font-semibold hover:underline ml-1"
+                    )

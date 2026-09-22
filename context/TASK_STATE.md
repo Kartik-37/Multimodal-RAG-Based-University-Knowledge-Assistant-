@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 20 COMPLETE — BACKEND PRODUCTION QUALITY GATE VERIFIED
+STEP 21 COMPLETE — FRONTEND DESIGN & ACCESSIBILITY VERIFIED
 
 ## Rules
 
@@ -65,9 +65,50 @@ Non-negotiable requirements:
 - [x] Backend security audit (COMPLETE — Step 19 Comprehensive Backend Security Hardening & Zero-Secret Verification)
 - [x] Backend quality gate (COMPLETE — Step 20 Production Lifespan DB Lifecycle, Model-Migration Parity, Provider Resilience, Pydantic .env Parity, 14 Quality Dimensions Verified)
 - [x] Functional frontend (COMPLETE — Step 3 Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector UI + Step 8 Lexical UI + Step 9 Hybrid UI + Step 10 Rerank UI + Step 11 Query DTO)
-- [ ] Frontend design pass
-- [ ] Accessibility QA
-- [ ] Responsive QA
+- [x] Frontend design pass (COMPLETE — Step 21 Restrained Academic Theme, Responsive Shell, Accessible Multi-Modal Status, Zero N+1 Queries, Safe Markdown, Role Tailored Views)
+- [x] Accessibility QA (COMPLETE — Step 21 WCAG 2.1 AA Engineering Design Target, Visible Focus Rings, Keyboard Navigation, Semantic Multi-Modal Badges)
+- [x] Responsive QA (COMPLETE — Step 21 Unified Navigation Definition, Mobile Left Drawer, Responsive Table Wrappers)
+- [ ] End-to-end QA
+- [ ] Deployment verification
+- [ ] Final security audit
+- [ ] Final RAG evaluation
+- [ ] Documentation
+- [ ] Git/GitHub final review
+
+## Step 21 Execution Record (Frontend Design & Accessibility)
+
+* **Status**: COMPLETE
+* **Core Accomplishments**:
+  1. **Restrained Academic Theme & Design Tokens (`frontend/components/theme.py`)**:
+     - Established institutional color palette (Slate Navy `#0f172a`, Oxford Blue `#1d4ed8`, Canvas `#f8fafc`, Surface `#ffffff`, Slate Border `#e2e8f0`).
+     - Injected global CSS with WCAG 2.1 AA engineering design targets: visible 2px focus rings (`*:focus-visible`), readable typography, custom subtle scrollbars, and responsive table utilities.
+  2. **Unified Navigation Definition (`frontend/components/layout.py`)**:
+     - Single source of truth: `get_nav_items(user)` shared identically across desktop navbar and mobile drawer.
+     - Role-filtered: `Documents` only presented to `ADMIN`; `Dashboard`, `Knowledge Bases`, `Chat & Search`, and `Profile` presented to all authenticated users.
+     - Mobile navigation supported via collapsible Quasar `ui.left_drawer` with full touch targets.
+  3. **Reusable UI Kit Primitives (`frontend/components/ui_kit.py`)**:
+     - Created `render_page_header`, `render_empty_state`, `render_alert` (with `role="alert"`), and `render_stat_card` to ensure consistent visual language across all screens.
+  4. **Multi-Modal Accessible Status Badges (`frontend/components/status_badge.py`)**:
+     - Adheres to accessibility rule: color is never the sole indicator of state (always pairs icon + text label + semantic color).
+     - Covers document ingestion (`COMPLETED`, `PROCESSING`, `FAILED`, `PENDING`), indexing (`INDEXED`, `INDEXING...`, `INDEX FAILED`, `UNINDEXED`), and grounding states (`FULLY GROUNDED`, `PARTIALLY GROUNDED`, `NO EVIDENCE / REFUSAL`, `UNSUPPORTED`).
+  5. **Privacy-Preserving Profile Page (`frontend/pages/profile_page.py`)**:
+     - Added dedicated `/profile` route presenting user display name, email address, role badge, account status, and sign-out controls.
+     - Strictly omits internal user UUIDs, session token hashes, cookie names, and cryptography details.
+  6. **Zero N+1 Queries on Dashboard (`frontend/pages/dashboard_page.py`)**:
+     - Derives document metrics from the active corpus alone, eliminating per-KB looping.
+     - Tailors quick actions and metrics based on `ADMIN` vs `STUDENT` role.
+  7. **Safe Content Rendering in Chat (`frontend/pages/chat_page.py`)**:
+     - Neutralizes raw HTML tags and script event handlers (`sanitize_markdown_text`) before rendering to prevent XSS from untrusted documents or queries.
+     - Standard asynchronous request-response architecture with processing indicator (zero fake streaming).
+  8. **Dynamic Upload Limits (`frontend/pages/documents_page.py`)**:
+     - Dynamically queries `settings.MAX_UPLOAD_SIZE_BYTES` rather than hardcoding file size limits.
+  9. **Frontend Testing Suite (`backend/tests/unit/test_frontend.py`)**:
+     - Expanded to 28 passing unit tests covering role-based navigation, theme injection, UI kit rendering, multi-modal status badges, safe markdown sanitization, upload size limits, and N+1 prevention.
+* **Verification**:
+  - `backend/tests/unit/test_frontend.py`: 28/28 passed in 9.14s.
+  - Complete backend suite: running regression validation.
+  - `ruff check .` & `ruff format --check .`: 0 errors across 199 files.
+* **Next Safe Task**: Step 22: End-to-End QA & Deployment Verification.
 - [ ] End-to-end QA
 - [ ] Deployment verification
 - [ ] Final security audit

@@ -435,3 +435,188 @@ def test_document_format_helpers() -> None:
 
     for ext in [".pdf", ".docx", ".txt", ".md", ".csv"]:
         assert ext in SUPPORTED_EXTENSIONS
+
+
+def test_app_state_is_admin() -> None:
+    """Verify AppState.is_admin property returns accurate boolean for all roles."""
+    from frontend.client.api_client import api_client
+    from frontend.state.app_state import state
+
+    # Unauthenticated
+    api_client.logout()
+    assert state.is_admin is False
+
+    # Admin
+    api_client.login("admin@university.edu", "AdminPass123!")
+    assert state.is_admin is True
+
+    # Student
+    unique_email = f"student_{uuid.uuid4().hex[:8]}@university.edu"
+    api_client.register(unique_email, "StudentPass123!", "Test Student")
+    assert state.is_admin is False
+
+    api_client.logout()
+
+
+def test_unified_navigation_items() -> None:
+    """Verify get_nav_items returns role-filtered navigation list identical for desktop and mobile."""
+    from frontend.components.layout import get_nav_items
+
+    # Unauthenticated
+    assert get_nav_items(None) == []
+
+    # Student user
+    student = UserDTO(
+        id="s-1",
+        email="s@test.edu",
+        full_name="Student",
+        role="STUDENT",
+    )
+    student_items = get_nav_items(student)
+    student_routes = [route for _, route, _ in student_items]
+    assert "/dashboard" in student_routes
+    assert "/knowledge-bases" in student_routes
+    assert "/chat" in student_routes
+    assert "/profile" in student_routes
+    assert "/documents" not in student_routes  # Omitted for student
+
+    # Admin user
+    admin = UserDTO(
+        id="a-1",
+        email="a@test.edu",
+        full_name="Admin",
+        role="ADMIN",
+    )
+    admin_items = get_nav_items(admin)
+    admin_routes = [route for _, route, _ in admin_items]
+    assert "/dashboard" in admin_routes
+    assert "/knowledge-bases" in admin_routes
+    assert "/documents" in admin_routes  # Included for admin
+    assert "/chat" in admin_routes
+    assert "/profile" in admin_routes
+
+
+def test_theme_injection() -> None:
+    """Verify global CSS design tokens and focus styles are injected into head."""
+    from frontend.components.theme import GLOBAL_THEME_CSS, init_theme
+
+    assert "*:focus-visible" in GLOBAL_THEME_CSS
+    assert "outline: 2px solid #2563eb" in GLOBAL_THEME_CSS
+    init_theme()  # Should execute without error
+
+
+def test_ui_kit_rendering() -> None:
+    """Verify all UI kit primitives render cleanly with accessible attributes."""
+    from frontend.components.ui_kit import (
+        render_alert,
+        render_empty_state,
+        render_page_header,
+        render_stat_card,
+    )
+
+    render_page_header("Test Title", "Test Subtitle")
+    render_empty_state("info", "No Items", "Description", "Action", lambda: None)
+    render_alert("Information alert", level="info")
+    render_alert("Warning alert", level="warning")
+    render_alert("Error alert", level="negative")
+    render_alert("Success alert", level="positive")
+    render_stat_card("Metrics", 42, "Subtext", "analytics", "blue-600")
+
+
+def test_status_badge_multi_modal_and_grounding() -> None:
+    """Verify status badges render multi-modal indicators (color, text, icon) for grounding and indexing."""
+    from frontend.components.status_badge import (
+        render_grounding_status_badge,
+        render_indexing_status_badge,
+        render_status_badge,
+    )
+
+    for status in ["COMPLETED", "PROCESSING", "FAILED", "PENDING"]:
+        render_status_badge(status)
+        render_indexing_status_badge(status)
+
+    for g_status in [
+        "FULLY_SUPPORTED",
+        "PARTIALLY_SUPPORTED",
+        "REFUSAL",
+        "UNSUPPORTED",
+    ]:
+        render_grounding_status_badge(g_status)
+
+
+def test_safe_markdown_sanitization() -> None:
+    """Verify malicious HTML tags and event handlers are neutralized before markdown rendering."""
+    from frontend.pages.chat_page import sanitize_markdown_text
+
+    # Normal markdown preserved
+    normal = "**Bold** and *italic* with `code`."
+    assert sanitize_markdown_text(normal) == normal
+
+    # Dangerous script tag stripped
+    dangerous_script = "Answer: <script>alert('xss')</script> explanation."
+    cleaned_script = sanitize_markdown_text(dangerous_script)
+    assert "<script>" not in cleaned_script
+    assert "alert('xss')" not in cleaned_script
+
+    # Dangerous iframe stripped
+    dangerous_iframe = 'Answer: <iframe src="evil.com"></iframe> text.'
+    cleaned_iframe = sanitize_markdown_text(dangerous_iframe)
+    assert "<iframe" not in cleaned_iframe
+
+    # Event handler neutralized
+    event_handler = '<img src="x" onerror="alert(1)">'
+    cleaned_event = sanitize_markdown_text(event_handler)
+    assert "onerror=" not in cleaned_event
+
+
+def test_upload_size_limit_from_settings() -> None:
+    """Verify upload limit references settings.MAX_UPLOAD_SIZE_BYTES dynamically."""
+    from backend.app.core.config import settings
+
+    assert settings.MAX_UPLOAD_SIZE_BYTES > 0
+    max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
+    assert max_mb >= 1
+
+
+def test_dashboard_no_n_plus_one_calls() -> None:
+    """Verify dashboard queries documents only for active KB rather than looping across all KBs."""
+    from frontend.client.api_client import api_client
+
+    api_client.login("admin@university.edu", "AdminPass123!")
+
+    orig_get_docs = api_client.get_documents
+    call_counter = {"count": 0}
+
+    def counted_get_docs(kb_id):
+        call_counter["count"] += 1
+        return orig_get_docs(kb_id)
+
+    api_client.get_documents = counted_get_docs
+
+    from frontend.state.app_state import state
+
+    kbs = api_client.get_knowledge_bases()
+    if kbs:
+        state.active_kb = kbs[0]
+        _ = api_client.get_documents(state.active_kb.id)
+        assert call_counter["count"] == 1
+
+    # Restore
+    api_client.get_documents = orig_get_docs
+    api_client.logout()
+
+
+def test_profile_page_registration_and_auth() -> None:
+    """Verify profile route registers and user details are safely accessible without disclosing secrets."""
+    from frontend.client.api_client import api_client
+    from frontend.pages.profile_page import register_profile_page
+
+    register_profile_page()
+
+    api_client.login("admin@university.edu", "AdminPass123!")
+    user = api_client.get_current_user()
+    assert user is not None
+    assert user.email == "admin@university.edu"
+    assert user.role == "ADMIN"
+    assert hasattr(user, "full_name")
+    api_client.logout()

@@ -1,14 +1,17 @@
 """
-Dashboard Presentation Page.
+Dashboard Presentation Page with Role-Tailored Metrics.
 
-Provides an executive summary of user knowledge bases, documents,
-active context, and quick navigation shortcuts.
+Displays summary metrics and quick-action navigation for university knowledge bases.
+Strictly avoids N+1 API calls by deriving document metrics from the active corpus alone.
+Provides distinct perspectives for Administrators versus Students.
 """
 
 from nicegui import ui
 
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
+from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
+from frontend.components.ui_kit import render_empty_state, render_stat_card
 from frontend.state.app_state import state
 
 
@@ -17,7 +20,7 @@ def register_dashboard_page() -> None:
 
     @ui.page("/")
     def index_route() -> None:
-        """Route entry point: redirect to dashboard if authenticated, else login."""
+        """Entry point redirecting to dashboard if authenticated, else login."""
         if state.current_user is not None:
             ui.navigate.to("/dashboard")
         else:
@@ -29,152 +32,183 @@ def register_dashboard_page() -> None:
             title="Overview & Activity",
             subtitle="Central dashboard for your knowledge bases, documents, and query assistant.",
             active_route="/dashboard",
+            require_auth=True,
         ):
+            user = state.current_user
+            is_admin = bool(user and user.role == "ADMIN")
+
+            # Fetch accessible KBs (single authorized call)
             kbs = api_client.get_knowledge_bases()
             active_kb = state.active_kb
+
+            # Single call for active KB documents (strictly avoids N+1 calls across all KBs)
             docs = api_client.get_documents(active_kb.id) if active_kb else []
 
-            # Metric Summary Cards
+            # ------------------------------------------------------------------
+            # 1. Metric Summary Cards
+            # ------------------------------------------------------------------
             with ui.row().classes("w-full gap-4"):
-                # Total Knowledge Bases
-                with ui.card().classes(
-                    "flex-1 p-4 border border-gray-200 bg-white rounded shadow-sm"
-                ):
-                    with ui.row().classes("items-center justify-between"):
-                        ui.label("Knowledge Bases").classes(
-                            "text-xs font-semibold text-gray-500 uppercase"
-                        )
-                        ui.icon("folder", size="sm").classes("text-blue-500")
-                    ui.label(str(len(kbs))).classes("text-3xl font-bold text-gray-900 mt-2")
-                    ui.label("Isolated corpora available").classes("text-xs text-gray-400 mt-1")
+                render_stat_card(
+                    title="Knowledge Bases",
+                    value=len(kbs),
+                    subtitle="Authorized corpora available",
+                    icon="folder",
+                    icon_color="blue-600",
+                )
 
-                # Active Knowledge Base
+                render_stat_card(
+                    title="Active Knowledge Base",
+                    value=active_kb.name if active_kb else "None Selected",
+                    subtitle=f"{len(docs)} document(s) in active corpus"
+                    if active_kb
+                    else "Select an active corpus",
+                    icon="radio_button_checked",
+                    icon_color="emerald-600",
+                )
+
+                render_stat_card(
+                    title="Active Corpus Documents",
+                    value=len(docs) if active_kb else 0,
+                    subtitle="Ready for semantic & lexical retrieval"
+                    if active_kb
+                    else "No active corpus selected",
+                    icon="description",
+                    icon_color="indigo-600",
+                )
+
+            # ------------------------------------------------------------------
+            # 2. Role-Tailored Action Shortcuts
+            # ------------------------------------------------------------------
+            with ui.row().classes("w-full gap-4 mt-1"):
+                # Chat & Ask Card (All Users)
                 with ui.card().classes(
-                    "flex-1 p-4 border border-gray-200 bg-white rounded shadow-sm"
+                    "flex-1 min-w-[280px] p-5 bg-white border border-blue-100 rounded-lg shadow-xs hover:border-blue-300 transition-colors"
                 ):
-                    with ui.row().classes("items-center justify-between"):
-                        ui.label("Active Knowledge Base").classes(
-                            "text-xs font-semibold text-gray-500 uppercase"
-                        )
-                        ui.icon("radio_button_checked", size="sm").classes("text-green-500")
-                    ui.label(active_kb.name if active_kb else "None Selected").classes(
-                        "text-lg font-bold text-gray-900 mt-2 truncate"
-                    )
+                    with ui.row().classes("items-center gap-2 mb-1.5"):
+                        ui.icon("chat", size="sm").classes("text-blue-600")
+                        ui.label("Ask & Chat").classes("text-base font-bold text-slate-900")
                     ui.label(
-                        f"{len(docs)} documents loaded" if active_kb else "Select or create a KB"
-                    ).classes("text-xs text-gray-400 mt-1")
-
-                # Total Documents
-                total_docs = sum(len(api_client.get_documents(k.id)) for k in kbs)
-                with ui.card().classes(
-                    "flex-1 p-4 border border-gray-200 bg-white rounded shadow-sm"
-                ):
-                    with ui.row().classes("items-center justify-between"):
-                        ui.label("Total Documents").classes(
-                            "text-xs font-semibold text-gray-500 uppercase"
-                        )
-                        ui.icon("description", size="sm").classes("text-purple-500")
-                    ui.label(str(total_docs)).classes("text-3xl font-bold text-gray-900 mt-2")
-                    ui.label("Ready for semantic search").classes("text-xs text-gray-400 mt-1")
-
-            # Quick Actions Row
-            with ui.row().classes("w-full gap-4 mt-2"):
-                with ui.card().classes(
-                    "flex-1 p-5 border border-blue-100 bg-blue-50 rounded hover:shadow-md transition-shadow"
-                ):
-                    ui.icon("chat", size="md").classes("text-blue-600 mb-2")
-                    ui.label("Ask & Chat").classes("text-base font-bold text-gray-900")
-                    ui.label(
-                        "Query the active knowledge base with conversational RAG and inspect citations."
-                    ).classes("text-xs text-gray-600 mb-4")
+                        "Query active documents with dense vector + lexical retrieval, reranking, and verified source citations."
+                    ).classes("text-xs text-slate-600 mb-4 leading-relaxed")
                     ui.button(
-                        "Start Conversation",
+                        "Open Chat & Search",
                         icon="arrow_forward",
                         on_click=lambda: ui.navigate.to("/chat"),
-                    ).props("dense color=primary")
+                    ).props("color=primary no-caps dense").classes(
+                        "text-xs font-medium px-3 py-1.5"
+                    )
 
+                # Knowledge Bases Card (All Users)
                 with ui.card().classes(
-                    "flex-1 p-5 border border-purple-100 bg-purple-50 rounded hover:shadow-md transition-shadow"
+                    "flex-1 min-w-[280px] p-5 bg-white border border-slate-200 rounded-lg shadow-xs hover:border-slate-300 transition-colors"
                 ):
-                    ui.icon("upload_file", size="md").classes("text-purple-600 mb-2")
-                    ui.label("Upload Documents").classes("text-base font-bold text-gray-900")
+                    with ui.row().classes("items-center gap-2 mb-1.5"):
+                        ui.icon("menu_book", size="sm").classes("text-indigo-600")
+                        ui.label("Knowledge Bases").classes("text-base font-bold text-slate-900")
                     ui.label(
-                        "Add PDF, Word, Markdown, CSV, or text files to expand knowledge context."
-                    ).classes("text-xs text-gray-600 mb-4")
+                        "Switch active corpus or review accessible subject collections."
+                    ).classes("text-xs text-slate-600 mb-4 leading-relaxed")
                     ui.button(
-                        "Manage Documents",
+                        "Browse Knowledge Bases",
                         icon="arrow_forward",
-                        on_click=lambda: ui.navigate.to("/documents"),
-                    ).props("dense color=secondary")
+                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
+                    ).props("outline color=primary no-caps dense").classes(
+                        "text-xs font-medium px-3 py-1.5"
+                    )
 
-            # Active KB Document Table Preview
-            with ui.card().classes(
-                "w-full p-5 border border-gray-200 bg-white rounded shadow-sm mt-2"
-            ):
-                with ui.row().classes("w-full justify-between items-center mb-4"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("table_chart", size="sm").classes("text-gray-600")
+                # Document Management (Administrators Only)
+                if is_admin:
+                    with ui.card().classes(
+                        "flex-1 min-w-[280px] p-5 bg-white border border-emerald-100 rounded-lg shadow-xs hover:border-emerald-300 transition-colors"
+                    ):
+                        with ui.row().classes("items-center gap-2 mb-1.5"):
+                            ui.icon("upload_file", size="sm").classes("text-emerald-600")
+                            ui.label("Manage Documents").classes(
+                                "text-base font-bold text-slate-900"
+                            )
                         ui.label(
-                            f"Documents in '{active_kb.name if active_kb else 'Active KB'}'"
-                        ).classes("text-md font-bold text-gray-800")
-                    ui.button(
-                        "View All Documents",
-                        icon="arrow_forward",
-                        on_click=lambda: ui.navigate.to("/documents"),
-                    ).props("flat dense").classes("text-xs text-blue-600")
-
-                if not docs:
-                    with ui.column().classes("w-full py-8 items-center justify-center text-center"):
-                        ui.icon("folder_open", size="lg").classes("text-gray-300 mb-2")
-                        ui.label("No documents in this knowledge base yet.").classes(
-                            "text-sm text-gray-500"
-                        )
-                        ui.label("Upload PDF, DOCX, TXT, CSV, or MD files to get started.").classes(
-                            "text-xs text-gray-400 mb-3"
-                        )
+                            "Upload course syllabi, lecture notes, or textbooks (PDF, DOCX, TXT, MD, CSV) for automated ingestion."
+                        ).classes("text-xs text-slate-600 mb-4 leading-relaxed")
                         ui.button(
-                            "Upload Document",
-                            icon="upload",
+                            "Upload & Index",
+                            icon="arrow_forward",
                             on_click=lambda: ui.navigate.to("/documents"),
-                        ).props("dense color=primary")
+                        ).props("color=positive no-caps dense").classes(
+                            "text-xs font-medium px-3 py-1.5"
+                        )
+
+            # ------------------------------------------------------------------
+            # 3. Active Corpus Document Table Preview
+            # ------------------------------------------------------------------
+            with ui.card().classes(
+                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
+            ):
+                with ui.row().classes(
+                    "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("table_chart", size="sm").classes("text-slate-600")
+                        ui.label(
+                            f"Documents in '{active_kb.name if active_kb else 'Active Corpus'}'"
+                        ).classes("text-sm font-bold text-slate-800")
+                    if is_admin:
+                        ui.button(
+                            "Manage Documents",
+                            icon="arrow_forward",
+                            on_click=lambda: ui.navigate.to("/documents"),
+                        ).props("flat dense no-caps").classes("text-xs text-blue-600")
+
+                if not active_kb:
+                    render_empty_state(
+                        icon="folder_off",
+                        title="No Knowledge Base Selected",
+                        description="Select or create a knowledge base to inspect documents and query context.",
+                        action_label="Select Knowledge Base",
+                        on_action=lambda: ui.navigate.to("/knowledge-bases"),
+                    )
+                elif not docs:
+                    render_empty_state(
+                        icon="description",
+                        title="Corpus is Empty",
+                        description="This knowledge base does not contain any ingested documents yet.",
+                        action_label="Upload Document" if is_admin else "Ask an Admin to Upload",
+                        on_action=(lambda: ui.navigate.to("/documents")) if is_admin else None,
+                    )
                 else:
-                    columns = [
-                        {
-                            "name": "filename",
-                            "label": "Filename",
-                            "field": "filename",
-                            "align": "left",
-                        },
-                        {
-                            "name": "file_type",
-                            "label": "Format",
-                            "field": "file_type",
-                            "align": "center",
-                        },
-                        {"name": "status", "label": "Status", "field": "status", "align": "center"},
-                        {
-                            "name": "chunk_count",
-                            "label": "Chunks",
-                            "field": "chunk_count",
-                            "align": "right",
-                        },
-                        {
-                            "name": "created_at",
-                            "label": "Ingested",
-                            "field": "created_at",
-                            "align": "right",
-                        },
-                    ]
-                    rows = [
-                        {
-                            "filename": d.filename,
-                            "file_type": d.file_type.upper(),
-                            "status": d.status,
-                            "chunk_count": d.chunk_count,
-                            "created_at": d.created_at,
-                        }
-                        for d in docs
-                    ]
-                    ui.table(columns=columns, rows=rows, row_key="filename").classes(
-                        "w-full"
-                    ).props("dense flat")
+                    with ui.element("div").classes("responsive-table-wrapper"):
+                        with ui.element("table").classes(
+                            "w-full text-left text-xs border-collapse"
+                        ):
+                            with ui.element("thead").classes(
+                                "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
+                            ):
+                                with ui.element("tr"):
+                                    ui.element("th").classes("py-2.5 px-3").text = "Filename"
+                                    ui.element("th").classes("py-2.5 px-3").text = "Format"
+                                    ui.element("th").classes(
+                                        "py-2.5 px-3"
+                                    ).text = "Ingestion Status"
+                                    ui.element("th").classes("py-2.5 px-3").text = "Vectors"
+                                    ui.element("th").classes("py-2.5 px-3").text = "Chunks"
+
+                            with ui.element("tbody").classes(
+                                "divide-y divide-slate-100 text-slate-800"
+                            ):
+                                for doc in docs[:10]:
+                                    with ui.element("tr").classes(
+                                        "hover:bg-slate-50 transition-colors"
+                                    ):
+                                        ui.element("td").classes(
+                                            "py-2.5 px-3 font-medium truncate max-w-[220px]"
+                                        ).text = doc.filename
+                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
+                                            ui.badge(
+                                                doc.file_type.upper(), color="slate-500"
+                                            ).classes("text-[10px]")
+                                        with ui.element("td").classes("py-2.5 px-3"):
+                                            render_status_badge(doc.status)
+                                        with ui.element("td").classes("py-2.5 px-3"):
+                                            render_indexing_status_badge(doc.indexing_status)
+                                        ui.element("td").classes(
+                                            "py-2.5 px-3 font-mono"
+                                        ).text = str(doc.chunk_count)
