@@ -10,8 +10,8 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -29,6 +29,17 @@ class UserRole(enum.StrEnum):
 
     ADMIN = "ADMIN"
     STUDENT = "STUDENT"
+
+
+class AdminRole(enum.StrEnum):
+    """
+    Hierarchical sub-roles for administrators.
+    MAIN_ADMIN: Super-administrator with full permissions.
+    FACULTY_ADMIN: Subordinate administrator with granular, configurable permissions.
+    """
+
+    MAIN_ADMIN = "MAIN_ADMIN"
+    FACULTY_ADMIN = "FACULTY_ADMIN"
 
 
 class User(Base):
@@ -62,6 +73,18 @@ class User(Base):
         Enum(UserRole, name="user_role", native_enum=True),
         default=UserRole.STUDENT,
         nullable=False,
+    )
+    admin_role: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+    permissions: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,

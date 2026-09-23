@@ -19,10 +19,11 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
+from backend.app.core.permissions import Permission
 from backend.app.core.rate_limit import (
     RateLimitPolicy,
     RateLimitResult,
@@ -33,7 +34,7 @@ from backend.app.core.rate_limit import (
 from backend.app.core.security import SESSION_COOKIE_NAME, hash_session_token
 from backend.app.db.session import get_db
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
-from backend.app.models.user import User, UserRole, UserSession
+from backend.app.models.user import AdminRole, User, UserRole, UserSession
 
 # Type alias for database session dependency
 DatabaseSession = Annotated[Session, Depends(get_db)]
@@ -126,6 +127,76 @@ def require_admin(
 AuthenticatedAdmin = Annotated[User, Depends(require_admin)]
 
 
+DEFAULT_OPERATIONAL_PERMISSIONS: set[str] = {
+    Permission.COURSE_VIEW.value,
+    Permission.COURSE_CREATE.value,
+    Permission.COURSE_EDIT.value,
+    Permission.COURSE_DELETE.value,
+    Permission.DOCUMENT_VIEW.value,
+    Permission.DOCUMENT_UPLOAD.value,
+    Permission.DOCUMENT_DELETE.value,
+    Permission.DOCUMENT_PUBLISH.value,
+    Permission.DOCUMENT_INDEX.value,
+    Permission.DOCUMENT_INDEX_RETRY.value,
+    Permission.ADMIN_CHAT.value,
+    Permission.ADMIN_VIEW.value,
+    Permission.ADMIN_CREATE.value,
+}
+
+
+def is_main_admin(user: User) -> bool:
+    """Check if the user is a MAIN_ADMIN."""
+    if user.role != UserRole.ADMIN:
+        return False
+    role_val = getattr(user, "admin_role", None)
+    return role_val == AdminRole.MAIN_ADMIN or str(role_val) in ("MAIN_ADMIN", "AdminRole.MAIN_ADMIN")
+
+
+def check_user_permission(user: User, permission: Permission | str) -> bool:
+    """
+    Check if an authenticated user possesses the specified permission.
+    - MAIN_ADMIN: Inherently has ALL permissions.
+    - FACULTY_ADMIN: Strictly evaluated against user.permissions list.
+    - Legacy / unassigned ADMIN: Has standard operational permissions for courses and documents.
+    - STUDENT: Has no admin permissions.
+    """
+    if not user.is_active:
+        return False
+    if user.role != UserRole.ADMIN:
+        return False
+    if is_main_admin(user):
+        return True
+
+    perm_val = permission.value if isinstance(permission, Permission) else str(permission)
+    role_val = getattr(user, "admin_role", None)
+
+    # Faculty Admins with explicit role are strictly checked against assigned permissions
+    if role_val == AdminRole.FACULTY_ADMIN or str(role_val) in ("FACULTY_ADMIN", "AdminRole.FACULTY_ADMIN"):
+        user_perms = user.permissions or []
+        return perm_val in user_perms
+
+    # Legacy / unassigned admin: check permissions or fallback to default operational permissions
+    user_perms = user.permissions or []
+    if user_perms:
+        return perm_val in user_perms
+    return perm_val in DEFAULT_OPERATIONAL_PERMISSIONS
+
+
+def require_permission(permission: Permission):
+    """
+    FastAPI dependency factory enforcing server-side permission checks.
+    """
+    def _dependency(current_user: AuthenticatedAdmin) -> User:
+        if not check_user_permission(current_user, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: Missing required permission '{permission.value}'.",
+            )
+        return current_user
+
+    return _dependency
+
+
 def require_student_or_admin(
     current_user: AuthenticatedUser,
 ) -> User:
@@ -144,18 +215,32 @@ def get_authorized_knowledge_base(
     Retrieve a knowledge base ensuring strict multi-user access isolation.
 
     Access Rules:
-    - ADMIN: Can access knowledge bases they created.
+    - MAIN_ADMIN: Can access any knowledge base in the system.
+    - FACULTY_ADMIN: Can access knowledge bases they created or where they were granted membership.
     - STUDENT: Can only access knowledge bases where explicit membership was granted.
     - If unauthorized: Returns HTTP 404 to avoid leaking knowledge base existence.
     """
     if current_user.role == UserRole.ADMIN:
-        # Admin can view knowledge bases they own/manage
-        stmt = select(KnowledgeBase).where(
-            and_(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.created_by_id == current_user.id,
+        if is_main_admin(current_user):
+            stmt = select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        else:
+            # Faculty Admin: creator or member
+            stmt = (
+                select(KnowledgeBase)
+                .outerjoin(
+                    KnowledgeBaseMember,
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                )
+                .where(
+                    and_(
+                        KnowledgeBase.id == kb_id,
+                        or_(
+                            KnowledgeBase.created_by_id == current_user.id,
+                            KnowledgeBaseMember.user_id == current_user.id,
+                        ),
+                    )
+                )
             )
-        )
         kb = db.execute(stmt).scalar_one_or_none()
     else:
         # Student access requires explicit membership grant
@@ -190,13 +275,28 @@ def require_knowledge_base_admin(
 ) -> KnowledgeBase:
     """
     Ensure the current user is an ADMIN with management rights over this specific knowledge base.
+    - MAIN_ADMIN: Can manage all knowledge bases.
+    - FACULTY_ADMIN: Can manage knowledge bases they created or where they were granted membership.
     """
-    stmt = select(KnowledgeBase).where(
-        and_(
-            KnowledgeBase.id == kb_id,
-            KnowledgeBase.created_by_id == current_user.id,
+    if is_main_admin(current_user):
+        stmt = select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+    else:
+        stmt = (
+            select(KnowledgeBase)
+            .outerjoin(
+                KnowledgeBaseMember,
+                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+            )
+            .where(
+                and_(
+                    KnowledgeBase.id == kb_id,
+                    or_(
+                        KnowledgeBase.created_by_id == current_user.id,
+                        KnowledgeBaseMember.user_id == current_user.id,
+                    ),
+                )
+            )
         )
-    )
     kb = db.execute(stmt).scalar_one_or_none()
     if not kb:
         raise HTTPException(
@@ -212,16 +312,32 @@ def get_authorized_knowledge_base_ids(
 ) -> list[uuid.UUID]:
     """
     Retrieve all knowledge base UUIDs authorized for the current user.
-    Uses the exact authoritative server-side RBAC and isolation rules:
-    - ADMIN: All knowledge bases created/owned by this administrator.
+    - MAIN_ADMIN: All knowledge bases in system.
+    - FACULTY_ADMIN: All knowledge bases created by or assigned to this faculty admin.
     - STUDENT: All knowledge bases where explicit membership was granted.
     """
     if current_user.role == UserRole.ADMIN:
-        stmt = (
-            select(KnowledgeBase.id)
-            .where(KnowledgeBase.created_by_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
-        )
+        if is_main_admin(current_user):
+            stmt = (
+                select(KnowledgeBase.id)
+                .order_by(KnowledgeBase.created_at.desc())
+            )
+        else:
+            stmt = (
+                select(KnowledgeBase.id)
+                .outerjoin(
+                    KnowledgeBaseMember,
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                )
+                .where(
+                    or_(
+                        KnowledgeBase.created_by_id == current_user.id,
+                        KnowledgeBaseMember.user_id == current_user.id,
+                    )
+                )
+                .distinct()
+                .order_by(KnowledgeBase.id)
+            )
     else:
         stmt = (
             select(KnowledgeBase.id)

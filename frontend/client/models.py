@@ -17,6 +17,8 @@ class UserDTO(BaseModel):
     email: str
     full_name: str
     role: str = "STUDENT"
+    admin_role: str | None = None
+    permissions: list[str] = Field(default_factory=list)
 
 
 class KnowledgeBaseDTO(BaseModel):
@@ -27,6 +29,25 @@ class KnowledgeBaseDTO(BaseModel):
     description: str = ""
     document_count: int = 0
     created_at: str = ""
+
+
+class IndexingJobDTO(BaseModel):
+    """Truthful persistent vector indexing job status and progress."""
+
+    job_id: str | None = None
+    document_id: str
+    knowledge_base_id: str
+    status: str = "PENDING"
+    stage: str = "PREPARING"
+    total_chunks: int = 0
+    processed_chunks: int = 0
+    embedded_chunks: int = 0
+    indexed_chunks: int = 0
+    progress_percent: float = 0.0
+    error_message: str | None = None
+    attempt_number: int = 1
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 class DocumentDTO(BaseModel):
@@ -42,7 +63,7 @@ class DocumentDTO(BaseModel):
     error_message: str | None = None
     indexing_error: str | None = None
     chunk_count: int = 0
-    is_active: bool = True
+    is_active: bool = False
     created_at: str = ""
     indexed_at: str | None = None
 
@@ -63,11 +84,14 @@ class CitationDTO(BaseModel):
 
 
 class AdminUserDTO(BaseModel):
-    """Admin user representation in admin management view (strictly privacy-preserving)."""
+    """Admin user representation in admin management view."""
 
+    id: str = ""
     email: str
     full_name: str
     role: str = "ADMIN"
+    admin_role: str = "MAIN_ADMIN"
+    permissions: list[str] = Field(default_factory=list)
     is_active: bool = True
     created_at: str = ""
 
@@ -162,6 +186,7 @@ class CourseDocumentPreviewDTO(BaseModel):
     filename: str
     file_type: str
     status: str
+    indexing_status: str = "PENDING"
     is_active: bool
 
 
@@ -175,4 +200,8 @@ class CourseSummaryDTO(BaseModel):
     total_documents: int = 0
     active_documents: int = 0
     inactive_documents: int = 0
+    indexed_documents: int = 0
+    indexing_documents: int = 0
+    failed_documents: int = 0
     document_previews: list[CourseDocumentPreviewDTO] = Field(default_factory=list)
+

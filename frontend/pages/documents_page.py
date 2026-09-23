@@ -247,19 +247,22 @@ def register_documents_page() -> None:
                 if not has_active_processing:
                     poll_timer.deactivate()
 
-            poll_timer = ui.timer(3.0, poll_check, active=False)
+            poll_timer = ui.timer(2.0, poll_check, active=False)
 
             def render_documents_view() -> None:
                 docs = api_client.get_documents(selected_course.id)
 
-                # Check if any documents are currently processing
+                # Check if any documents are currently processing or queued
                 active_processing = [
                     d
                     for d in docs
-                    if d.status in ("PENDING", "PROCESSING") or d.indexing_status == "PROCESSING"
+                    if d.status in ("PENDING", "PROCESSING")
+                    or d.indexing_status in ("QUEUED", "PROCESSING")
                 ]
                 if active_processing and not poll_timer.active:
                     poll_timer.activate()
+                elif not active_processing and poll_timer.active:
+                    poll_timer.deactivate()
 
                 with ui.card().classes(
                     "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs"
@@ -277,7 +280,7 @@ def register_documents_page() -> None:
                                     "items-center gap-1 text-xs text-blue-600 font-medium ml-2"
                                 ):
                                     ui.spinner(size="xs")
-                                    ui.label("Processing active...")
+                                    ui.label("Indexing / Processing in background...")
 
                         ui.button(icon="refresh", on_click=refresh_doc_list).props(
                             "flat round dense"
@@ -340,9 +343,15 @@ def register_documents_page() -> None:
                                                         "text-[10px] text-rose-600 truncate max-w-[200px]"
                                                     ).tooltip(doc.error_message)
 
-                                        # Retrieval Publication State (Active / Inactive)
+                                        # Retrieval Publication State (Active / Inactive / Not Ready)
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            if doc.is_active:
+                                            if doc.indexing_status != "COMPLETED":
+                                                ui.badge("NOT READY", color="amber-700").classes(
+                                                    "text-[10px] font-bold"
+                                                ).tooltip(
+                                                    "Not ready: Vector indexing has not completed successfully."
+                                                )
+                                            elif doc.is_active:
                                                 ui.badge("ACTIVE", color="emerald-700").classes(
                                                     "text-[10px] font-bold"
                                                 ).tooltip("Active: Included in student queries")
@@ -367,9 +376,47 @@ def register_documents_page() -> None:
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             render_status_badge(doc.status)
 
-                                        # Vectors Status
+                                        # Vectors Status & Live Progress
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            render_indexing_status_badge(doc.indexing_status)
+                                            with ui.column().classes("gap-0.5"):
+                                                if doc.indexing_status in ("QUEUED", "PROCESSING"):
+                                                    render_indexing_status_badge(doc.indexing_status)
+                                                    try:
+                                                        job = api_client.get_document_index_status(
+                                                            selected_course.id, doc.id
+                                                        )
+                                                        ui.label(
+                                                            f"{job.processed_chunks} / {job.total_chunks} chunks ({job.progress_percent:.0f}%)"
+                                                        ).classes(
+                                                            "text-[10px] font-mono text-blue-700 font-semibold"
+                                                        )
+                                                        stage_clean = job.stage.replace(
+                                                            "_", " "
+                                                        ).title()
+                                                        ui.label(
+                                                            f"Stage: {stage_clean}"
+                                                        ).classes("text-[9px] text-slate-500")
+                                                    except Exception:
+                                                        pass
+                                                elif doc.indexing_status == "COMPLETED":
+                                                    render_indexing_status_badge("COMPLETED")
+                                                    ui.label(
+                                                        f"{doc.chunk_count} / {doc.chunk_count} vectors verified"
+                                                    ).classes(
+                                                        "text-[10px] font-mono text-emerald-700"
+                                                    )
+                                                elif doc.indexing_status == "FAILED":
+                                                    render_indexing_status_badge("FAILED")
+                                                    err_text = (
+                                                        doc.indexing_error or "Indexing failed"
+                                                    )
+                                                    ui.label(err_text).classes(
+                                                        "text-[10px] text-rose-600 truncate max-w-[180px]"
+                                                    ).tooltip(err_text)
+                                                else:
+                                                    render_indexing_status_badge(
+                                                        doc.indexing_status
+                                                    )
 
                                         # Chunks
                                         with ui.element("td").classes("py-2.5 px-3 font-mono"):
@@ -416,7 +463,7 @@ def register_documents_page() -> None:
                                                         ).tooltip(
                                                             "Deactivate to exclude from search while preserving file"
                                                         )
-                                                    else:
+                                                    elif doc.indexing_status == "COMPLETED":
 
                                                         def trigger_activate(
                                                             d_id=doc.id, d_name=doc.filename
@@ -442,11 +489,45 @@ def register_documents_page() -> None:
                                                         ).classes(
                                                             "text-[11px] px-2 py-0.5"
                                                         ).tooltip("Activate to include in search")
+                                                    else:
+                                                        ui.button(
+                                                            "Activate",
+                                                            icon="play_circle",
+                                                        ).props(
+                                                            "outline dense no-caps disable"
+                                                        ).classes(
+                                                            "text-[11px] px-2 py-0.5 opacity-50"
+                                                        ).tooltip("Vector indexing must complete before activating")
 
-                                                    # Vector Indexing Trigger if parsing succeeded
-                                                    if (
+                                                    # Vector Indexing Trigger (Index vs Retry)
+                                                    if doc.indexing_status == "FAILED":
+
+                                                        def trigger_retry(d_id=doc.id) -> None:
+                                                            try:
+                                                                api_client.index_document(
+                                                                    selected_course.id, d_id
+                                                                )
+                                                                ui.notify(
+                                                                    "Indexing retry initiated in background.",
+                                                                    type="positive",
+                                                                )
+                                                                refresh_doc_list()
+                                                                poll_timer.activate()
+                                                            except ValueError as err:
+                                                                ui.notify(str(err), type="negative")
+
+                                                        ui.button(
+                                                            "Retry Indexing",
+                                                            icon="refresh",
+                                                            on_click=trigger_retry,
+                                                        ).props(
+                                                            "outline dense no-caps color=warning"
+                                                        ).classes("text-[11px] px-2 py-0.5")
+
+                                                    elif (
                                                         doc.status == "COMPLETED"
-                                                        and doc.indexing_status != "COMPLETED"
+                                                        and doc.indexing_status
+                                                        not in ("COMPLETED", "PROCESSING", "QUEUED")
                                                     ):
 
                                                         def trigger_index(d_id=doc.id) -> None:
@@ -470,6 +551,16 @@ def register_documents_page() -> None:
                                                         ).props(
                                                             "outline dense no-caps color=primary"
                                                         ).classes("text-[11px] px-2 py-0.5")
+
+                                                    elif doc.indexing_status in (
+                                                        "QUEUED",
+                                                        "PROCESSING",
+                                                    ):
+                                                        with ui.row().classes(
+                                                            "items-center gap-1 text-[11px] text-blue-600 font-medium px-1"
+                                                        ):
+                                                            ui.spinner(size="xs")
+                                                            ui.label("Indexing...")
 
                                                     # Delete Action
                                                     def trigger_delete(

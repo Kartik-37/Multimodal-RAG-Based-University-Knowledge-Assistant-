@@ -49,12 +49,17 @@ def render_indexing_status_badge(status: str) -> None:
     """
     norm = status.upper().strip()
 
-    if norm == "COMPLETED":
+    if norm in ("COMPLETED", "INDEXED"):
         with ui.badge(color="teal-700").classes("text-xs font-semibold px-2 py-0.5"):
             with ui.row().classes("items-center gap-1"):
                 ui.icon("storage", size="xs")
                 ui.label("INDEXED")
-    elif norm == "PROCESSING":
+    elif norm in ("QUEUED", "PREPARING"):
+        with ui.badge(color="blue-700").classes("text-xs font-semibold px-2 py-0.5"):
+            with ui.row().classes("items-center gap-1"):
+                ui.icon("schedule", size="xs")
+                ui.label("INDEXING QUEUED")
+    elif norm in ("PROCESSING", "INDEXING"):
         with ui.badge(color="indigo-700").classes(
             "text-xs font-semibold px-2 py-0.5 animate-pulse"
         ):
@@ -62,7 +67,7 @@ def render_indexing_status_badge(status: str) -> None:
                 ui.icon("autorenew", size="xs")
                 ui.label("INDEXING...")
     elif norm == "FAILED":
-        with ui.badge(color="orange-800").classes("text-xs font-semibold px-2 py-0.5"):
+        with ui.badge(color="rose-700").classes("text-xs font-semibold px-2 py-0.5"):
             with ui.row().classes("items-center gap-1"):
                 ui.icon("warning", size="xs")
                 ui.label("INDEX FAILED")

@@ -5,9 +5,11 @@ Registers all presentation routes, initializes design theme, and sets up the app
 UI components communicate strictly via the frontend.client.api_client boundary.
 """
 
+from nicegui import app as nicegui_app
 from nicegui import ui
 
 from backend.app.core.config import settings
+from backend.app.services.indexing_worker import run_indexing_worker
 from frontend.components.theme import init_theme
 from frontend.pages.admin_users_page import register_admin_users_page
 from frontend.pages.auth_pages import register_auth_pages
@@ -28,6 +30,8 @@ def init_ui() -> None:
     register_admin_users_page()
     register_chat_page()
     register_profile_page()
+
+    nicegui_app.on_startup(run_indexing_worker)
 
 
 if __name__ in {"__main__", "__mp_main__"}:

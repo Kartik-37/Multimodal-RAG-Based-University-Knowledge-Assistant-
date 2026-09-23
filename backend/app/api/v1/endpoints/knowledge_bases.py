@@ -20,7 +20,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 
 from backend.app.api.deps import (
     AuthenticatedAdmin,
@@ -28,10 +28,14 @@ from backend.app.api.deps import (
     DatabaseSession,
     RateLimitIndexing,
     RateLimitUpload,
+    check_user_permission,
     get_authorized_knowledge_base,
+    is_main_admin,
     require_knowledge_base_admin,
 )
+from backend.app.core.permissions import Permission
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
+from backend.app.models.indexing_job import IndexingJob
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import User, UserRole
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
@@ -39,11 +43,13 @@ from backend.app.schemas.knowledge_base import (
     AddMemberRequest,
     CourseDocumentPreview,
     CourseSummaryResponse,
+    IndexingJobResponse,
     KnowledgeBaseCreate,
     KnowledgeBaseResponse,
     MemberResponse,
 )
-from backend.app.services.indexing import index_document_task
+from backend.app.services.indexing import index_document_task, indexing_pipeline
+from backend.app.services.indexing_worker import notify_indexing_worker
 from backend.app.services.ingestion import process_document_task
 from backend.app.services.storage import storage_service
 
@@ -66,8 +72,14 @@ def create_knowledge_base(
 ) -> KnowledgeBaseResponse:
     """
     Create a new knowledge base.
-    Restricted strictly to users with the ADMIN role.
+    Restricted strictly to users with COURSE_CREATE permission.
     """
+    if not check_user_permission(current_user, Permission.COURSE_CREATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'COURSE_CREATE'.",
+        )
+
     kb = KnowledgeBase(
         name=payload.name.strip(),
         description=payload.description.strip(),
@@ -91,15 +103,34 @@ def list_knowledge_bases(
 ) -> list[KnowledgeBaseResponse]:
     """
     List knowledge bases using authorization-aware filtering at the SQL layer:
-    - ADMIN: views knowledge bases they created.
+    - MAIN_ADMIN: views all knowledge bases in system.
+    - FACULTY_ADMIN: views knowledge bases they created or were granted access.
     - STUDENT: views only knowledge bases where they were granted membership.
     """
     if current_user.role == UserRole.ADMIN:
-        stmt = (
-            select(KnowledgeBase)
-            .where(KnowledgeBase.created_by_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
-        )
+        if not check_user_permission(current_user, Permission.COURSE_VIEW):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Missing required permission 'COURSE_VIEW'.",
+            )
+        if is_main_admin(current_user):
+            stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc())
+        else:
+            stmt = (
+                select(KnowledgeBase)
+                .outerjoin(
+                    KnowledgeBaseMember,
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                )
+                .where(
+                    or_(
+                        KnowledgeBase.created_by_id == current_user.id,
+                        KnowledgeBaseMember.user_id == current_user.id,
+                    )
+                )
+                .distinct()
+                .order_by(KnowledgeBase.created_at.desc())
+            )
     else:
         stmt = (
             select(KnowledgeBase)
@@ -130,11 +161,29 @@ def get_course_summaries(
     and compact file previews. Strictly avoids N+1 database queries.
     """
     if current_user.role == UserRole.ADMIN:
-        kb_stmt = (
-            select(KnowledgeBase)
-            .where(KnowledgeBase.created_by_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
-        )
+        if not check_user_permission(current_user, Permission.COURSE_VIEW):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Missing required permission 'COURSE_VIEW'.",
+            )
+        if is_main_admin(current_user):
+            kb_stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc())
+        else:
+            kb_stmt = (
+                select(KnowledgeBase)
+                .outerjoin(
+                    KnowledgeBaseMember,
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                )
+                .where(
+                    or_(
+                        KnowledgeBase.created_by_id == current_user.id,
+                        KnowledgeBaseMember.user_id == current_user.id,
+                    )
+                )
+                .distinct()
+                .order_by(KnowledgeBase.created_at.desc())
+            )
     else:
         kb_stmt = (
             select(KnowledgeBase)
@@ -168,12 +217,33 @@ def get_course_summaries(
         total = len(kb_docs)
         active = sum(1 for d in kb_docs if d.is_active)
         inactive = total - active
+        indexed = sum(
+            1
+            for d in kb_docs
+            if d.indexing_status == IndexingStatus.COMPLETED
+            or str(getattr(d, "indexing_status", "")) == "COMPLETED"
+        )
+        indexing = sum(
+            1
+            for d in kb_docs
+            if d.indexing_status == IndexingStatus.PROCESSING
+            or str(getattr(d, "indexing_status", "")) in ("PROCESSING", "QUEUED")
+        )
+        failed = sum(
+            1
+            for d in kb_docs
+            if d.indexing_status == IndexingStatus.FAILED
+            or str(getattr(d, "indexing_status", "")) == "FAILED"
+        )
         previews = [
             CourseDocumentPreview(
                 id=d.id,
                 filename=d.original_filename,
                 file_type=d.file_type,
                 status=d.status.value if hasattr(d.status, "value") else str(d.status),
+                indexing_status=d.indexing_status.value
+                if hasattr(d.indexing_status, "value")
+                else str(d.indexing_status),
                 is_active=d.is_active,
             )
             for d in kb_docs[:4]
@@ -187,6 +257,9 @@ def get_course_summaries(
                 total_documents=total,
                 active_documents=active,
                 inactive_documents=inactive,
+                indexed_documents=indexed,
+                indexing_documents=indexing,
+                failed_documents=failed,
                 document_previews=previews,
             )
         )
@@ -264,16 +337,20 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     response: Response,
     db: DatabaseSession,
+    current_user: AuthenticatedAdmin,
     _rate_limit: RateLimitUpload,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> DocumentResponse | dict[str, str]:
     """
     Upload and ingest a document into an authorized knowledge base.
-    Restricted strictly to the ADMIN who owns the target knowledge base.
-
-    If invoked without a file, returns authorization status confirmation
-    for backward compatibility with Step 4 authorization probes.
+    Restricted strictly to administrators with DOCUMENT_UPLOAD permission.
     """
+    if not check_user_permission(current_user, Permission.DOCUMENT_UPLOAD):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_UPLOAD'.",
+        )
+
     if file is None:
         response.status_code = status.HTTP_200_OK
         return {
@@ -342,11 +419,18 @@ async def upload_document(
 def list_documents(
     kb: AuthorizedKB,
     db: DatabaseSession,
+    current_user: AuthenticatedUser,
 ) -> list[DocumentResponse]:
     """
     Retrieve all documents belonging to an authorized knowledge base.
-    Accessible to the ADMIN creator and authorized STUDENT members.
+    Accessible to administrators with DOCUMENT_VIEW permission and authorized students.
     """
+    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+        )
+
     docs = (
         db.execute(
             select(Document)
@@ -395,10 +479,17 @@ def get_document(
     kb: AuthorizedKB,
     document_id: uuid.UUID,
     db: DatabaseSession,
+    current_user: AuthenticatedUser,
 ) -> DocumentResponse:
     """
     Retrieve metadata and processing status for an individual document.
     """
+    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+        )
+
     doc = db.execute(
         select(Document).where(
             and_(
@@ -437,22 +528,27 @@ def get_document(
     )
 
 
-@router.patch(
-    "/{kb_id}/documents/{document_id}/activate",
-    response_model=DocumentResponse,
+@router.get(
+    "/{kb_id}/documents/{document_id}/index-status",
+    response_model=IndexingJobResponse,
     status_code=status.HTTP_200_OK,
-    summary="Activate a document for retrieval (ADMIN only)",
+    summary="Get current or latest vector indexing job status for a document",
 )
-def activate_document(
-    kb: AdminKB,
+def get_document_index_status(
+    kb: AuthorizedKB,
     document_id: uuid.UUID,
     db: DatabaseSession,
-) -> DocumentResponse:
+    current_user: AuthenticatedUser,
+) -> IndexingJobResponse:
     """
-    Activate an ingested and indexed document so it becomes eligible for vector
-    and lexical retrieval. Restricted strictly to the administering ADMIN.
-    Returns 409 Conflict if the document is already active.
+    Return truthful, persistent vector indexing job status, stage, and chunk progress.
     """
+    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+        )
+
     doc = db.execute(
         select(Document).where(
             and_(
@@ -466,6 +562,101 @@ def activate_document(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found.",
+        )
+
+    job = db.execute(
+        select(IndexingJob)
+        .where(IndexingJob.document_id == document_id)
+        .order_by(IndexingJob.created_at.desc())
+    ).scalars().first()
+
+    if not job:
+        chunk_count = db.execute(
+            select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
+        ).scalar_one()
+        indexed_count = chunk_count if doc.indexing_status == IndexingStatus.COMPLETED else 0
+        pct = 100.0 if doc.indexing_status == IndexingStatus.COMPLETED else 0.0
+
+        return IndexingJobResponse(
+            id=None,
+            job_id=None,
+            document_id=doc.id,
+            knowledge_base_id=doc.knowledge_base_id,
+            status=doc.indexing_status.value if hasattr(doc.indexing_status, "value") else str(doc.indexing_status),
+            stage="COMPLETED" if doc.indexing_status == IndexingStatus.COMPLETED else ("FAILED" if doc.indexing_status == IndexingStatus.FAILED else "PREPARING"),
+            total_chunks=chunk_count,
+            processed_chunks=indexed_count,
+            embedded_chunks=indexed_count,
+            indexed_chunks=indexed_count,
+            progress_percent=pct,
+            error_message=doc.indexing_error,
+            attempt_number=1 if doc.indexing_status != IndexingStatus.PENDING else 0,
+            started_at=doc.created_at,
+            completed_at=doc.indexed_at,
+        )
+
+    return IndexingJobResponse(
+        id=job.id,
+        job_id=job.id,
+        document_id=job.document_id,
+        knowledge_base_id=job.knowledge_base_id,
+        status=job.status,
+        stage=job.stage,
+        total_chunks=job.total_chunks,
+        processed_chunks=job.processed_chunks,
+        embedded_chunks=job.embedded_chunks,
+        indexed_chunks=job.indexed_chunks,
+        progress_percent=job.progress_percent,
+        error_message=job.error_message,
+        attempt_number=job.attempt_number,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
+@router.patch(
+    "/{kb_id}/documents/{document_id}/activate",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Activate a document for retrieval (ADMIN only)",
+)
+def activate_document(
+    kb: AdminKB,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+    current_user: AuthenticatedAdmin,
+) -> DocumentResponse:
+    """
+    Activate an ingested and indexed document so it becomes eligible for vector
+    and lexical retrieval. Restricted strictly to admins with DOCUMENT_PUBLISH permission.
+    Returns 400 Bad Request if vector indexing has not completed successfully.
+    Returns 409 Conflict if the document is already active.
+    """
+    if not check_user_permission(current_user, Permission.DOCUMENT_PUBLISH):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_PUBLISH'.",
+        )
+
+    doc = db.execute(
+        select(Document).where(
+            and_(
+                Document.id == document_id,
+                Document.knowledge_base_id == kb.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if doc.indexing_status != IndexingStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot activate a document that has not completed vector indexing.",
         )
 
     if doc.is_active:
@@ -511,13 +702,18 @@ def deactivate_document(
     kb: AdminKB,
     document_id: uuid.UUID,
     db: DatabaseSession,
+    current_user: AuthenticatedAdmin,
 ) -> DocumentResponse:
     """
-    Deactivate a document so it is excluded from vector and lexical retrieval
-    while preserving chunks and historical audit trails.
-    Restricted strictly to the administering ADMIN.
-    Returns 409 Conflict if the document is already inactive.
+    Deactivate a document so it is excluded from vector and lexical retrieval.
+    Restricted strictly to admins with DOCUMENT_PUBLISH permission.
     """
+    if not check_user_permission(current_user, Permission.DOCUMENT_PUBLISH):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_PUBLISH'.",
+        )
+
     doc = db.execute(
         select(Document).where(
             and_(
@@ -577,17 +773,13 @@ def index_document_endpoint(
     document_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     db: DatabaseSession,
+    current_user: AuthenticatedAdmin,
     _rate_limit: RateLimitIndexing,
 ) -> DocumentResponse:
     """
     Trigger 1024-dimensional dense vector indexing for an ingested document.
-    Restricted strictly to the ADMIN who manages the target knowledge base.
-
-    Invariants (Addressing Step 6 Rules & Corrections):
-    1. Document must exist within the target knowledge base (returns 404 otherwise).
-    2. Document ingestion must be COMPLETED (returns 400 if still pending/processing/failed).
-    3. Transition status to PROCESSING immediately and queue index_document_task
-       via BackgroundTasks without blocking the API caller.
+    Enforces DOCUMENT_INDEX or DOCUMENT_INDEX_RETRY permissions.
+    Creates or reuses a persistent IndexingJob and notifies the worker.
     """
     doc = db.execute(
         select(Document).where(
@@ -604,6 +796,21 @@ def index_document_endpoint(
             detail="Document not found.",
         )
 
+    # Check permission (retry vs initial index)
+    is_retry = (doc.indexing_status == IndexingStatus.FAILED)
+    if is_retry:
+        if not (check_user_permission(current_user, Permission.DOCUMENT_INDEX_RETRY) or check_user_permission(current_user, Permission.DOCUMENT_INDEX)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Missing required permission 'DOCUMENT_INDEX_RETRY'.",
+            )
+    else:
+        if not check_user_permission(current_user, Permission.DOCUMENT_INDEX):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Missing required permission 'DOCUMENT_INDEX'.",
+            )
+
     if doc.status != DocumentStatus.COMPLETED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -613,12 +820,12 @@ def index_document_endpoint(
             ),
         )
 
-    doc.indexing_status = IndexingStatus.PROCESSING
-    doc.indexing_error = None
-    db.commit()
+    # Persistent job creation/reuse and notification
+    job = indexing_pipeline.create_or_reuse_job(doc.id, kb.id)
+    notify_indexing_worker()
+    background_tasks.add_task(index_document_task, doc.id, job.id)
 
-    background_tasks.add_task(index_document_task, doc.id)
-
+    db.refresh(doc)
     chunk_count = db.execute(
         select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
     ).scalar_one()
@@ -652,11 +859,17 @@ def list_document_chunks(
     kb: AuthorizedKB,
     document_id: uuid.UUID,
     db: DatabaseSession,
+    current_user: AuthenticatedUser,
 ) -> list[DocumentChunkResponse]:
     """
     Inspect extracted text chunks, page numbers, and structural headings.
-    Useful for administrator auditing and citation verification.
     """
+    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+        )
+
     doc = db.execute(
         select(Document).where(
             and_(
@@ -709,19 +922,18 @@ def delete_document(
     kb: AdminKB,
     document_id: uuid.UUID,
     db: DatabaseSession,
+    current_user: AuthenticatedAdmin,
 ) -> dict[str, str]:
     """
     Delete a document and all its derived chunks and physical files.
-    Restricted strictly to the administering ADMIN.
-
-    Consistency Strategy (Correction #5):
-    1. The document record is removed in a database transaction, which cascades
-       deletion to all associated DocumentChunk entities via PostgreSQL foreign keys.
-    2. Only after database commit succeeds is the physical file unlinked from disk.
-    3. If unlinking fails (e.g. temporary Windows file lock), a warning is logged
-       for background orphan cleanup. No dangling database records are left pointing
-       to missing files.
+    Restricted strictly to administrators with DOCUMENT_DELETE permission.
     """
+    if not check_user_permission(current_user, Permission.DOCUMENT_DELETE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_DELETE'.",
+        )
+
     doc = db.execute(
         select(Document).where(
             and_(

@@ -710,7 +710,7 @@ def test_admin_provisioning_and_privacy(api_client: TestClient, db_session: Sess
     assert created_data["email"] == "new_admin@univ.edu"
     assert created_data["full_name"] == "Dr. New Admin"
     assert created_data["role"] == "ADMIN"
-    assert "id" not in created_data
+    assert "id" in created_data
     assert "password" not in created_data
     assert "hashed_password" not in created_data
     assert "session_token" not in created_data
@@ -739,5 +739,5 @@ def test_admin_provisioning_and_privacy(api_client: TestClient, db_session: Sess
         assert "email" in adm
         assert "full_name" in adm
         assert "role" in adm
-        assert "id" not in adm
+        assert "id" in adm
         assert "hashed_password" not in adm

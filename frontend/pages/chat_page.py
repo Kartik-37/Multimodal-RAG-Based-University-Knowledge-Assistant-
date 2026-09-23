@@ -5,14 +5,16 @@ Provides an accessible conversational thread grounded in the active knowledge ba
 Follows standard asynchronous request-response architecture (no fake streaming).
 Sanitizes markdown output to prevent arbitrary HTML execution.
 Includes citation pill buttons linked to the evidence inspection panel.
+Supports explicit search scopes: All Courses, Selected Course, and Selected Document.
 """
 
 import re
+from typing import Any
 
 from nicegui import ui
 
 from frontend.client.api_client import api_client
-from frontend.client.models import CitationDTO
+from frontend.client.models import CitationDTO, DocumentDTO, KnowledgeBaseDTO
 from frontend.components.evidence_panel import render_evidence_panel
 from frontend.components.hybrid_inspect import open_hybrid_retrieval_dialog
 from frontend.components.layout import page_layout
@@ -56,11 +58,11 @@ def register_chat_page() -> None:
     def chat_page() -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
-        page_title = "Chat & Semantic Search" if is_admin else "Ask Assistant"
+        page_title = "Admin Chat & Semantic Search" if is_admin else "Ask BCA Assistant"
         page_subtitle = (
-            "Ask questions grounded in university course materials and inspect retrieval evidence."
+            "Test retrieval, reranking, and citation synthesis across all courses, a specific course, or a single document."
             if is_admin
-            else "Ask questions across all active course materials with verified citations."
+            else "Ask questions across verified course materials with grounded citations."
         )
 
         with page_layout(
@@ -69,64 +71,205 @@ def register_chat_page() -> None:
             active_route="/chat",
             require_auth=True,
         ):
-            active_kb = state.active_kb
+            # Fetch available knowledge bases for course selector
+            kbs: list[KnowledgeBaseDTO] = []
+            try:
+                kbs = api_client.get_knowledge_bases()
+            except Exception:
+                kbs = []
 
-            # Top Context & Controls Bar
-            with ui.card().classes(
-                "w-full p-3.5 bg-white border border-slate-200 rounded-lg shadow-xs"
-            ):
-                with ui.row().classes("w-full justify-between items-center gap-2 flex-wrap"):
+            # Determine initial scope and selections
+            initial_scope = "COURSE" if state.active_kb else "ALL_COURSES"
+            active_scope: dict[str, Any] = {
+                "scope": initial_scope,
+                "kb_id": state.active_kb.id if state.active_kb else (kbs[0].id if kbs else None),
+                "doc_id": None,
+                "docs": [],
+                "selected_doc": None,
+            }
+
+            def load_docs_for_current_kb() -> None:
+                if active_scope["kb_id"]:
+                    try:
+                        active_scope["docs"] = api_client.get_documents(active_scope["kb_id"])
+                    except Exception:
+                        active_scope["docs"] = []
+                else:
+                    active_scope["docs"] = []
+
+            if active_scope["kb_id"]:
+                load_docs_for_current_kb()
+
+            # Dynamic containers
+            scope_controls_row = ui.row().classes("w-full items-center gap-3 flex-wrap")
+            doc_warning_container = ui.column().classes("w-full")
+
+            # Function to refresh doc warning banner
+            def refresh_doc_warning() -> None:
+                doc_warning_container.clear()
+                if active_scope["scope"] != "DOCUMENT" or not active_scope["selected_doc"]:
+                    return
+
+                doc: DocumentDTO = active_scope["selected_doc"]
+                with doc_warning_container:
+                    if doc.indexing_status != "COMPLETED":
+                        with ui.card().classes(
+                            "w-full p-3 bg-amber-50 border border-amber-200 rounded-lg shadow-xs"
+                        ):
+                            with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.icon("warning", size="sm").classes("text-amber-600")
+                                    with ui.column().classes("gap-0.5"):
+                                        ui.label(
+                                            f"Document '{doc.filename}' is not ready for retrieval"
+                                        ).classes("text-xs font-bold text-amber-900")
+                                        ui.label(
+                                            f"Current status: {doc.indexing_status}. Queries scoped to this document will be refused until indexing completes."
+                                        ).classes("text-[11px] text-amber-700")
+
+                                def trigger_doc_indexing(d=doc) -> None:
+                                    try:
+                                        api_client.index_document(active_scope["kb_id"], d.id)
+                                        ui.notify(
+                                            f"Triggered vector indexing for {d.filename}.",
+                                            type="info",
+                                        )
+                                        load_docs_for_current_kb()
+                                        for updated_doc in active_scope["docs"]:
+                                            if updated_doc.id == d.id:
+                                                active_scope["selected_doc"] = updated_doc
+                                                break
+                                        refresh_doc_warning()
+                                    except Exception as exc:
+                                        ui.notify(f"Indexing trigger failed: {exc}", type="negative")
+
+                                ui.button(
+                                    "Retry Indexing" if doc.indexing_status == "FAILED" else "Index Document",
+                                    icon="play_arrow",
+                                    on_click=trigger_doc_indexing,
+                                ).props("color=amber-9 dense no-caps").classes("text-xs")
+                    else:
+                        with ui.card().classes(
+                            "w-full p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg shadow-xs"
+                        ):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("check_circle", size="sm").classes("text-emerald-600")
+                                ui.label(
+                                    f"Document '{doc.filename}' is fully indexed ({doc.chunk_count} chunks ready)."
+                                ).classes("text-xs font-medium text-emerald-800")
+
+            # Function to render top controls
+            def render_controls() -> None:
+                scope_controls_row.clear()
+                with scope_controls_row:
                     with ui.row().classes("items-center gap-2"):
-                        ui.icon("school", size="sm").classes("text-blue-600")
-                        scope_label = "Target Scope:" if is_admin else "Searching In:"
-                        ui.label(scope_label).classes(
-                            "text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                        ui.icon("filter_alt", size="sm").classes("text-blue-600")
+                        ui.label("Search Scope:").classes(
+                            "text-xs font-bold text-slate-700 uppercase tracking-wider"
                         )
-                        current_scope_name = active_kb.name if active_kb else "All Course Materials"
-                        ui.label(current_scope_name).classes("text-sm font-bold text-slate-900")
 
-                        if active_kb and not is_admin:
+                        scope_options = {
+                            "ALL_COURSES": "All Published Courses",
+                            "COURSE": "Selected Course",
+                            "DOCUMENT": "Selected Document",
+                        }
 
-                            def reset_to_all_courses() -> None:
-                                state.active_kb = None
-                                ui.navigate.to("/chat")
+                        def on_scope_change(e: Any) -> None:
+                            active_scope["scope"] = e.value
+                            if e.value == "DOCUMENT" and not active_scope["selected_doc"] and active_scope["docs"]:
+                                active_scope["selected_doc"] = active_scope["docs"][0]
+                                active_scope["doc_id"] = active_scope["docs"][0].id
+                            render_controls()
+                            refresh_doc_warning()
 
-                            ui.button(
-                                "Search All Courses",
-                                icon="clear",
-                                on_click=reset_to_all_courses,
-                            ).props("flat dense no-caps text-color=primary").classes(
-                                "text-xs font-medium ml-2"
+                        ui.select(
+                            options=scope_options,
+                            value=active_scope["scope"],
+                            on_change=on_scope_change,
+                        ).props("outlined dense options-dense").classes("text-xs min-w-[190px]")
+
+                    # Course selector (shown if COURSE or DOCUMENT)
+                    if active_scope["scope"] in ("COURSE", "DOCUMENT"):
+                        kb_options = {kb.id: kb.name for kb in kbs}
+                        if not active_scope["kb_id"] and kbs:
+                            active_scope["kb_id"] = kbs[0].id
+                            load_docs_for_current_kb()
+
+                        def on_kb_change(e: Any) -> None:
+                            active_scope["kb_id"] = e.value
+                            # Update global state active_kb as well
+                            selected = next((k for k in kbs if k.id == e.value), None)
+                            if selected:
+                                state.active_kb = selected
+                            load_docs_for_current_kb()
+                            if active_scope["docs"]:
+                                active_scope["selected_doc"] = active_scope["docs"][0]
+                                active_scope["doc_id"] = active_scope["docs"][0].id
+                            else:
+                                active_scope["selected_doc"] = None
+                                active_scope["doc_id"] = None
+                            render_controls()
+                            refresh_doc_warning()
+
+                        ui.select(
+                            options=kb_options,
+                            value=active_scope["kb_id"],
+                            on_change=on_kb_change,
+                            label="Course",
+                        ).props("outlined dense options-dense").classes("text-xs min-w-[200px]")
+
+                    # Document selector (shown if DOCUMENT)
+                    if active_scope["scope"] == "DOCUMENT":
+                        doc_options = {d.id: d.filename for d in active_scope["docs"]}
+                        if not active_scope["doc_id"] and active_scope["docs"]:
+                            active_scope["doc_id"] = active_scope["docs"][0].id
+                            active_scope["selected_doc"] = active_scope["docs"][0]
+
+                        def on_doc_change(e: Any) -> None:
+                            active_scope["doc_id"] = e.value
+                            selected = next((d for d in active_scope["docs"] if d.id == e.value), None)
+                            active_scope["selected_doc"] = selected
+                            refresh_doc_warning()
+
+                        ui.select(
+                            options=doc_options,
+                            value=active_scope["doc_id"],
+                            on_change=on_doc_change,
+                            label="Document",
+                        ).props("outlined dense options-dense").classes("text-xs min-w-[220px]")
+
+                    # Action diagnostics for Admin
+                    with ui.row().classes("ml-auto items-center gap-2 flex-wrap"):
+                        if is_admin and active_scope["kb_id"]:
+                            kb_name = next(
+                                (k.name for k in kbs if k.id == active_scope["kb_id"]), "Course"
                             )
-
-                    with ui.row().classes("items-center gap-2 flex-wrap"):
-                        if is_admin and active_kb:
                             ui.button(
                                 "Dense Vector",
                                 icon="manage_search",
                                 on_click=lambda: open_vector_retrieval_dialog(
-                                    active_kb.id, active_kb.name
+                                    active_scope["kb_id"], kb_name
                                 ),
                             ).props("outline dense no-caps").classes("text-xs text-blue-700")
                             ui.button(
                                 "Lexical FTS",
                                 icon="search",
                                 on_click=lambda: open_lexical_retrieval_dialog(
-                                    active_kb.id, active_kb.name
+                                    active_scope["kb_id"], kb_name
                                 ),
                             ).props("outline dense no-caps").classes("text-xs text-teal-700")
                             ui.button(
                                 "Hybrid RRF",
                                 icon="layers",
                                 on_click=lambda: open_hybrid_retrieval_dialog(
-                                    active_kb.id, active_kb.name
+                                    active_scope["kb_id"], kb_name
                                 ),
                             ).props("outline dense no-caps").classes("text-xs text-indigo-700")
                             ui.button(
                                 "Reranker",
                                 icon="tune",
                                 on_click=lambda: open_rerank_inspection_dialog(
-                                    active_kb.id, active_kb.name
+                                    active_scope["kb_id"], kb_name
                                 ),
                             ).props("outline dense no-caps").classes("text-xs text-purple-700")
 
@@ -144,8 +287,17 @@ def register_chat_page() -> None:
                             "text-xs text-rose-600 hover:bg-rose-50"
                         )
 
+            # Top Context & Controls Card
+            with ui.card().classes(
+                "w-full p-3.5 bg-white border border-slate-200 rounded-lg shadow-xs mb-1"
+            ):
+                render_controls()
+
+            # Warning banner for unindexed target doc
+            refresh_doc_warning()
+
             # Main Two-Column Layout (Chat Thread + Evidence Panel)
-            with ui.row().classes("w-full gap-6 items-start"):
+            with ui.row().classes("w-full gap-6 items-start mt-2"):
                 # Left Column: Conversation Thread (approx 65% width on desktop)
                 with ui.column().classes("flex-1 min-w-[300px] w-full gap-4"):
                     # Message Container
@@ -166,7 +318,7 @@ def register_chat_page() -> None:
 
                     # Input Bar
                     input_placeholder = (
-                        "Ask a question about your courses (e.g. syllabus, prerequisites, grading)..."
+                        "Ask a question about course materials, syllabi, grading, prerequisites..."
                         if not is_admin
                         else "Ask a question to test retrieval, reranking, and citation synthesis..."
                     )
@@ -197,6 +349,26 @@ def register_chat_page() -> None:
                     ui.notify("Please enter a question.", type="warning")
                     return
 
+                # Validate scope parameters before sending
+                cur_scope = active_scope["scope"]
+                target_kb_id = active_scope["kb_id"] if cur_scope in ("COURSE", "DOCUMENT") else None
+                target_doc_id = active_scope["doc_id"] if cur_scope == "DOCUMENT" else None
+
+                if cur_scope in ("COURSE", "DOCUMENT") and not target_kb_id:
+                    ui.notify("Please select a course for this search scope.", type="warning")
+                    return
+
+                if cur_scope == "DOCUMENT":
+                    if not target_doc_id:
+                        ui.notify("Please select a document for document-scoped search.", type="warning")
+                        return
+                    if active_scope["selected_doc"] and active_scope["selected_doc"].indexing_status != "COMPLETED":
+                        ui.notify(
+                            "Cannot query unindexed document. Please trigger indexing first.",
+                            type="negative",
+                        )
+                        return
+
                 # Append user question to state
                 state.add_user_message(q)
                 render_messages()
@@ -207,11 +379,11 @@ def register_chat_page() -> None:
                 send_btn.disable()
 
                 try:
-                    # Centralized API client execution - pass None for global search
-                    target_kb_id = active_kb.id if active_kb else None
                     response = api_client.send_chat_message(
-                        kb_id=target_kb_id,
                         question=q,
+                        kb_id=target_kb_id,
+                        document_id=target_doc_id,
+                        scope=cur_scope,
                     )
                     state.add_assistant_message(response)
                     if response.citations:
@@ -365,3 +537,4 @@ def register_chat_page() -> None:
             # Initial render
             render_messages()
             render_evidence()
+

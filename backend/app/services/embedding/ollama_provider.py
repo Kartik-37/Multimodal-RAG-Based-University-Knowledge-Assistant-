@@ -34,14 +34,14 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
         base_url: str | None = None,
         model_name: str | None = None,
         dimension: int | None = None,
-        timeout: float = 30.0,
-        batch_size: int = 32,
+        timeout: float | None = None,
+        batch_size: int | None = None,
     ) -> None:
         self._base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
         self._model_name = model_name or settings.OLLAMA_EMBED_MODEL
         self._dimension = dimension if dimension is not None else settings.EMBEDDING_DIM
-        self._timeout = timeout
-        self._batch_size = max(1, batch_size)
+        self._timeout = timeout if timeout is not None else settings.OLLAMA_EMBED_TIMEOUT
+        self._batch_size = max(1, batch_size if batch_size is not None else settings.OLLAMA_EMBED_BATCH_SIZE)
 
     @property
     def dimension(self) -> int:

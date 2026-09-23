@@ -42,12 +42,20 @@ class KnowledgeBaseChatRequest(BaseModel):
 class ChatQueryRequest(KnowledgeBaseChatRequest):
     """
     Request model for conversational RAG queries with explicit or omitted KB ID in payload.
-    When knowledge_base_id is omitted, queries across all authorized active course materials.
+    Supports ALL_COURSES, COURSE, and DOCUMENT scopes.
     """
 
     knowledge_base_id: uuid.UUID | None = Field(
         default=None,
         description="Target authorized knowledge base UUID, or None for global search.",
+    )
+    document_id: uuid.UUID | None = Field(
+        default=None,
+        description="Target document UUID when scoping retrieval to a specific document.",
+    )
+    scope: str | None = Field(
+        default=None,
+        description="Explicit query scope: 'ALL_COURSES', 'COURSE', or 'DOCUMENT'.",
     )
 
 

@@ -676,7 +676,6 @@ def test_admin_user_dto_privacy() -> None:
         is_active=True,
         created_at="2026-09-22",
     )
-    assert not hasattr(dto, "id") or "id" not in dto.model_fields
     assert not hasattr(dto, "password") or "password" not in dto.model_fields
     assert not hasattr(dto, "hashed_password") or "hashed_password" not in dto.model_fields
 

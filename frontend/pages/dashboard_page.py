@@ -11,7 +11,7 @@ from nicegui import ui
 
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
-from frontend.components.status_badge import render_status_badge
+from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
 from frontend.components.ui_kit import render_empty_state, render_stat_card
 from frontend.state.app_state import state
 
@@ -141,6 +141,9 @@ def register_dashboard_page() -> None:
             total_documents = sum(c.total_documents for c in course_summaries)
             active_documents = sum(c.active_documents for c in course_summaries)
             total_admins = len(admins)
+            total_indexed = sum(c.indexed_documents for c in course_summaries)
+            total_indexing = sum(c.indexing_documents for c in course_summaries)
+            total_failed = sum(c.failed_documents for c in course_summaries)
 
             # 1. Summary Cards (Courses, Documents, Active Documents, Administrators)
             with ui.row().classes("w-full gap-4"):
@@ -212,6 +215,59 @@ def register_dashboard_page() -> None:
                     ).props("outline color=purple no-caps dense").classes(
                         "text-xs font-medium px-4 py-2"
                     )
+
+            # 2.5 Vector Index Health Section
+            with ui.card().classes(
+                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
+            ):
+                with ui.row().classes(
+                    "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("storage", size="sm").classes("text-blue-600")
+                        ui.label("Vector Index Health").classes("text-sm font-bold text-slate-800")
+                    ui.button(
+                        "Manage Indexing",
+                        icon="arrow_forward",
+                        on_click=lambda: ui.navigate.to("/documents"),
+                    ).props("flat dense no-caps").classes("text-xs text-blue-600")
+
+                with ui.row().classes("w-full gap-4"):
+                    render_stat_card(
+                        title="Indexed Documents",
+                        value=total_indexed,
+                        subtitle="Vectors generated & retrieval ready",
+                        icon="check_circle",
+                        icon_color="emerald-600",
+                    )
+                    render_stat_card(
+                        title="Indexing in Progress",
+                        value=total_indexing,
+                        subtitle="Embedding or queued in worker",
+                        icon="autorenew",
+                        icon_color="indigo-600",
+                    )
+                    render_stat_card(
+                        title="Indexing Failed",
+                        value=total_failed,
+                        subtitle="Errors requiring retry",
+                        icon="error_outline",
+                        icon_color="rose-600",
+                    )
+
+                if total_failed > 0:
+                    with ui.card().classes("w-full mt-3 p-3 bg-rose-50 border border-rose-200 rounded-md"):
+                        with ui.row().classes("w-full items-center justify-between"):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("warning", size="sm").classes("text-rose-600")
+                                ui.label(
+                                    f"{total_failed} document(s) failed vector indexing. They are excluded from retrieval until retried."
+                                ).classes("text-xs font-semibold text-rose-800")
+                            ui.button(
+                                "Resolve in Documents",
+                                icon="arrow_forward",
+                                on_click=lambda: ui.navigate.to("/documents"),
+                            ).props("color=rose-7 dense no-caps").classes("text-xs")
 
             # 3. Courses Overview
             with ui.card().classes(
@@ -301,6 +357,7 @@ def register_dashboard_page() -> None:
                             "filename": preview.filename,
                             "file_type": preview.file_type,
                             "status": preview.status,
+                            "indexing_status": preview.indexing_status,
                             "is_active": preview.is_active,
                         }
                     )
@@ -343,6 +400,8 @@ def register_dashboard_page() -> None:
                                     with ui.element("th").classes("py-2.5 px-3"):
                                         ui.label("Processing")
                                     with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Vector Indexing")
+                                    with ui.element("th").classes("py-2.5 px-3"):
                                         ui.label("Retrieval Status")
 
                             with ui.element("tbody").classes(
@@ -365,6 +424,8 @@ def register_dashboard_page() -> None:
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             render_status_badge(d["status"])
                                         with ui.element("td").classes("py-2.5 px-3"):
+                                            render_indexing_status_badge(d["indexing_status"])
+                                        with ui.element("td").classes("py-2.5 px-3"):
                                             if d["is_active"]:
                                                 ui.badge("ACTIVE", color="emerald-700").classes(
                                                     "text-[10px] font-bold"
@@ -373,3 +434,4 @@ def register_dashboard_page() -> None:
                                                 ui.badge("INACTIVE", color="slate-500").classes(
                                                     "text-[10px]"
                                                 )
+

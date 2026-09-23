@@ -103,6 +103,7 @@ class LexicalRetrievalService:
         kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.LEXICAL_TOP_K,
+        document_id: uuid.UUID | None = None,
     ) -> LexicalRetrievalResponse:
         """
         Execute PostgreSQL full-text lexical search against an authorized knowledge base or collection.
@@ -112,6 +113,7 @@ class LexicalRetrievalService:
             kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             query: Natural-language search query string.
             top_k: Maximum number of top candidates to retrieve.
+            document_id: Optional UUID of a specific document to scope retrieval.
 
         Returns:
             LexicalRetrievalResponse with ranked chunks and cover density ranking scores.
@@ -147,7 +149,18 @@ class LexicalRetrievalService:
             "lexical_score"
         )
 
-        # Invariant: Only ACTIVE and successfully ingested (COMPLETED) documents participate
+        # Invariant: Only successfully ingested (COMPLETED) documents participate
+        conditions = [
+            kb_filter,
+            Document.status == DocumentStatus.COMPLETED,
+            DocumentChunk.searchable_text.is_not(None),
+            DocumentChunk.searchable_text.op("@@")(query_tsquery),
+        ]
+        if document_id is not None:
+            conditions.append(Document.id == document_id)
+        else:
+            conditions.append(Document.is_active.is_(True))
+
         stmt = (
             select(
                 DocumentChunk,
@@ -155,15 +168,7 @@ class LexicalRetrievalService:
                 score_expr,
             )
             .join(Document, DocumentChunk.document_id == Document.id)
-            .where(
-                and_(
-                    kb_filter,
-                    Document.is_active.is_(True),
-                    Document.status == DocumentStatus.COMPLETED,
-                    DocumentChunk.searchable_text.is_not(None),
-                    DocumentChunk.searchable_text.op("@@")(query_tsquery),
-                )
-            )
+            .where(and_(*conditions))
             .order_by(
                 score_expr.desc(),
                 DocumentChunk.chunk_index.asc(),

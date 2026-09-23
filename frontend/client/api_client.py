@@ -28,6 +28,7 @@ from frontend.client.models import (
     CourseSummaryDTO,
     DocumentDTO,
     HybridRetrievalResultDTO,
+    IndexingJobDTO,
     KnowledgeBaseDTO,
     LexicalRetrievalResultDTO,
     QueryProcessingResultDTO,
@@ -50,14 +51,11 @@ class FrontendAPIClient:
         self._documents: dict[str, list[DocumentDTO]] = {}
 
     # --------------------------------------------------------------------------
-    # Authentication Boundary
+    # Authentication & Session Boundary
     # --------------------------------------------------------------------------
 
     def login(self, email: str, password: str) -> UserDTO:
-        """
-        Authenticate user with email and password via FastAPI backend.
-        Establishes an authoritative server session with Argon2id verification.
-        """
+        """Authenticate user against Argon2id hash and establish PostgreSQL session."""
         if not email or not password:
             raise ValueError("Email and password must not be empty.")
 
@@ -80,6 +78,8 @@ class FrontendAPIClient:
             email=user_data["email"],
             full_name=user_data["full_name"],
             role=user_data["role"],
+            admin_role=user_data.get("admin_role"),
+            permissions=user_data.get("permissions", []),
         )
         return self._current_user
 
@@ -128,6 +128,8 @@ class FrontendAPIClient:
                     email=user_data["email"],
                     full_name=user_data["full_name"],
                     role=user_data["role"],
+                    admin_role=user_data.get("admin_role"),
+                    permissions=user_data.get("permissions", []),
                 )
         return self._current_user
 
@@ -207,12 +209,16 @@ class FrontendAPIClient:
                 total_documents=item.get("total_documents", 0),
                 active_documents=item.get("active_documents", 0),
                 inactive_documents=item.get("inactive_documents", 0),
+                indexed_documents=item.get("indexed_documents", 0),
+                indexing_documents=item.get("indexing_documents", 0),
+                failed_documents=item.get("failed_documents", 0),
                 document_previews=[
                     CourseDocumentPreviewDTO(
                         id=str(p["id"]),
                         filename=p["filename"],
                         file_type=p["file_type"],
                         status=p["status"],
+                        indexing_status=p.get("indexing_status", "PENDING"),
                         is_active=p["is_active"],
                     )
                     for p in item.get("document_previews", [])
@@ -328,6 +334,32 @@ class FrontendAPIClient:
             else None,
         )
 
+    def get_document_index_status(self, kb_id: str, document_id: str) -> IndexingJobDTO:
+        """
+        Fetch persistent vector indexing job status and chunk progress.
+        """
+        resp = self._http.get(f"/knowledge-bases/{kb_id}/documents/{document_id}/index-status")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="document"))
+
+        item = resp.json()
+        return IndexingJobDTO(
+            job_id=str(item["job_id"]) if item.get("job_id") else None,
+            document_id=str(item["document_id"]),
+            knowledge_base_id=str(item["knowledge_base_id"]),
+            status=item["status"],
+            stage=item["stage"],
+            total_chunks=item.get("total_chunks", 0),
+            processed_chunks=item.get("processed_chunks", 0),
+            embedded_chunks=item.get("embedded_chunks", 0),
+            indexed_chunks=item.get("indexed_chunks", 0),
+            progress_percent=item.get("progress_percent", 0.0),
+            error_message=item.get("error_message"),
+            attempt_number=item.get("attempt_number", 1),
+            started_at=str(item["started_at"]) if item.get("started_at") else None,
+            completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
+        )
+
     def activate_document(self, kb_id: str, document_id: str) -> DocumentDTO:
         """
         Activate an ingested and indexed document for retrieval.
@@ -404,23 +436,35 @@ class FrontendAPIClient:
     # Conversational RAG Query Boundary
     # --------------------------------------------------------------------------
 
-    def send_chat_message(self, kb_id: str | None, question: str) -> ChatMessageDTO:
+    def send_chat_message(
+        self,
+        kb_id: str | None,
+        question: str,
+        document_id: str | None = None,
+        scope: str | None = None,
+    ) -> ChatMessageDTO:
         """
         Submit question to conversational query endpoint.
-        If kb_id is provided, queries the scoped knowledge base.
-        If kb_id is None, queries across all authorized active knowledge bases.
-        Both ADMIN and authorized STUDENT users can query.
+        Supports scopes: ALL_COURSES, COURSE, DOCUMENT.
         """
         if not question.strip():
             raise ValueError("Question cannot be empty.")
 
         payload: dict[str, Any] = {"question": question.strip()}
+        if scope:
+            payload["scope"] = scope
         if kb_id:
             try:
                 kb_uuid = uuid.UUID(kb_id)
                 payload["knowledge_base_id"] = str(kb_uuid)
             except ValueError:
                 raise ValueError("Invalid knowledge base ID format.") from None
+        if document_id:
+            try:
+                doc_uuid = uuid.UUID(document_id)
+                payload["document_id"] = str(doc_uuid)
+            except ValueError:
+                raise ValueError("Invalid document ID format.") from None
 
         resp = self._http.post(
             "/chat/query",
@@ -721,9 +765,16 @@ class FrontendAPIClient:
     # Administrator Management Boundary
     # --------------------------------------------------------------------------
 
-    def create_admin(self, email: str, password: str, full_name: str) -> AdminUserDTO:
+    def create_admin(
+        self,
+        email: str,
+        password: str,
+        full_name: str,
+        admin_role: str = "FACULTY_ADMIN",
+        permissions: list[str] | None = None,
+    ) -> AdminUserDTO:
         """
-        Create a new ADMIN user account. Restricted strictly to authenticated ADMINs.
+        Create a new administrator account (MAIN_ADMIN or FACULTY_ADMIN).
         """
         if not email or not password or not full_name:
             raise ValueError("All fields are required.")
@@ -734,6 +785,8 @@ class FrontendAPIClient:
                 "email": email.strip(),
                 "password": password,
                 "full_name": full_name.strip(),
+                "admin_role": admin_role,
+                "permissions": permissions or [],
             },
         )
         if resp.status_code != 201:
@@ -741,9 +794,12 @@ class FrontendAPIClient:
 
         data = resp.json()
         return AdminUserDTO(
+            id=str(data["id"]),
             email=data["email"],
             full_name=data["full_name"],
             role=data["role"],
+            admin_role=data.get("admin_role", "FACULTY_ADMIN"),
+            permissions=data.get("permissions", []),
             is_active=data.get("is_active", True),
             created_at=data.get("created_at", "")[:10],
         )
@@ -759,14 +815,88 @@ class FrontendAPIClient:
         items = resp.json()
         return [
             AdminUserDTO(
+                id=str(item["id"]),
                 email=item["email"],
                 full_name=item["full_name"],
                 role=item["role"],
+                admin_role=item.get("admin_role", "MAIN_ADMIN"),
+                permissions=item.get("permissions", []),
                 is_active=item.get("is_active", True),
                 created_at=item.get("created_at", "")[:10],
             )
             for item in items
         ]
+
+    def update_admin_permissions(self, admin_id: str, permissions: list[str]) -> AdminUserDTO:
+        """
+        Update permissions for a faculty administrator.
+        """
+        resp = self._http.patch(
+            f"/auth/admins/{admin_id}/permissions",
+            json={"permissions": permissions},
+        )
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="admin"))
+
+        data = resp.json()
+        return AdminUserDTO(
+            id=str(data["id"]),
+            email=data["email"],
+            full_name=data["full_name"],
+            role=data["role"],
+            admin_role=data.get("admin_role", "FACULTY_ADMIN"),
+            permissions=data.get("permissions", []),
+            is_active=data.get("is_active", True),
+            created_at=data.get("created_at", "")[:10],
+        )
+
+    def deactivate_admin(self, admin_id: str) -> AdminUserDTO:
+        """
+        Deactivate an administrator account.
+        """
+        resp = self._http.patch(f"/auth/admins/{admin_id}/deactivate")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="admin"))
+
+        data = resp.json()
+        return AdminUserDTO(
+            id=str(data["id"]),
+            email=data["email"],
+            full_name=data["full_name"],
+            role=data["role"],
+            admin_role=data.get("admin_role", "FACULTY_ADMIN"),
+            permissions=data.get("permissions", []),
+            is_active=data.get("is_active", False),
+            created_at=data.get("created_at", "")[:10],
+        )
+
+    def activate_admin(self, admin_id: str) -> AdminUserDTO:
+        """
+        Reactivate an administrator account.
+        """
+        resp = self._http.patch(f"/auth/admins/{admin_id}/activate")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="admin"))
+
+        data = resp.json()
+        return AdminUserDTO(
+            id=str(data["id"]),
+            email=data["email"],
+            full_name=data["full_name"],
+            role=data["role"],
+            admin_role=data.get("admin_role", "FACULTY_ADMIN"),
+            permissions=data.get("permissions", []),
+            is_active=data.get("is_active", True),
+            created_at=data.get("created_at", "")[:10],
+        )
+
+    def delete_admin(self, admin_id: str) -> None:
+        """
+        Delete an administrator account.
+        """
+        resp = self._http.delete(f"/auth/admins/{admin_id}")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="admin"))
 
 
 # Global default client instance for the frontend presentation layer

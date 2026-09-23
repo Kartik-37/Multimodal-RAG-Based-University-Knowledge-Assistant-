@@ -162,6 +162,7 @@ class RAGOrchestrator:
         k_retrieval: int = settings.RAG_TOP_K_RETRIEVAL,
         k_rerank: int = settings.RAG_TOP_K_RERANK,
         token_budget: int = settings.MAX_CONTEXT_TOKENS,
+        document_id: uuid.UUID | None = None,
     ) -> ChatQueryResponse:
         """
         Execute the complete 9-stage RAG pipeline for an authorized knowledge base query or global query.
@@ -173,6 +174,7 @@ class RAGOrchestrator:
             k_retrieval: Number of hybrid candidates to retrieve.
             k_rerank: Number of top reranked chunks to select for context.
             token_budget: Maximum tokens permitted in assembled context.
+            document_id: Optional UUID of a specific document to scope retrieval.
 
         Returns:
             ChatQueryResponse containing answer, citations, grounding summary, and latencies.
@@ -214,6 +216,7 @@ class RAGOrchestrator:
                 kb_id=kb_id,
                 query=processed_query,
                 top_k=k_retrieval,
+                document_id=document_id,
             )
             retrieval_ms = round((time.perf_counter() - stage_t0) * 1000.0, 2)
             stages["hybrid_retrieval"] = RAGStageTelemetry(

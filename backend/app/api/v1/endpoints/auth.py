@@ -11,10 +11,11 @@ Security Rules:
 - Passwords and raw session tokens are never logged.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import and_, delete, func, select
 
 from backend.app.api.deps import (
     AuthenticatedAdmin,
@@ -22,8 +23,11 @@ from backend.app.api.deps import (
     DatabaseSession,
     RateLimitAuthLogin,
     RateLimitAuthRegister,
+    check_user_permission,
+    is_main_admin,
 )
 from backend.app.core.config import settings
+from backend.app.core.permissions import Permission
 from backend.app.core.security import (
     SESSION_COOKIE_NAME,
     generate_session_token,
@@ -33,9 +37,10 @@ from backend.app.core.security import (
     verify_dummy_password,
     verify_password,
 )
-from backend.app.models.user import User, UserRole, UserSession
+from backend.app.models.user import AdminRole, User, UserRole, UserSession
 from backend.app.schemas.auth import (
     AdminCreateRequest,
+    AdminPermissionsUpdateRequest,
     AdminUserResponse,
     SessionResponse,
     UserLoginRequest,
@@ -227,9 +232,31 @@ def create_admin(
 ) -> AdminUserResponse:
     """
     Provision a new administrator account.
-    Restricted strictly to authenticated administrators.
-    Students or anonymous callers receive 403 or 401.
+    Restricted strictly to administrators with ADMIN_CREATE permission.
+    Only MAIN_ADMIN can create another MAIN_ADMIN.
     """
+    if not check_user_permission(current_user, Permission.ADMIN_CREATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_CREATE'.",
+        )
+
+    # Main Admin role creation policy: only a Main Admin can create another Main Admin
+    if payload.admin_role == AdminRole.MAIN_ADMIN and not is_main_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a Main Admin can create another Main Admin account.",
+        )
+
+    # Validate permission names if provided
+    valid_perms = {p.value for p in Permission}
+    for perm in payload.permissions:
+        if perm not in valid_perms:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid permission: '{perm}'.",
+            )
+
     clean_email = payload.email.strip().lower()
 
     stmt = select(User).where(User.email == clean_email)
@@ -247,6 +274,8 @@ def create_admin(
         password_hash=password_hash,
         full_name=payload.full_name.strip(),
         role=UserRole.ADMIN,
+        admin_role=payload.admin_role,
+        permissions=payload.permissions if payload.admin_role == AdminRole.FACULTY_ADMIN else [],
         is_active=True,
     )
     db.add(user)
@@ -268,9 +297,241 @@ def list_admins(
 ) -> list[AdminUserResponse]:
     """
     List all administrator accounts.
-    Restricted strictly to authenticated administrators.
-    Privacy: Exposes only full_name, email, role, is_active, created_at.
+    Restricted strictly to administrators with ADMIN_VIEW permission.
     """
+    if not check_user_permission(current_user, Permission.ADMIN_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_VIEW'.",
+        )
+
     stmt = select(User).where(User.role == UserRole.ADMIN).order_by(User.created_at.desc())
     admins = db.execute(stmt).scalars().all()
     return [AdminUserResponse.model_validate(a) for a in admins]
+
+
+@router.patch(
+    "/admins/{admin_id}/permissions",
+    response_model=AdminUserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update permissions for a faculty administrator",
+)
+def update_admin_permissions(
+    admin_id: uuid.UUID,
+    payload: AdminPermissionsUpdateRequest,
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> AdminUserResponse:
+    """
+    Update permissions for a faculty administrator.
+    Requires ADMIN_PERMISSION_MANAGE permission.
+    Faculty admins cannot modify their own permissions.
+    """
+    if not check_user_permission(current_user, Permission.ADMIN_PERMISSION_MANAGE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_PERMISSION_MANAGE'.",
+        )
+
+    target = db.execute(
+        select(User).where(and_(User.id == admin_id, User.role == UserRole.ADMIN))
+    ).scalar_one_or_none()
+
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator not found.",
+        )
+
+    # Prevent faculty admin self-escalation
+    if target.id == current_user.id and not is_main_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Faculty administrators cannot modify their own permissions.",
+        )
+
+    # Validate permission names
+    valid_perms = {p.value for p in Permission}
+    for perm in payload.permissions:
+        if perm not in valid_perms:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid permission: '{perm}'.",
+            )
+
+    target.permissions = payload.permissions
+    db.commit()
+    db.refresh(target)
+    return AdminUserResponse.model_validate(target)
+
+
+@router.patch(
+    "/admins/{admin_id}/deactivate",
+    response_model=AdminUserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Deactivate an administrator account",
+)
+def deactivate_admin(
+    admin_id: uuid.UUID,
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> AdminUserResponse:
+    """
+    Deactivate an administrator account.
+    Requires ADMIN_EDIT permission.
+    Admins cannot deactivate themselves.
+    The final active Main Admin cannot be deactivated.
+    """
+    if not check_user_permission(current_user, Permission.ADMIN_EDIT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_EDIT'.",
+        )
+
+    target = db.execute(
+        select(User).where(and_(User.id == admin_id, User.role == UserRole.ADMIN))
+    ).scalar_one_or_none()
+
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator not found.",
+        )
+
+    # Safety Rule 1: Admin cannot deactivate itself
+    if target.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrators cannot deactivate their own account.",
+        )
+
+    # Safety Rule 3 & 5: The final active MAIN_ADMIN cannot be deactivated
+    if is_main_admin(target):
+        active_main_admins_count = db.execute(
+            select(func.count(User.id)).where(
+                and_(
+                    User.role == UserRole.ADMIN,
+                    User.admin_role == AdminRole.MAIN_ADMIN,
+                    User.is_active.is_(True),
+                )
+            )
+        ).scalar_one()
+
+        if active_main_admins_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot deactivate the final active Main Admin account. At least one active Main Admin must remain.",
+            )
+
+    target.is_active = False
+
+    # Revoke all active sessions for deactivated admin
+    db.execute(delete(UserSession).where(UserSession.user_id == target.id))
+    db.commit()
+    db.refresh(target)
+    return AdminUserResponse.model_validate(target)
+
+
+@router.patch(
+    "/admins/{admin_id}/activate",
+    response_model=AdminUserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reactivate an administrator account",
+)
+def activate_admin(
+    admin_id: uuid.UUID,
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> AdminUserResponse:
+    """
+    Reactivate an administrator account.
+    Requires ADMIN_EDIT permission.
+    """
+    if not check_user_permission(current_user, Permission.ADMIN_EDIT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_EDIT'.",
+        )
+
+    target = db.execute(
+        select(User).where(and_(User.id == admin_id, User.role == UserRole.ADMIN))
+    ).scalar_one_or_none()
+
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator not found.",
+        )
+
+    target.is_active = True
+    db.commit()
+    db.refresh(target)
+    return AdminUserResponse.model_validate(target)
+
+
+@router.delete(
+    "/admins/{admin_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete an administrator account",
+)
+def delete_admin(
+    admin_id: uuid.UUID,
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> dict[str, str]:
+    """
+    Delete an administrator account.
+    Requires ADMIN_DELETE permission.
+    Admins cannot delete themselves.
+    The final Main Admin cannot be deleted.
+    """
+    if not check_user_permission(current_user, Permission.ADMIN_DELETE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_DELETE'.",
+        )
+
+    target = db.execute(
+        select(User).where(and_(User.id == admin_id, User.role == UserRole.ADMIN))
+    ).scalar_one_or_none()
+
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator not found.",
+        )
+
+    # Safety Rule 2: Admin cannot delete itself
+    if target.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrators cannot delete their own account.",
+        )
+
+    # Safety Rule 4 & 5: The final MAIN_ADMIN cannot be deleted
+    if is_main_admin(target):
+        total_main_admins_count = db.execute(
+            select(func.count(User.id)).where(
+                and_(
+                    User.role == UserRole.ADMIN,
+                    User.admin_role == AdminRole.MAIN_ADMIN,
+                )
+            )
+        ).scalar_one()
+
+        if total_main_admins_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the final Main Admin account. At least one Main Admin must exist.",
+            )
+
+    # Delete sessions and user record
+    db.execute(delete(UserSession).where(UserSession.user_id == target.id))
+    db.delete(target)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "admin_id": str(admin_id),
+        "message": "Administrator account deleted successfully.",
+    }

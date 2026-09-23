@@ -234,6 +234,7 @@ class HybridRetrievalService:
         kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
+        document_id: uuid.UUID | None = None,
     ) -> HybridRetrievalResponse:
         """
         Execute hybrid retrieval combining dense vector search and PostgreSQL lexical search
@@ -244,6 +245,7 @@ class HybridRetrievalService:
             kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             query: Natural-language query string.
             top_k: Maximum number of top fused chunks to return.
+            document_id: Optional UUID of a specific document to scope retrieval.
 
         Returns:
             HybridRetrievalResponse with fused chunks ordered by descending RRF score.
@@ -272,6 +274,7 @@ class HybridRetrievalService:
                 kb_id=kb_id,
                 query=clean_query,
                 top_k=candidate_limit,
+                document_id=document_id,
             )
             vector_results = vector_response.results
         except RetrievalValidationError as exc:
@@ -292,6 +295,7 @@ class HybridRetrievalService:
                 kb_id=kb_id,
                 query=clean_query,
                 top_k=candidate_limit,
+                document_id=document_id,
             )
             lexical_results = lexical_response.results
         except LexicalRetrievalValidationError as exc:
@@ -321,9 +325,10 @@ class HybridRetrievalService:
         kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
+        document_id: uuid.UUID | None = None,
     ) -> HybridRetrievalResponse:
         """Synchronous wrapper for hybrid retrieval when called from non-async contexts."""
-        return asyncio.run(self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k))
+        return asyncio.run(self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k, document_id=document_id))
 
 
 # Singleton default hybrid retrieval service instance

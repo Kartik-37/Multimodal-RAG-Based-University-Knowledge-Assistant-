@@ -36,10 +36,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Application startup: database connectivity verified successfully.")
 
+    import asyncio
+
+    from backend.app.services.indexing_worker import run_indexing_worker
+
+    worker_task = asyncio.create_task(run_indexing_worker())
+
     try:
         yield
     finally:
-        # 2. Shutdown: Dispose engine connection pool on normal exit and exception
+        # 2. Shutdown: Cancel worker and dispose engine connection pool
+        logger.info("Application shutdown: terminating indexing worker.")
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
         logger.info("Application shutdown: disposing database connection pool.")
         engine.dispose()
 

@@ -53,6 +53,7 @@ class CourseDocumentPreview(BaseModel):
     filename: str
     file_type: str
     status: str
+    indexing_status: str = "PENDING"
     is_active: bool
 
 
@@ -66,4 +67,30 @@ class CourseSummaryResponse(BaseModel):
     total_documents: int
     active_documents: int
     inactive_documents: int
+    indexed_documents: int = 0
+    indexing_documents: int = 0
+    failed_documents: int = 0
     document_previews: list[CourseDocumentPreview]
+
+
+
+class IndexingJobResponse(BaseModel):
+    """Schema for persistent indexing job status and live progress reporting."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID | None = None
+    job_id: uuid.UUID | None = None
+    document_id: uuid.UUID
+    knowledge_base_id: uuid.UUID
+    status: str
+    stage: str
+    total_chunks: int = 0
+    processed_chunks: int = 0
+    embedded_chunks: int = 0
+    indexed_chunks: int = 0
+    progress_percent: float = 0.0
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_message: str | None = None
+    attempt_number: int = 1

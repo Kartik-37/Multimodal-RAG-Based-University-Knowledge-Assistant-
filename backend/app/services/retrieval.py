@@ -106,6 +106,7 @@ class VectorRetrievalService:
         kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
+        document_id: uuid.UUID | None = None,
     ) -> RetrievalResponse:
         """
         Execute vector retrieval for an authorized knowledge base or collection of knowledge bases.
@@ -115,6 +116,7 @@ class VectorRetrievalService:
             kb_id: Authorized knowledge base UUID or list of authorized UUIDs.
             query: Natural-language query string.
             top_k: Maximum number of top candidates to retrieve.
+            document_id: Optional UUID of a specific document to scope retrieval.
 
         Returns:
             RetrievalResponse with ranked chunks and similarity scores.
@@ -170,7 +172,18 @@ class VectorRetrievalService:
         # The `<=>` operator calculates cosine distance: 1 - cosine_similarity
         distance_expr = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
 
-        # Invariant: Only ACTIVE, successfully ingested (COMPLETED), and indexed documents participate
+        # Invariant: Only successfully ingested (COMPLETED) and indexed documents participate
+        conditions = [
+            kb_filter,
+            Document.status == DocumentStatus.COMPLETED,
+            Document.indexing_status == IndexingStatus.COMPLETED,
+            DocumentChunk.embedding.is_not(None),
+        ]
+        if document_id is not None:
+            conditions.append(Document.id == document_id)
+        else:
+            conditions.append(Document.is_active.is_(True))
+
         stmt = (
             select(
                 DocumentChunk,
@@ -178,15 +191,7 @@ class VectorRetrievalService:
                 distance_expr,
             )
             .join(Document, DocumentChunk.document_id == Document.id)
-            .where(
-                and_(
-                    kb_filter,
-                    Document.is_active.is_(True),
-                    Document.status == DocumentStatus.COMPLETED,
-                    Document.indexing_status == IndexingStatus.COMPLETED,
-                    DocumentChunk.embedding.is_not(None),
-                )
-            )
+            .where(and_(*conditions))
             .order_by(
                 distance_expr.asc(),
                 DocumentChunk.chunk_index.asc(),
@@ -235,9 +240,10 @@ class VectorRetrievalService:
         kb_id: uuid.UUID | list[uuid.UUID],
         query: str,
         top_k: int = settings.RAG_TOP_K_RETRIEVAL,
+        document_id: uuid.UUID | None = None,
     ) -> RetrievalResponse:
         """Synchronous wrapper for vector retrieval when called from non-async contexts."""
-        return asyncio.run(self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k))
+        return asyncio.run(self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k, document_id=document_id))
 
 
 # Singleton default retrieval service instance

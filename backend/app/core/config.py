@@ -90,6 +90,16 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_LLM_MODEL: str = "qwen3:4b"
     OLLAMA_EMBED_MODEL: str = "qwen3-embedding:0.6b"
+    OLLAMA_EMBED_BATCH_SIZE: int = Field(
+        default=4,
+        ge=1,
+        description="Maximum chunk count per Ollama embedding batch to prevent local inference timeouts.",
+    )
+    OLLAMA_EMBED_TIMEOUT: float = Field(
+        default=120.0,
+        ge=5.0,
+        description="HTTP timeout in seconds for Ollama embedding batch calls.",
+    )
 
     # LLM Generation Defaults
     LLM_TEMPERATURE: float = Field(
@@ -99,13 +109,13 @@ class Settings(BaseSettings):
         description="Sampling temperature for grounded generation (low values favor evidence-bounded responses).",
     )
     LLM_MAX_OUTPUT_TOKENS: int = Field(
-        default=1024,
+        default=384,
         ge=1,
         le=4096,
         description="Maximum generation token budget for the model response.",
     )
     LLM_REQUEST_TIMEOUT_SECONDS: float = Field(
-        default=120.0,
+        default=180.0,
         ge=1.0,
         le=300.0,
         description="Timeout in seconds for LLM generation requests.",
