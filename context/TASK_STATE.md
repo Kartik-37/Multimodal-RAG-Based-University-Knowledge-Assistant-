@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 21B COMPLETE — PRODUCT UX & WORKFLOW CORRECTION FOR UNIVERSITY RAG ASSISTANT
+STEP 21D COMPLETE — FUNCTIONAL INTEGRITY: REAL INDEXING JOBS, ADMIN CHAT, AND HIERARCHICAL RBAC
 
 ## Rules
 
@@ -69,12 +69,44 @@ Non-negotiable requirements:
 - [x] Accessibility QA (COMPLETE — Step 21 WCAG 2.1 AA Engineering Design Target, Visible Focus Rings, Keyboard Navigation, Semantic Multi-Modal Badges)
 - [x] Responsive QA (COMPLETE — Step 21 Unified Navigation Definition, Mobile Left Drawer, Responsive Table Wrappers)
 - [x] Product UX & Workflow Correction (COMPLETE — Step 21B Distinct Student vs Admin Experiences, Global Student Search Across All Enrolled Courses, Document Activation Lifecycle, Privacy-Preserving Admin Management)
+- [x] Functional Integrity (COMPLETE — Step 21D Real Vector Indexing Jobs, Scoped Admin Chat, Hierarchical RBAC, Publication Gate)
 - [ ] End-to-end QA
 - [ ] Deployment verification
 - [ ] Final security audit
 - [ ] Final RAG evaluation
 - [ ] Documentation
 - [ ] Git/GitHub final review
+
+## Step 21D Execution Record (Functional Integrity)
+
+* **Status**: COMPLETE
+* **Core Accomplishments**:
+  1. **Real Persistent Vector Indexing**:
+     - Created `indexing_jobs` table via Alembic migration `aab1529830b5` tracking truthful status (`QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`), granular stages (`EMBEDDING`, `STORING_VECTORS`, `VERIFYING`, `COMPLETED`), chunk counts, and float percentage.
+     - Configured safe batching (`OLLAMA_EMBED_BATCH_SIZE=4`, `OLLAMA_EMBED_TIMEOUT=120.0`) in `backend/app/core/config.py`.
+     - Built resilient `IndexingWorker` running asynchronously on NiceGUI startup with startup recovery of interrupted jobs and event-loop decoupled notifications.
+     - Enforced strict vector cardinality and dimension (1024-d) persistence verification before marking jobs `COMPLETED`.
+  2. **Publication Integrity & Document Activation Gate**:
+     - Documents with `indexing_status != COMPLETED` render `NOT READY` badge in NiceGUI.
+     - Backend enforces HTTP 400 rejection if attempting to activate an unindexed document (`/activate`).
+  3. **Restored & Scoped Admin Chat**:
+     - Extended `/api/v1/chat/query` and frontend with explicit scopes: `ALL_COURSES`, `COURSE`, `DOCUMENT`.
+     - Enforced SQL query-level filtering in Vector and Lexical retrieval so document-scoped queries never leak foreign content.
+     - Automatically rejects unindexed documents with HTTP 400.
+     - Grounded citations verified in end-to-end testing with document name, page, section, and snippets.
+  4. **Hierarchical RBAC & Admin Lifecycle**:
+     - Defined 16 canonical permissions in `backend/app/core/permissions.py` across Courses, Documents, Chat, and Administrators.
+     - `MAIN_ADMIN` possesses inherent full authority across all courses, documents, chat, and admin actions.
+     - `FACULTY_ADMIN` permissions are granularly configurable and course access is strictly bounded to creator or explicit `KnowledgeBaseMember`.
+     - Complete admin lifecycle endpoints (`POST /auth/admin`, `GET /auth/admins`, `PATCH .../permissions`, `PATCH .../deactivate`, `PATCH .../activate`, `DELETE .../{admin_id}`) with safety guards preventing self-deactivation/deletion and protecting the final active Main Admin.
+  5. **Verification**:
+     - All 481 automated tests passing (`pytest backend/tests/ -m "not real_ollama"`).
+     - 37/37 security tests passing (`backend/tests/security/`).
+     - 5/5 Step 21D integration tests passing (`test_step21d_functional_integrity.py`).
+     - 7/7 isolation & multi-KB tests passing (`test_global_retrieval_and_isolation.py`).
+     - Full programmatic end-to-end verification script (`e2e_verify.py`) verified real Ollama embeddings, PostgreSQL 1024-d vectors (33/33 chunks on `KSU-Act-English.pdf`), 4 grounded citations, and RBAC lifecycle.
+     - Alembic check: 0 pending operations.
+     - Ruff check: 0 errors.
 
 ## Step 21B Execution Record (Product UX & Workflow Correction)
 
