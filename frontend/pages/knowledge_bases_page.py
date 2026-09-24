@@ -10,8 +10,9 @@ Provides university course management:
 
 from nicegui import ui
 
+from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
-from frontend.components.layout import page_layout
+from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.ui_kit import render_alert, render_empty_state
 from frontend.state.app_state import state
 
@@ -28,7 +29,7 @@ def register_knowledge_bases_page() -> None:
             require_auth=True,
         ):
             user = state.current_user
-            is_admin = bool(user and user.role == "ADMIN")
+            can_create_course = has_admin_permission(user, Permission.COURSE_CREATE)
 
             # Dynamic content container (Guarantees single view)
             content_container = ui.column().classes("w-full gap-4")
@@ -111,7 +112,11 @@ def register_knowledge_bases_page() -> None:
 
             def render_content() -> None:
                 # Retrieve course summaries with document metrics in a single request (zero N+1)
-                summaries = api_client.get_course_summaries()
+                try:
+                    summaries = api_client.get_course_summaries()
+                except ValueError as err:
+                    render_alert(f"Unable to load courses. {err}", "negative")
+                    return
 
                 # Filter by search text if provided
                 filtered_courses = (
@@ -144,7 +149,7 @@ def register_knowledge_bases_page() -> None:
                         ui.label(f"{len(filtered_courses)} Course(s)").classes(
                             "text-xs font-semibold text-slate-500"
                         )
-                        if is_admin:
+                        if can_create_course:
                             ui.button(
                                 "Create Course",
                                 icon="add",
@@ -168,8 +173,8 @@ def register_knowledge_bases_page() -> None:
                             icon="menu_book",
                             title="No Courses Available",
                             description="No university courses are registered yet.",
-                            action_label="Create Course" if is_admin else None,
-                            on_action=create_dialog.open if is_admin else None,
+                            action_label="Create Course" if can_create_course else None,
+                            on_action=create_dialog.open if can_create_course else None,
                         )
                     return
 

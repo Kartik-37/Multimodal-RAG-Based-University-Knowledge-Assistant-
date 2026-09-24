@@ -73,7 +73,6 @@ class CourseSummaryResponse(BaseModel):
     document_previews: list[CourseDocumentPreview]
 
 
-
 class IndexingJobResponse(BaseModel):
     """Schema for persistent indexing job status and live progress reporting."""
 

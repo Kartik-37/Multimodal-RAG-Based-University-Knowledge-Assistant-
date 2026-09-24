@@ -104,4 +104,3 @@ class AdminUserResponse(BaseModel):
         if v is None or v == "":
             return AdminRole.MAIN_ADMIN
         return v
-

@@ -133,12 +133,34 @@ class TestLLMProviderUnit:
             json_payload = call_kwargs["json"]
             assert json_payload["model"] == "qwen3:4b"
             assert json_payload["stream"] is False
+            assert json_payload["think"] is False
             assert json_payload["messages"] == [
                 {"role": "system", "content": "System grounding prompt"},
                 {"role": "user", "content": "What does an OS manage?"},
             ]
             assert json_payload["options"]["temperature"] == 0.1
             assert json_payload["options"]["num_predict"] == 256
+
+    @pytest.mark.asyncio
+    async def test_ollama_provider_never_exposes_thinking_only_output(self) -> None:
+        """Fail closed if a reasoning model returns no final answer content."""
+        mock_resp = httpx.Response(
+            status_code=200,
+            json={
+                "done": True,
+                "message": {
+                    "role": "assistant",
+                    "thinking": "We are given the user question and should reason step by step.",
+                    "content": "",
+                },
+            },
+            request=httpx.Request("POST", "http://localhost:11434/api/chat"),
+        )
+        with patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_resp
+            provider = OllamaLLMProvider()
+            with pytest.raises(LLMResponseError, match="reasoning without a final answer"):
+                await provider.generate("sys", "user")
 
     @pytest.mark.asyncio
     async def test_ollama_provider_connection_failure(self) -> None:

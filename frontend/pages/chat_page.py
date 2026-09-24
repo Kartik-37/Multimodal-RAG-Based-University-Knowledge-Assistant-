@@ -13,11 +13,12 @@ from typing import Any
 
 from nicegui import ui
 
+from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
 from frontend.client.models import CitationDTO, DocumentDTO, KnowledgeBaseDTO
 from frontend.components.evidence_panel import render_evidence_panel
 from frontend.components.hybrid_inspect import open_hybrid_retrieval_dialog
-from frontend.components.layout import page_layout
+from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.lexical_inspect import open_lexical_retrieval_dialog
 from frontend.components.rerank_inspect import open_rerank_inspection_dialog
 from frontend.components.retrieval_inspect import open_vector_retrieval_dialog
@@ -55,9 +56,10 @@ def register_chat_page() -> None:
     """Register /chat route with NiceGUI."""
 
     @ui.page("/chat")
-    def chat_page() -> None:
+    def chat_page(kb_id: str | None = None) -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
+        can_admin_chat = has_admin_permission(user, Permission.ADMIN_CHAT)
         page_title = "Admin Chat & Semantic Search" if is_admin else "Ask BCA Assistant"
         page_subtitle = (
             "Test retrieval, reranking, and citation synthesis across all courses, a specific course, or a single document."
@@ -71,29 +73,57 @@ def register_chat_page() -> None:
             active_route="/chat",
             require_auth=True,
         ):
-            # Fetch available knowledge bases for course selector
+            if is_admin and not can_admin_chat:
+                with ui.card().classes(
+                    "w-full max-w-2xl mx-auto p-6 bg-white border border-rose-200 rounded-lg shadow-xs"
+                ):
+                    ui.icon("lock", size="2.5rem").classes("text-rose-500 mb-2")
+                    ui.label("Admin Chat Not Authorized").classes(
+                        "text-lg font-bold text-slate-900"
+                    )
+                    ui.label(
+                        "Your administrator account does not have the ADMIN_CHAT permission."
+                    ).classes("text-sm text-slate-600")
+                return
+
+            # Fetch available knowledge bases for course selector.
+            # Errors are kept distinct from a genuinely empty authorized course set.
             kbs: list[KnowledgeBaseDTO] = []
+            course_load_error: str | None = None
             try:
-                kbs = api_client.get_knowledge_bases()
-            except Exception:
-                kbs = []
+                kbs = api_client.get_chat_scope_courses()
+            except ValueError as err:
+                course_load_error = str(err)
+
+            requested_kb = next((course for course in kbs if course.id == kb_id), None)
+            if kb_id and requested_kb is None and course_load_error is None:
+                ui.notify("The requested course is not available to your account.", type="warning")
+
+            selected_kb = requested_kb or state.active_kb
+            if selected_kb is not None and not any(k.id == selected_kb.id for k in kbs):
+                selected_kb = None
 
             # Determine initial scope and selections
-            initial_scope = "COURSE" if state.active_kb else "ALL_COURSES"
+            initial_scope = "COURSE" if selected_kb else "ALL_COURSES"
             active_scope: dict[str, Any] = {
                 "scope": initial_scope,
-                "kb_id": state.active_kb.id if state.active_kb else (kbs[0].id if kbs else None),
+                "kb_id": selected_kb.id if selected_kb else (kbs[0].id if kbs else None),
                 "doc_id": None,
                 "docs": [],
                 "selected_doc": None,
             }
 
+            document_load_error: str | None = None
+
             def load_docs_for_current_kb() -> None:
+                nonlocal document_load_error
+                document_load_error = None
                 if active_scope["kb_id"]:
                     try:
                         active_scope["docs"] = api_client.get_documents(active_scope["kb_id"])
-                    except Exception:
+                    except ValueError as err:
                         active_scope["docs"] = []
+                        document_load_error = str(err)
                 else:
                     active_scope["docs"] = []
 
@@ -102,7 +132,21 @@ def register_chat_page() -> None:
 
             # Dynamic containers
             scope_controls_row = ui.row().classes("w-full items-center gap-3 flex-wrap")
+            scope_error_container = ui.column().classes("w-full")
             doc_warning_container = ui.column().classes("w-full")
+
+            def refresh_scope_error() -> None:
+                scope_error_container.clear()
+                if course_load_error:
+                    with scope_error_container:
+                        ui.label(f"Unable to load courses. {course_load_error}").classes(
+                            "text-xs text-rose-700"
+                        )
+                elif document_load_error and active_scope["scope"] == "DOCUMENT":
+                    with scope_error_container:
+                        ui.label(f"Unable to load documents. {document_load_error}").classes(
+                            "text-xs text-rose-700"
+                        )
 
             # Function to refresh doc warning banner
             def refresh_doc_warning() -> None:
@@ -116,7 +160,9 @@ def register_chat_page() -> None:
                         with ui.card().classes(
                             "w-full p-3 bg-amber-50 border border-amber-200 rounded-lg shadow-xs"
                         ):
-                            with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):
+                            with ui.row().classes(
+                                "w-full items-center justify-between gap-2 flex-wrap"
+                            ):
                                 with ui.row().classes("items-center gap-2"):
                                     ui.icon("warning", size="sm").classes("text-amber-600")
                                     with ui.column().classes("gap-0.5"):
@@ -141,13 +187,24 @@ def register_chat_page() -> None:
                                                 break
                                         refresh_doc_warning()
                                     except Exception as exc:
-                                        ui.notify(f"Indexing trigger failed: {exc}", type="negative")
+                                        ui.notify(
+                                            f"Indexing trigger failed: {exc}", type="negative"
+                                        )
 
-                                ui.button(
-                                    "Retry Indexing" if doc.indexing_status == "FAILED" else "Index Document",
-                                    icon="play_arrow",
-                                    on_click=trigger_doc_indexing,
-                                ).props("color=amber-9 dense no-caps").classes("text-xs")
+                                if (
+                                    doc.indexing_status == "FAILED"
+                                    and has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
+                                ) or (
+                                    doc.indexing_status != "FAILED"
+                                    and has_admin_permission(user, Permission.DOCUMENT_INDEX)
+                                ):
+                                    ui.button(
+                                        "Retry Indexing"
+                                        if doc.indexing_status == "FAILED"
+                                        else "Index Document",
+                                        icon="play_arrow",
+                                        on_click=trigger_doc_indexing,
+                                    ).props("color=amber-9 dense no-caps").classes("text-xs")
                     else:
                         with ui.card().classes(
                             "w-full p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg shadow-xs"
@@ -176,10 +233,23 @@ def register_chat_page() -> None:
 
                         def on_scope_change(e: Any) -> None:
                             active_scope["scope"] = e.value
-                            if e.value == "DOCUMENT" and not active_scope["selected_doc"] and active_scope["docs"]:
-                                active_scope["selected_doc"] = active_scope["docs"][0]
-                                active_scope["doc_id"] = active_scope["docs"][0].id
+                            active_scope["doc_id"] = None
+                            active_scope["selected_doc"] = None
+                            if e.value == "COURSE" and not active_scope["kb_id"] and kbs:
+                                active_scope["kb_id"] = kbs[0].id
+                                load_docs_for_current_kb()
+                            elif e.value == "DOCUMENT":
+                                if not active_scope["kb_id"] and kbs:
+                                    active_scope["kb_id"] = kbs[0].id
+                                load_docs_for_current_kb()
+                                if active_scope["docs"]:
+                                    active_scope["selected_doc"] = active_scope["docs"][0]
+                                    active_scope["doc_id"] = active_scope["docs"][0].id
+                            else:
+                                active_scope["kb_id"] = None
+                                active_scope["docs"] = []
                             render_controls()
+                            refresh_scope_error()
                             refresh_doc_warning()
 
                         ui.select(
@@ -197,18 +267,19 @@ def register_chat_page() -> None:
 
                         def on_kb_change(e: Any) -> None:
                             active_scope["kb_id"] = e.value
-                            # Update global state active_kb as well
+                            # Course changes invalidate every previous document selection.
+                            active_scope["selected_doc"] = None
+                            active_scope["doc_id"] = None
+                            active_scope["docs"] = []
                             selected = next((k for k in kbs if k.id == e.value), None)
                             if selected:
                                 state.active_kb = selected
                             load_docs_for_current_kb()
-                            if active_scope["docs"]:
+                            if active_scope["scope"] == "DOCUMENT" and active_scope["docs"]:
                                 active_scope["selected_doc"] = active_scope["docs"][0]
                                 active_scope["doc_id"] = active_scope["docs"][0].id
-                            else:
-                                active_scope["selected_doc"] = None
-                                active_scope["doc_id"] = None
                             render_controls()
+                            refresh_scope_error()
                             refresh_doc_warning()
 
                         ui.select(
@@ -227,7 +298,9 @@ def register_chat_page() -> None:
 
                         def on_doc_change(e: Any) -> None:
                             active_scope["doc_id"] = e.value
-                            selected = next((d for d in active_scope["docs"] if d.id == e.value), None)
+                            selected = next(
+                                (d for d in active_scope["docs"] if d.id == e.value), None
+                            )
                             active_scope["selected_doc"] = selected
                             refresh_doc_warning()
 
@@ -293,6 +366,9 @@ def register_chat_page() -> None:
             ):
                 render_controls()
 
+            # Scope/document load diagnostics
+            refresh_scope_error()
+
             # Warning banner for unindexed target doc
             refresh_doc_warning()
 
@@ -351,7 +427,9 @@ def register_chat_page() -> None:
 
                 # Validate scope parameters before sending
                 cur_scope = active_scope["scope"]
-                target_kb_id = active_scope["kb_id"] if cur_scope in ("COURSE", "DOCUMENT") else None
+                target_kb_id = (
+                    active_scope["kb_id"] if cur_scope in ("COURSE", "DOCUMENT") else None
+                )
                 target_doc_id = active_scope["doc_id"] if cur_scope == "DOCUMENT" else None
 
                 if cur_scope in ("COURSE", "DOCUMENT") and not target_kb_id:
@@ -360,9 +438,14 @@ def register_chat_page() -> None:
 
                 if cur_scope == "DOCUMENT":
                     if not target_doc_id:
-                        ui.notify("Please select a document for document-scoped search.", type="warning")
+                        ui.notify(
+                            "Please select a document for document-scoped search.", type="warning"
+                        )
                         return
-                    if active_scope["selected_doc"] and active_scope["selected_doc"].indexing_status != "COMPLETED":
+                    if (
+                        active_scope["selected_doc"]
+                        and active_scope["selected_doc"].indexing_status != "COMPLETED"
+                    ):
                         ui.notify(
                             "Cannot query unindexed document. Please trigger indexing first.",
                             type="negative",
@@ -537,4 +620,3 @@ def register_chat_page() -> None:
             # Initial render
             render_messages()
             render_evidence()
-

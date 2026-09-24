@@ -50,7 +50,9 @@ async def run_indexing_worker() -> None:
         with get_db_session() as db:
             orphaned_jobs = (
                 db.execute(
-                    select(IndexingJob).where(IndexingJob.status == IndexingJobStatus.PROCESSING.value)
+                    select(IndexingJob).where(
+                        IndexingJob.status == IndexingJobStatus.PROCESSING.value
+                    )
                 )
                 .scalars()
                 .all()
@@ -64,7 +66,9 @@ async def run_indexing_worker() -> None:
                 j.updated_at = now
 
                 # Also update document status
-                doc = db.execute(select(Document).where(Document.id == j.document_id)).scalar_one_or_none()
+                doc = db.execute(
+                    select(Document).where(Document.id == j.document_id)
+                ).scalar_one_or_none()
                 if doc:
                     doc.indexing_status = IndexingStatus.FAILED
                     doc.indexing_error = j.error_message
@@ -73,7 +77,10 @@ async def run_indexing_worker() -> None:
 
             if orphaned_jobs:
                 db.commit()
-                logger.info("Recovered %d orphaned indexing jobs from previous server run.", len(orphaned_jobs))
+                logger.info(
+                    "Recovered %d orphaned indexing jobs from previous server run.",
+                    len(orphaned_jobs),
+                )
     except Exception as exc:
         logger.error("Error during indexing worker startup recovery: %s", exc)
 
@@ -99,11 +106,15 @@ async def run_indexing_worker() -> None:
                     next_doc_id = job.document_id
 
             if next_job_id and next_doc_id:
-                logger.info("Indexing worker processing job %s for document %s", next_job_id, next_doc_id)
+                logger.info(
+                    "Indexing worker processing job %s for document %s", next_job_id, next_doc_id
+                )
                 try:
                     await indexing_pipeline.index_document_async(next_doc_id, job_id=next_job_id)
                 except Exception as exc:
-                    logger.exception("Unexpected error executing indexing job %s: %s", next_job_id, exc)
+                    logger.exception(
+                        "Unexpected error executing indexing job %s: %s", next_job_id, exc
+                    )
                 # Immediately loop to check for more queued jobs
                 continue
 
@@ -118,7 +129,9 @@ async def run_indexing_worker() -> None:
                 pass
 
         except asyncio.CancelledError:
-            logger.info("Background indexing worker received cancellation. Shutting down gracefully.")
+            logger.info(
+                "Background indexing worker received cancellation. Shutting down gracefully."
+            )
             break
         except Exception as exc:
             logger.exception("Unexpected error in indexing worker loop: %s", exc)

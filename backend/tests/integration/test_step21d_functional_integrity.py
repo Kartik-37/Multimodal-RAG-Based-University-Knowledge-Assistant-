@@ -162,9 +162,7 @@ async def test_indexing_pipeline_lifecycle_and_batch_progress(db_session: Sessio
     # Verify IndexingJob record
     db_session.expire_all()
     job_record = (
-        db_session.execute(
-            select(IndexingJob).where(IndexingJob.document_id == doc.id)
-        )
+        db_session.execute(select(IndexingJob).where(IndexingJob.document_id == doc.id))
         .scalars()
         .first()
     )
@@ -182,9 +180,7 @@ async def test_indexing_pipeline_lifecycle_and_batch_progress(db_session: Sessio
 
     # Verify chunks have vectors persisted
     chunks = (
-        db_session.execute(
-            select(DocumentChunk).where(DocumentChunk.document_id == doc.id)
-        )
+        db_session.execute(select(DocumentChunk).where(DocumentChunk.document_id == doc.id))
         .scalars()
         .all()
     )
@@ -252,9 +248,7 @@ def test_document_activation_gate_enforces_completed_indexing(
     )
 
     # Attempt to activate unindexed document -> must return HTTP 400
-    act_resp = api_client.patch(
-        f"/api/v1/knowledge-bases/{kb.id}/documents/{doc.id}/activate"
-    )
+    act_resp = api_client.patch(f"/api/v1/knowledge-bases/{kb.id}/documents/{doc.id}/activate")
     assert act_resp.status_code == 400
     assert "vector indexing" in act_resp.json()["detail"].lower()
 
@@ -263,9 +257,7 @@ def test_document_activation_gate_enforces_completed_indexing(
     db_session.commit()
 
     # Now activate -> must succeed
-    act_resp2 = api_client.patch(
-        f"/api/v1/knowledge-bases/{kb.id}/documents/{doc.id}/activate"
-    )
+    act_resp2 = api_client.patch(f"/api/v1/knowledge-bases/{kb.id}/documents/{doc.id}/activate")
     assert act_resp2.status_code == 200
     assert act_resp2.json()["is_active"] is True
 
@@ -275,9 +267,7 @@ def test_document_activation_gate_enforces_completed_indexing(
 # ------------------------------------------------------------------------------
 
 
-def test_admin_hierarchy_and_permissions(
-    api_client: TestClient, db_session: Session
-) -> None:
+def test_admin_hierarchy_and_permissions(api_client: TestClient, db_session: Session) -> None:
     """
     Validate that Main Admin has inherent full authority, Faculty Admin is restricted
     to assigned permissions, and permission updates take immediate effect.
@@ -297,7 +287,10 @@ def test_admin_hierarchy_and_permissions(
         full_name="Dr. Limited",
         role=UserRole.ADMIN,
         admin_role=AdminRole.FACULTY_ADMIN,
-        permissions=[Permission.COURSE_VIEW.value, Permission.DOCUMENT_VIEW.value],  # No COURSE_CREATE
+        permissions=[
+            Permission.COURSE_VIEW.value,
+            Permission.DOCUMENT_VIEW.value,
+        ],  # No COURSE_CREATE
     )
     db_session.add_all([main_admin, faculty_admin])
     db_session.commit()
@@ -335,7 +328,13 @@ def test_admin_hierarchy_and_permissions(
     )
     perm_resp = api_client.patch(
         f"/api/v1/auth/admins/{faculty_admin.id}/permissions",
-        json={"permissions": [Permission.COURSE_VIEW.value, Permission.DOCUMENT_VIEW.value, Permission.COURSE_CREATE.value]},
+        json={
+            "permissions": [
+                Permission.COURSE_VIEW.value,
+                Permission.DOCUMENT_VIEW.value,
+                Permission.COURSE_CREATE.value,
+            ]
+        },
     )
     assert perm_resp.status_code == 200
     assert Permission.COURSE_CREATE.value in perm_resp.json()["permissions"]
@@ -358,9 +357,7 @@ def test_admin_hierarchy_and_permissions(
 # ------------------------------------------------------------------------------
 
 
-def test_admin_lifecycle_safety_guards(
-    api_client: TestClient, db_session: Session
-) -> None:
+def test_admin_lifecycle_safety_guards(api_client: TestClient, db_session: Session) -> None:
     """
     Ensure safety guards:
     - Cannot deactivate self (HTTP 400)

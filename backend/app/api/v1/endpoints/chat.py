@@ -13,7 +13,6 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.api.deps import (
@@ -21,6 +20,7 @@ from backend.app.api.deps import (
     DatabaseSession,
     RateLimitChat,
     check_user_permission,
+    get_authorized_document,
     get_authorized_knowledge_base,
     get_authorized_knowledge_base_ids,
 )
@@ -31,7 +31,7 @@ from backend.app.core.telemetry import (
     set_current_user_id,
     user_id_ctx,
 )
-from backend.app.models.document import Document, IndexingStatus
+from backend.app.models.document import IndexingStatus
 from backend.app.models.user import UserRole
 from backend.app.schemas.chat import (
     ChatLatencyBreakdownDTO,
@@ -157,7 +157,9 @@ async def query_knowledge_base_legacy(
     Supports ALL_COURSES, COURSE, and DOCUMENT scopes.
     """
     # 1. RBAC enforcement for administrators
-    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.ADMIN_CHAT):
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.ADMIN_CHAT
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Missing required permission 'ADMIN_CHAT'.",
@@ -165,64 +167,33 @@ async def query_knowledge_base_legacy(
 
     target_document_id: uuid.UUID | None = None
 
-    # 2. Scope validation and resolution
-    if payload.scope == "DOCUMENT" or payload.document_id is not None:
-        if payload.document_id is None:
+    # 2. Scope validation and resolution. The explicit scope controls the
+    # required identifiers; invalid combinations are rejected instead of
+    # silently falling back to broader retrieval.
+    valid_scopes = {"ALL_COURSES", "COURSE", "DOCUMENT"}
+    scope = payload.scope or (
+        "DOCUMENT"
+        if payload.document_id is not None
+        else "COURSE"
+        if payload.knowledge_base_id is not None
+        else "ALL_COURSES"
+    )
+    if scope not in valid_scopes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid chat scope. Use ALL_COURSES, COURSE, or DOCUMENT.",
+        )
+
+    if scope == "ALL_COURSES":
+        if payload.knowledge_base_id is not None or payload.document_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="DOCUMENT scope requires document_id.",
+                detail="ALL_COURSES scope cannot include knowledge_base_id or document_id.",
             )
-
-        # Retrieve and verify document
-        doc = db.execute(
-            select(Document).where(Document.id == payload.document_id)
-        ).scalar_one_or_none()
-        if not doc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Document not found.",
-            )
-
-        # Enforce multi-user isolation on target course
-        kb = get_authorized_knowledge_base(
-            kb_id=doc.knowledge_base_id,
+        authorized_kb_ids = get_authorized_knowledge_base_ids(
             current_user=current_user,
             db=db,
         )
-        target_kb: uuid.UUID | list[uuid.UUID] = kb.id
-        target_document_id = doc.id
-
-        # If document indexing is not COMPLETED, reject query with HTTP 400
-        if doc.indexing_status != IndexingStatus.COMPLETED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Document '{doc.original_filename}' is not ready for retrieval because vector indexing is not completed (status: {doc.indexing_status.value if hasattr(doc.indexing_status, 'value') else doc.indexing_status}).",
-            )
-
-    elif payload.scope == "COURSE":
-        if payload.knowledge_base_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="COURSE scope requires knowledge_base_id.",
-            )
-        kb = get_authorized_knowledge_base(
-            kb_id=payload.knowledge_base_id,
-            current_user=current_user,
-            db=db,
-        )
-        target_kb = kb.id
-
-    elif payload.knowledge_base_id is not None:
-        kb = get_authorized_knowledge_base(
-            kb_id=payload.knowledge_base_id,
-            current_user=current_user,
-            db=db,
-        )
-        target_kb = kb.id
-
-    else:
-        # ALL_COURSES: Global query across all authorized active course materials
-        authorized_kb_ids = get_authorized_knowledge_base_ids(current_user=current_user, db=db)
         if not authorized_kb_ids:
             return ChatQueryResponse(
                 query=payload.question,
@@ -253,7 +224,58 @@ async def query_knowledge_base_legacy(
                 model="system",
                 metadata={"reason": "no_authorized_knowledge_bases"},
             )
-        target_kb = authorized_kb_ids
+        target_kb: uuid.UUID | list[uuid.UUID] = authorized_kb_ids
+
+    elif scope == "COURSE":
+        if payload.knowledge_base_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="COURSE scope requires knowledge_base_id.",
+            )
+        if payload.document_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="COURSE scope cannot include document_id.",
+            )
+        kb = get_authorized_knowledge_base(
+            kb_id=payload.knowledge_base_id,
+            current_user=current_user,
+            db=db,
+        )
+        target_kb = kb.id
+
+    else:  # DOCUMENT
+        if payload.document_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="DOCUMENT scope requires document_id.",
+            )
+        if payload.knowledge_base_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="DOCUMENT scope requires knowledge_base_id.",
+            )
+
+        doc = get_authorized_document(
+            document_id=payload.document_id,
+            knowledge_base_id=payload.knowledge_base_id,
+            current_user=current_user,
+            db=db,
+        )
+        target_kb = doc.knowledge_base_id
+        target_document_id = doc.id
+
+        # Admins may inspect an unindexed document to diagnose its state, but
+        # retrieval must refuse it until indexing is complete.
+        if doc.indexing_status != IndexingStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Document '{doc.original_filename}' is not ready for retrieval "
+                    "because vector indexing is not completed "
+                    f"(status: {doc.indexing_status.value if hasattr(doc.indexing_status, 'value') else doc.indexing_status})."
+                ),
+            )
 
     return await _execute_orchestrated_chat(
         orchestrator=orchestrator,
@@ -283,6 +305,14 @@ async def chat_with_knowledge_base(
     Submit a query against an authorized knowledge base with KB ID in URL path.
     Canonical RESTful chat interface.
     """
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.ADMIN_CHAT
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_CHAT'.",
+        )
+
     # Enforces multi-user isolation check: returns 404 if user has no access
     kb = get_authorized_knowledge_base(
         kb_id=kb_id,

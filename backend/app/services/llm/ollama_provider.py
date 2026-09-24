@@ -91,6 +91,10 @@ class OllamaLLMProvider(BaseLLMProvider):
             "model": self._model_name,
             "messages": messages,
             "stream": False,
+            # qwen3 can expose a separate reasoning channel. The application
+            # contract is answer-only, so explicitly disable model thinking
+            # output rather than risking internal reasoning reaching the UI.
+            "think": False,
             "options": {
                 "temperature": temp,
                 "num_predict": num_predict,
@@ -148,22 +152,24 @@ class OllamaLLMProvider(BaseLLMProvider):
         if "content" not in msg_obj and "thinking" not in msg_obj:
             raise LLMResponseError("Ollama response missing message content.")
 
-        # Extract text content; for reasoning models, content may follow </think>
-        # or be contained in thinking if token budget was saturated
-        raw_content = msg_obj.get("content", "")
-        if not raw_content and "thinking" in msg_obj:
-            raw_content = msg_obj["thinking"]
+        # The UI contract is answer-only. If a provider ignores the explicit
+        # think=False request and returns only a private reasoning channel,
+        # fail closed instead of exposing chain-of-thought text.
+        raw_content = (msg_obj.get("content") or "").strip()
+        if not raw_content:
+            if msg_obj.get("thinking"):
+                raise LLMResponseError(
+                    "Ollama returned reasoning without a final answer. Please try again."
+                )
+            raise LLMResponseError("Ollama returned an empty generation response.")
 
         if "</think>" in raw_content:
             content = raw_content.split("</think>")[-1].strip()
-            # If nothing after </think>, retain raw_content
-            if not content:
-                content = raw_content.strip()
         else:
-            content = raw_content.strip()
+            content = raw_content
 
         if not content:
-            raise LLMResponseError("Ollama returned an empty generation response.")
+            raise LLMResponseError("Ollama returned an empty final answer.")
 
         # Safe diagnostic metadata only: exclude internals, credentials, or raw traces
         prompt_tokens = data.get("prompt_eval_count")

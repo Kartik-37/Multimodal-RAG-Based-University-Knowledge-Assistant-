@@ -58,7 +58,11 @@ def sanitize_indexing_error(exc: Exception) -> str:
 
     # Fallback to sanitized prefix
     clean = err_str.split("\n")[0].strip()
-    return f"Vector indexing failed: {clean[:150]}" if clean else "Vector indexing failed unexpectedly."
+    return (
+        f"Vector indexing failed: {clean[:150]}"
+        if clean
+        else "Vector indexing failed unexpectedly."
+    )
 
 
 class IndexingPipeline:
@@ -86,15 +90,22 @@ class IndexingPipeline:
         """
         with get_db_session() as db:
             # Check for existing job
-            job = db.execute(
-                select(IndexingJob)
-                .where(IndexingJob.document_id == document_id)
-                .order_by(IndexingJob.created_at.desc())
-            ).scalars().first()
+            job = (
+                db.execute(
+                    select(IndexingJob)
+                    .where(IndexingJob.document_id == document_id)
+                    .order_by(IndexingJob.created_at.desc())
+                )
+                .scalars()
+                .first()
+            )
 
             now = datetime.now(UTC)
 
-            if job and job.status in (IndexingJobStatus.QUEUED.value, IndexingJobStatus.PROCESSING.value):
+            if job and job.status in (
+                IndexingJobStatus.QUEUED.value,
+                IndexingJobStatus.PROCESSING.value,
+            ):
                 # Active job already in progress; return it
                 db.expunge(job)
                 return job
@@ -138,7 +149,9 @@ class IndexingPipeline:
                 db.add(job)
 
             # Ensure document reflects processing indexing state
-            doc = db.execute(select(Document).where(Document.id == document_id)).scalar_one_or_none()
+            doc = db.execute(
+                select(Document).where(Document.id == document_id)
+            ).scalar_one_or_none()
             if doc:
                 doc.indexing_status = IndexingStatus.PROCESSING
                 doc.indexing_error = None
@@ -158,13 +171,17 @@ class IndexingPipeline:
         Asynchronously generate embeddings in small batches, save progress,
         and verify stored vector cardinality in PostgreSQL.
         """
-        logger.info("Starting persistent vector indexing for document: %s (job: %s)", document_id, job_id)
+        logger.info(
+            "Starting persistent vector indexing for document: %s (job: %s)", document_id, job_id
+        )
         provider = self._get_provider()
         batch_size = max(1, settings.OLLAMA_EMBED_BATCH_SIZE)
 
         # 1. Verification and Transition to PROCESSING
         with get_db_session() as db:
-            doc = db.execute(select(Document).where(Document.id == document_id)).scalar_one_or_none()
+            doc = db.execute(
+                select(Document).where(Document.id == document_id)
+            ).scalar_one_or_none()
             if not doc:
                 logger.error("Indexing failed: Document %s not found.", document_id)
                 self._record_failure(document_id, job_id, "Document not found in database.")
@@ -182,13 +199,19 @@ class IndexingPipeline:
             # Load or resolve job
             job = None
             if job_id:
-                job = db.execute(select(IndexingJob).where(IndexingJob.id == job_id)).scalar_one_or_none()
-            if not job:
                 job = db.execute(
-                    select(IndexingJob)
-                    .where(IndexingJob.document_id == document_id)
-                    .order_by(IndexingJob.created_at.desc())
-                ).scalars().first()
+                    select(IndexingJob).where(IndexingJob.id == job_id)
+                ).scalar_one_or_none()
+            if not job:
+                job = (
+                    db.execute(
+                        select(IndexingJob)
+                        .where(IndexingJob.document_id == document_id)
+                        .order_by(IndexingJob.created_at.desc())
+                    )
+                    .scalars()
+                    .first()
+                )
 
             now = datetime.now(UTC)
             if job:
@@ -222,13 +245,17 @@ class IndexingPipeline:
         if total_chunks == 0:
             logger.info("Document %s has 0 chunks to index. Marking COMPLETED.", document_id)
             with get_db_session() as db:
-                doc = db.execute(select(Document).where(Document.id == document_id)).scalar_one_or_none()
+                doc = db.execute(
+                    select(Document).where(Document.id == document_id)
+                ).scalar_one_or_none()
                 if doc:
                     doc.indexing_status = IndexingStatus.COMPLETED
                     doc.indexed_at = datetime.now(UTC)
                     doc.indexing_error = None
                 if job_id:
-                    j = db.execute(select(IndexingJob).where(IndexingJob.id == job_id)).scalar_one_or_none()
+                    j = db.execute(
+                        select(IndexingJob).where(IndexingJob.id == job_id)
+                    ).scalar_one_or_none()
                     if j:
                         j.status = IndexingJobStatus.COMPLETED.value
                         j.stage = IndexingJobStage.COMPLETED.value
@@ -240,7 +267,9 @@ class IndexingPipeline:
         # Update job with total chunks
         with get_db_session() as db:
             if job_id:
-                j = db.execute(select(IndexingJob).where(IndexingJob.id == job_id)).scalar_one_or_none()
+                j = db.execute(
+                    select(IndexingJob).where(IndexingJob.id == job_id)
+                ).scalar_one_or_none()
                 if j:
                     j.total_chunks = total_chunks
                     j.stage = IndexingJobStage.EMBEDDING.value
@@ -270,14 +299,18 @@ class IndexingPipeline:
                 # Commit batch vectors and incremental progress atomically
                 with get_db_session() as db:
                     for (c_id, _, _), emb in zip(batch, embeddings, strict=True):
-                        c_row = db.execute(select(DocumentChunk).where(DocumentChunk.id == c_id)).scalar_one()
+                        c_row = db.execute(
+                            select(DocumentChunk).where(DocumentChunk.id == c_id)
+                        ).scalar_one()
                         c_row.embedding = emb
 
                     processed_count += len(batch)
                     pct = round((processed_count / total_chunks) * 100.0, 1)
 
                     if job_id:
-                        j = db.execute(select(IndexingJob).where(IndexingJob.id == job_id)).scalar_one_or_none()
+                        j = db.execute(
+                            select(IndexingJob).where(IndexingJob.id == job_id)
+                        ).scalar_one_or_none()
                         if j:
                             j.embedded_chunks = processed_count
                             j.indexed_chunks = processed_count
@@ -299,7 +332,9 @@ class IndexingPipeline:
             # 4. Verification Stage
             with get_db_session() as db:
                 if job_id:
-                    j = db.execute(select(IndexingJob).where(IndexingJob.id == job_id)).scalar_one_or_none()
+                    j = db.execute(
+                        select(IndexingJob).where(IndexingJob.id == job_id)
+                    ).scalar_one_or_none()
                     if j:
                         j.stage = IndexingJobStage.VERIFYING.value
                         db.commit()
@@ -338,7 +373,9 @@ class IndexingPipeline:
 
                 db.commit()
 
-            logger.info("Successfully completed and verified vector indexing for document %s.", document_id)
+            logger.info(
+                "Successfully completed and verified vector indexing for document %s.", document_id
+            )
             return True
 
         except Exception as exc:
@@ -365,14 +402,18 @@ class IndexingPipeline:
         try:
             now = datetime.now(UTC)
             with get_db_session() as db:
-                doc = db.execute(select(Document).where(Document.id == document_id)).scalar_one_or_none()
+                doc = db.execute(
+                    select(Document).where(Document.id == document_id)
+                ).scalar_one_or_none()
                 if doc:
                     doc.indexing_status = IndexingStatus.FAILED
                     doc.indexing_error = error_message
                     doc.updated_at = now
 
                 if job_id:
-                    j = db.execute(select(IndexingJob).where(IndexingJob.id == job_id)).scalar_one_or_none()
+                    j = db.execute(
+                        select(IndexingJob).where(IndexingJob.id == job_id)
+                    ).scalar_one_or_none()
                     if j:
                         j.status = IndexingJobStatus.FAILED.value
                         j.stage = IndexingJobStage.FAILED.value
@@ -382,7 +423,9 @@ class IndexingPipeline:
 
                 db.commit()
         except Exception as db_err:
-            logger.error("Failed to record indexing failure for document %s: %s", document_id, db_err)
+            logger.error(
+                "Failed to record indexing failure for document %s: %s", document_id, db_err
+            )
 
 
 indexing_pipeline = IndexingPipeline()

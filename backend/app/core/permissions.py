@@ -48,8 +48,16 @@ PERMISSION_GROUPS: dict[str, list[tuple[Permission, str, str]]] = {
         (Permission.DOCUMENT_VIEW, "View Documents", "View documents in authorized courses"),
         (Permission.DOCUMENT_UPLOAD, "Upload Documents", "Upload new course syllabi and PDFs"),
         (Permission.DOCUMENT_DELETE, "Delete Documents", "Delete course documents from storage"),
-        (Permission.DOCUMENT_PUBLISH, "Publish Documents", "Activate or deactivate retrieval status"),
-        (Permission.DOCUMENT_INDEX, "Index Documents", "Trigger vector embedding and pgvector indexing"),
+        (
+            Permission.DOCUMENT_PUBLISH,
+            "Publish Documents",
+            "Activate or deactivate retrieval status",
+        ),
+        (
+            Permission.DOCUMENT_INDEX,
+            "Index Documents",
+            "Trigger vector embedding and pgvector indexing",
+        ),
         (Permission.DOCUMENT_INDEX_RETRY, "Retry Indexing", "Retry failed vector indexing jobs"),
     ],
     "Chat": [
@@ -60,7 +68,11 @@ PERMISSION_GROUPS: dict[str, list[tuple[Permission, str, str]]] = {
         (Permission.ADMIN_CREATE, "Create Administrators", "Provision new faculty administrators"),
         (Permission.ADMIN_EDIT, "Edit Administrators", "Update administrator account details"),
         (Permission.ADMIN_DELETE, "Delete Administrators", "Remove faculty administrator accounts"),
-        (Permission.ADMIN_PERMISSION_MANAGE, "Manage Permissions", "Grant or revoke faculty permissions"),
+        (
+            Permission.ADMIN_PERMISSION_MANAGE,
+            "Manage Permissions",
+            "Grant or revoke faculty permissions",
+        ),
     ],
 }
 

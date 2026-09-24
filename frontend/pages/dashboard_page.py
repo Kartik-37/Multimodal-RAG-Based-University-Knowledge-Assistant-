@@ -12,7 +12,7 @@ from nicegui import ui
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
 from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
-from frontend.components.ui_kit import render_empty_state, render_stat_card
+from frontend.components.ui_kit import render_alert, render_empty_state, render_stat_card
 from frontend.state.app_state import state
 
 
@@ -53,7 +53,13 @@ def register_dashboard_page() -> None:
             # STUDENT PERSPECTIVE
             # ------------------------------------------------------------------
             if not is_admin:
-                kbs = api_client.get_knowledge_bases() if user else []
+                course_load_error = False
+                try:
+                    kbs = api_client.get_knowledge_bases() if user else []
+                except ValueError as err:
+                    course_load_error = True
+                    render_alert(f"Unable to load your courses. {err}", "negative")
+                    kbs = []
 
                 # 1. Primary Ask Hero Card
                 with ui.card().classes(
@@ -93,15 +99,19 @@ def register_dashboard_page() -> None:
                             ui.label("Available Courses & Subjects").classes(
                                 "text-base font-bold text-slate-800"
                             )
-                        ui.label(f"{len(kbs)} course(s) enrolled").classes("text-xs text-slate-500")
+                        ui.label(
+                            "Unable to load courses"
+                            if course_load_error
+                            else f"{len(kbs)} course(s) enrolled"
+                        ).classes("text-xs text-slate-500")
 
-                    if not kbs:
+                    if not kbs and not course_load_error:
                         render_empty_state(
                             icon="school",
                             title="No Courses Enrolled Yet",
-                            description="You are not currently enrolled in any courses with uploaded materials.",
+                            description="You are not currently enrolled in any courses with published learning materials.",
                         )
-                    else:
+                    elif kbs:
                         with ui.row().classes("w-full gap-4 flex-wrap"):
                             for kb in kbs:
                                 with ui.card().classes(
@@ -131,7 +141,11 @@ def register_dashboard_page() -> None:
             # ------------------------------------------------------------------
             # ADMINISTRATOR PERSPECTIVE
             # ------------------------------------------------------------------
-            course_summaries = api_client.get_course_summaries()
+            try:
+                course_summaries = api_client.get_course_summaries()
+            except ValueError as err:
+                render_alert(f"Unable to load course data. {err}", "negative")
+                course_summaries = []
             try:
                 admins = api_client.get_admins()
             except Exception:
@@ -256,7 +270,9 @@ def register_dashboard_page() -> None:
                     )
 
                 if total_failed > 0:
-                    with ui.card().classes("w-full mt-3 p-3 bg-rose-50 border border-rose-200 rounded-md"):
+                    with ui.card().classes(
+                        "w-full mt-3 p-3 bg-rose-50 border border-rose-200 rounded-md"
+                    ):
                         with ui.row().classes("w-full items-center justify-between"):
                             with ui.row().classes("items-center gap-2"):
                                 ui.icon("warning", size="sm").classes("text-rose-600")
@@ -434,4 +450,3 @@ def register_dashboard_page() -> None:
                                                 ui.badge("INACTIVE", color="slate-500").classes(
                                                     "text-[10px]"
                                                 )
-

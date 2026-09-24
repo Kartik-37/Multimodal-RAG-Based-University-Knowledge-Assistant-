@@ -328,7 +328,9 @@ class HybridRetrievalService:
         document_id: uuid.UUID | None = None,
     ) -> HybridRetrievalResponse:
         """Synchronous wrapper for hybrid retrieval when called from non-async contexts."""
-        return asyncio.run(self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k, document_id=document_id))
+        return asyncio.run(
+            self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k, document_id=document_id)
+        )
 
 
 # Singleton default hybrid retrieval service instance

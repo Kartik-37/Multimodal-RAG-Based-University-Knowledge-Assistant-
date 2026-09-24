@@ -41,7 +41,9 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
         self._model_name = model_name or settings.OLLAMA_EMBED_MODEL
         self._dimension = dimension if dimension is not None else settings.EMBEDDING_DIM
         self._timeout = timeout if timeout is not None else settings.OLLAMA_EMBED_TIMEOUT
-        self._batch_size = max(1, batch_size if batch_size is not None else settings.OLLAMA_EMBED_BATCH_SIZE)
+        self._batch_size = max(
+            1, batch_size if batch_size is not None else settings.OLLAMA_EMBED_BATCH_SIZE
+        )
 
     @property
     def dimension(self) -> int:

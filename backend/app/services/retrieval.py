@@ -243,7 +243,9 @@ class VectorRetrievalService:
         document_id: uuid.UUID | None = None,
     ) -> RetrievalResponse:
         """Synchronous wrapper for vector retrieval when called from non-async contexts."""
-        return asyncio.run(self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k, document_id=document_id))
+        return asyncio.run(
+            self.retrieve(db=db, kb_id=kb_id, query=query, top_k=top_k, document_id=document_id)
+        )
 
 
 # Singleton default retrieval service instance

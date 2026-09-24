@@ -13,8 +13,9 @@ Provides course-specific document management:
 from nicegui import events, ui
 
 from backend.app.core.config import settings
+from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
-from frontend.components.layout import page_layout
+from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
 from frontend.components.ui_kit import render_alert, render_empty_state
 from frontend.state.app_state import state
@@ -39,8 +40,38 @@ def register_documents_page() -> None:
     def documents_page(kb_id: str | None = None) -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
+        can_view_documents = has_admin_permission(user, Permission.DOCUMENT_VIEW)
+        can_upload_documents = has_admin_permission(user, Permission.DOCUMENT_UPLOAD)
+        can_publish_documents = has_admin_permission(user, Permission.DOCUMENT_PUBLISH)
+        can_index_documents = has_admin_permission(user, Permission.DOCUMENT_INDEX)
+        can_retry_indexing = has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
+        can_delete_documents = has_admin_permission(user, Permission.DOCUMENT_DELETE)
 
-        all_courses = api_client.get_knowledge_bases() if user else []
+        if not is_admin or not can_view_documents:
+            with page_layout(
+                title="Course Documents",
+                subtitle="Permission-aware course material access.",
+                active_route="/documents",
+                require_auth=True,
+            ):
+                render_empty_state(
+                    icon="lock",
+                    title="Document Management Unavailable",
+                    description="You do not have permission to view course documents.",
+                )
+            return
+
+        try:
+            all_courses = api_client.get_document_scope_courses()
+        except ValueError as err:
+            with page_layout(
+                title="Course Documents",
+                subtitle="Permission-aware course material access.",
+                active_route="/documents",
+                require_auth=True,
+            ):
+                render_alert(f"Unable to load courses. {err}", "negative")
+            return
 
         # Resolve selected course strictly from kb_id parameter
         selected_course = None
@@ -150,7 +181,7 @@ def register_documents_page() -> None:
                         ui.label("• Max 20 MB").classes("text-xs text-slate-400 font-mono")
 
             # Upload Course Material Section (Admin Only)
-            if is_admin:
+            if can_upload_documents:
                 max_upload_bytes = settings.MAX_UPLOAD_SIZE_BYTES
                 max_mb = max_upload_bytes // (1024 * 1024)
 
@@ -321,7 +352,12 @@ def register_documents_page() -> None:
                                         ui.label("Chunks")
                                     with ui.element("th").classes("py-2.5 px-3"):
                                         ui.label("Uploaded")
-                                    if is_admin:
+                                    if (
+                                        can_publish_documents
+                                        or can_index_documents
+                                        or can_retry_indexing
+                                        or can_delete_documents
+                                    ):
                                         with ui.element("th").classes("py-2.5 px-3 text-right"):
                                             ui.label("Actions")
 
@@ -380,7 +416,9 @@ def register_documents_page() -> None:
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             with ui.column().classes("gap-0.5"):
                                                 if doc.indexing_status in ("QUEUED", "PROCESSING"):
-                                                    render_indexing_status_badge(doc.indexing_status)
+                                                    render_indexing_status_badge(
+                                                        doc.indexing_status
+                                                    )
                                                     try:
                                                         job = api_client.get_document_index_status(
                                                             selected_course.id, doc.id
@@ -393,9 +431,9 @@ def register_documents_page() -> None:
                                                         stage_clean = job.stage.replace(
                                                             "_", " "
                                                         ).title()
-                                                        ui.label(
-                                                            f"Stage: {stage_clean}"
-                                                        ).classes("text-[9px] text-slate-500")
+                                                        ui.label(f"Stage: {stage_clean}").classes(
+                                                            "text-[9px] text-slate-500"
+                                                        )
                                                     except Exception:
                                                         pass
                                                 elif doc.indexing_status == "COMPLETED":
@@ -429,13 +467,18 @@ def register_documents_page() -> None:
                                             ui.label(doc.created_at)
 
                                         # Admin Actions
-                                        if is_admin:
+                                        if (
+                                            can_publish_documents
+                                            or can_index_documents
+                                            or can_retry_indexing
+                                            or can_delete_documents
+                                        ):
                                             with ui.element("td").classes("py-2.5 px-3 text-right"):
                                                 with ui.row().classes(
                                                     "items-center justify-end gap-1"
                                                 ):
                                                     # Version Activation / Deactivation Toggle
-                                                    if doc.is_active:
+                                                    if can_publish_documents and doc.is_active:
 
                                                         def trigger_deactivate(
                                                             d_id=doc.id, d_name=doc.filename
@@ -463,7 +506,10 @@ def register_documents_page() -> None:
                                                         ).tooltip(
                                                             "Deactivate to exclude from search while preserving file"
                                                         )
-                                                    elif doc.indexing_status == "COMPLETED":
+                                                    elif (
+                                                        can_publish_documents
+                                                        and doc.indexing_status == "COMPLETED"
+                                                    ):
 
                                                         def trigger_activate(
                                                             d_id=doc.id, d_name=doc.filename
@@ -489,7 +535,7 @@ def register_documents_page() -> None:
                                                         ).classes(
                                                             "text-[11px] px-2 py-0.5"
                                                         ).tooltip("Activate to include in search")
-                                                    else:
+                                                    elif can_publish_documents:
                                                         ui.button(
                                                             "Activate",
                                                             icon="play_circle",
@@ -497,10 +543,15 @@ def register_documents_page() -> None:
                                                             "outline dense no-caps disable"
                                                         ).classes(
                                                             "text-[11px] px-2 py-0.5 opacity-50"
-                                                        ).tooltip("Vector indexing must complete before activating")
+                                                        ).tooltip(
+                                                            "Vector indexing must complete before activating"
+                                                        )
 
                                                     # Vector Indexing Trigger (Index vs Retry)
-                                                    if doc.indexing_status == "FAILED":
+                                                    if (
+                                                        doc.indexing_status == "FAILED"
+                                                        and can_retry_indexing
+                                                    ):
 
                                                         def trigger_retry(d_id=doc.id) -> None:
                                                             try:
@@ -525,7 +576,8 @@ def register_documents_page() -> None:
                                                         ).classes("text-[11px] px-2 py-0.5")
 
                                                     elif (
-                                                        doc.status == "COMPLETED"
+                                                        can_index_documents
+                                                        and doc.status == "COMPLETED"
                                                         and doc.indexing_status
                                                         not in ("COMPLETED", "PROCESSING", "QUEUED")
                                                     ):
@@ -577,12 +629,13 @@ def register_documents_page() -> None:
                                                         except ValueError as err:
                                                             ui.notify(str(err), type="negative")
 
-                                                    ui.button(
-                                                        icon="delete_outline",
-                                                        on_click=trigger_delete,
-                                                    ).props("flat round dense").classes(
-                                                        "text-slate-400 hover:text-rose-600"
-                                                    ).tooltip("Delete Document")
+                                                    if can_delete_documents:
+                                                        ui.button(
+                                                            icon="delete_outline",
+                                                            on_click=trigger_delete,
+                                                        ).props("flat round dense").classes(
+                                                            "text-slate-400 hover:text-rose-600"
+                                                        ).tooltip("Delete Document")
 
             # Strictly execute initial render inside doc_container via refresh_doc_list
             refresh_doc_list()

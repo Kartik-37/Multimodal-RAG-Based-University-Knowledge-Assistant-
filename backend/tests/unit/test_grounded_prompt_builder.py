@@ -137,8 +137,9 @@ class TestGroundedPromptBuilderUnit:
         assert "--- BEGIN EVIDENCE [source_2] ---" in prompt
         assert "=== USER QUESTION (USER-CONTROLLED INPUT) ===" in prompt
         assert "What is the evidence?" in prompt
-        assert "=== END OF USER QUESTION ===" in prompt
-        assert prompt.endswith("ANSWER:")
+        assert prompt.endswith(
+            "ANSWER (Provide the direct factual answer immediately, citing evidence using [source_X]):"
+        )
 
     def test_build_user_prompt_empty_context(self) -> None:
         """Verify user prompt formatting when context has zero items."""

@@ -20,7 +20,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 
 from backend.app.api.deps import (
     AuthenticatedAdmin,
@@ -29,8 +29,9 @@ from backend.app.api.deps import (
     RateLimitIndexing,
     RateLimitUpload,
     check_user_permission,
+    get_authorized_document,
     get_authorized_knowledge_base,
-    is_main_admin,
+    get_authorized_knowledge_bases,
     require_knowledge_base_admin,
 )
 from backend.app.core.permissions import Permission
@@ -101,48 +102,68 @@ def list_knowledge_bases(
     current_user: AuthenticatedUser,
     db: DatabaseSession,
 ) -> list[KnowledgeBaseResponse]:
-    """
-    List knowledge bases using authorization-aware filtering at the SQL layer:
-    - MAIN_ADMIN: views all knowledge bases in system.
-    - FACULTY_ADMIN: views knowledge bases they created or were granted access.
-    - STUDENT: views only knowledge bases where they were granted membership.
-    """
-    if current_user.role == UserRole.ADMIN:
-        if not check_user_permission(current_user, Permission.COURSE_VIEW):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: Missing required permission 'COURSE_VIEW'.",
-            )
-        if is_main_admin(current_user):
-            stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc())
-        else:
-            stmt = (
-                select(KnowledgeBase)
-                .outerjoin(
-                    KnowledgeBaseMember,
-                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-                )
-                .where(
-                    or_(
-                        KnowledgeBase.created_by_id == current_user.id,
-                        KnowledgeBaseMember.user_id == current_user.id,
-                    )
-                )
-                .distinct()
-                .order_by(KnowledgeBase.created_at.desc())
-            )
-    else:
-        stmt = (
-            select(KnowledgeBase)
-            .join(
-                KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-            )
-            .where(KnowledgeBaseMember.user_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
+    """List exactly the courses authorized for the current user."""
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.COURSE_VIEW
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'COURSE_VIEW'.",
         )
 
-    kbs = db.execute(stmt).scalars().all()
+    kbs = get_authorized_knowledge_bases(current_user, db)
+    return [KnowledgeBaseResponse.model_validate(k) for k in kbs]
+
+
+@router.get(
+    "/chat-scopes",
+    response_model=list[KnowledgeBaseResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List courses available to the authenticated chat scope",
+)
+def list_chat_scope_knowledge_bases(
+    current_user: AuthenticatedUser,
+    db: DatabaseSession,
+) -> list[KnowledgeBaseResponse]:
+    """Return only courses the current user may use in chat.
+
+    This endpoint intentionally has a chat-specific permission boundary. A
+    Faculty Admin with ADMIN_CHAT but without COURSE_VIEW still needs to select
+    among their authorized courses in Admin Chat; that does not grant access
+    to the broader course-management UI.
+    """
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.ADMIN_CHAT
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'ADMIN_CHAT'.",
+        )
+
+    kbs = get_authorized_knowledge_bases(current_user, db)
+    return [KnowledgeBaseResponse.model_validate(k) for k in kbs]
+
+
+@router.get(
+    "/document-scopes",
+    response_model=list[KnowledgeBaseResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List courses available to document management",
+)
+def list_document_scope_knowledge_bases(
+    current_user: AuthenticatedUser,
+    db: DatabaseSession,
+) -> list[KnowledgeBaseResponse]:
+    """Return courses authorized for document viewing/management."""
+    if current_user.role != UserRole.ADMIN or not check_user_permission(
+        current_user, Permission.DOCUMENT_VIEW
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+        )
+
+    kbs = get_authorized_knowledge_bases(current_user, db)
     return [KnowledgeBaseResponse.model_validate(k) for k in kbs]
 
 
@@ -160,51 +181,23 @@ def get_course_summaries(
     Retrieve courses accessible to current user with aggregated document counts
     and compact file previews. Strictly avoids N+1 database queries.
     """
-    if current_user.role == UserRole.ADMIN:
-        if not check_user_permission(current_user, Permission.COURSE_VIEW):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: Missing required permission 'COURSE_VIEW'.",
-            )
-        if is_main_admin(current_user):
-            kb_stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc())
-        else:
-            kb_stmt = (
-                select(KnowledgeBase)
-                .outerjoin(
-                    KnowledgeBaseMember,
-                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-                )
-                .where(
-                    or_(
-                        KnowledgeBase.created_by_id == current_user.id,
-                        KnowledgeBaseMember.user_id == current_user.id,
-                    )
-                )
-                .distinct()
-                .order_by(KnowledgeBase.created_at.desc())
-            )
-    else:
-        kb_stmt = (
-            select(KnowledgeBase)
-            .join(
-                KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-            )
-            .where(KnowledgeBaseMember.user_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.COURSE_VIEW
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'COURSE_VIEW'.",
         )
 
-    kbs = db.execute(kb_stmt).scalars().all()
+    kbs = get_authorized_knowledge_bases(current_user, db)
     if not kbs:
         return []
 
     kb_ids = [kb.id for kb in kbs]
-    doc_stmt = (
-        select(Document)
-        .where(Document.knowledge_base_id.in_(kb_ids))
-        .order_by(Document.created_at.desc())
-    )
+    doc_stmt = select(Document).where(Document.knowledge_base_id.in_(kb_ids))
+    if current_user.role == UserRole.STUDENT:
+        doc_stmt = doc_stmt.where(Document.is_active.is_(True))
+    doc_stmt = doc_stmt.order_by(Document.created_at.desc())
     all_docs = db.execute(doc_stmt).scalars().all()
 
     docs_by_kb: dict[uuid.UUID, list[Document]] = {k.id: [] for k in kbs}
@@ -292,10 +285,17 @@ def add_member(
     payload: AddMemberRequest,
     kb: AdminKB,
     db: DatabaseSession,
+    current_user: AuthenticatedAdmin,
 ) -> MemberResponse:
     """
     Grant access to a student user. Restricted to the administering ADMIN.
     """
+    if not check_user_permission(current_user, Permission.COURSE_EDIT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'COURSE_EDIT'.",
+        )
+
     # Verify target user exists
     target_user_stmt = select(User).where(User.id == payload.user_id)
     target_user = db.execute(target_user_stmt).scalar_one_or_none()
@@ -303,6 +303,11 @@ def add_member(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
+        )
+    if target_user.role != UserRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only STUDENT accounts can be enrolled in a course.",
         )
 
     # Check for existing membership
@@ -425,21 +430,20 @@ def list_documents(
     Retrieve all documents belonging to an authorized knowledge base.
     Accessible to administrators with DOCUMENT_VIEW permission and authorized students.
     """
-    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.DOCUMENT_VIEW
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
         )
 
-    docs = (
-        db.execute(
-            select(Document)
-            .where(Document.knowledge_base_id == kb.id)
-            .order_by(Document.created_at.desc())
-        )
-        .scalars()
-        .all()
-    )
+    document_stmt = select(Document).where(Document.knowledge_base_id == kb.id)
+    if current_user.role == UserRole.STUDENT:
+        # Students see only published (active) material. Admins need the complete
+        # lifecycle view so they can diagnose and retry indexing.
+        document_stmt = document_stmt.where(Document.is_active.is_(True))
+    docs = db.execute(document_stmt.order_by(Document.created_at.desc())).scalars().all()
 
     results: list[DocumentResponse] = []
     for doc in docs:
@@ -484,26 +488,20 @@ def get_document(
     """
     Retrieve metadata and processing status for an individual document.
     """
-    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.DOCUMENT_VIEW
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
         )
 
-    doc = db.execute(
-        select(Document).where(
-            and_(
-                Document.id == document_id,
-                Document.knowledge_base_id == kb.id,
-            )
-        )
-    ).scalar_one_or_none()
-
-    if not doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found.",
-        )
+    doc = get_authorized_document(
+        document_id=document_id,
+        current_user=current_user,
+        db=db,
+        knowledge_base_id=kb.id,
+    )
 
     chunk_count = db.execute(
         select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
@@ -543,32 +541,30 @@ def get_document_index_status(
     """
     Return truthful, persistent vector indexing job status, stage, and chunk progress.
     """
-    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.DOCUMENT_VIEW
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
         )
 
-    doc = db.execute(
-        select(Document).where(
-            and_(
-                Document.id == document_id,
-                Document.knowledge_base_id == kb.id,
-            )
-        )
-    ).scalar_one_or_none()
+    doc = get_authorized_document(
+        document_id=document_id,
+        current_user=current_user,
+        db=db,
+        knowledge_base_id=kb.id,
+    )
 
-    if not doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found.",
+    job = (
+        db.execute(
+            select(IndexingJob)
+            .where(IndexingJob.document_id == document_id)
+            .order_by(IndexingJob.created_at.desc())
         )
-
-    job = db.execute(
-        select(IndexingJob)
-        .where(IndexingJob.document_id == document_id)
-        .order_by(IndexingJob.created_at.desc())
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if not job:
         chunk_count = db.execute(
@@ -582,8 +578,12 @@ def get_document_index_status(
             job_id=None,
             document_id=doc.id,
             knowledge_base_id=doc.knowledge_base_id,
-            status=doc.indexing_status.value if hasattr(doc.indexing_status, "value") else str(doc.indexing_status),
-            stage="COMPLETED" if doc.indexing_status == IndexingStatus.COMPLETED else ("FAILED" if doc.indexing_status == IndexingStatus.FAILED else "PREPARING"),
+            status=doc.indexing_status.value
+            if hasattr(doc.indexing_status, "value")
+            else str(doc.indexing_status),
+            stage="COMPLETED"
+            if doc.indexing_status == IndexingStatus.COMPLETED
+            else ("FAILED" if doc.indexing_status == IndexingStatus.FAILED else "PREPARING"),
             total_chunks=chunk_count,
             processed_chunks=indexed_count,
             embedded_chunks=indexed_count,
@@ -797,9 +797,11 @@ def index_document_endpoint(
         )
 
     # Check permission (retry vs initial index)
-    is_retry = (doc.indexing_status == IndexingStatus.FAILED)
+    is_retry = doc.indexing_status == IndexingStatus.FAILED
     if is_retry:
-        if not (check_user_permission(current_user, Permission.DOCUMENT_INDEX_RETRY) or check_user_permission(current_user, Permission.DOCUMENT_INDEX)):
+        # A failed job is a distinct privileged operation. Do not let the
+        # broader DOCUMENT_INDEX permission implicitly grant retry authority.
+        if not check_user_permission(current_user, Permission.DOCUMENT_INDEX_RETRY):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: Missing required permission 'DOCUMENT_INDEX_RETRY'.",
@@ -864,7 +866,9 @@ def list_document_chunks(
     """
     Inspect extracted text chunks, page numbers, and structural headings.
     """
-    if current_user.role == UserRole.ADMIN and not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+    if current_user.role == UserRole.ADMIN and not check_user_permission(
+        current_user, Permission.DOCUMENT_VIEW
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",

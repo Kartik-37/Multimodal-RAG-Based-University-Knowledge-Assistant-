@@ -11,9 +11,44 @@ from contextlib import contextmanager
 
 from nicegui import ui
 
+from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
 from frontend.client.models import UserDTO
 from frontend.state.app_state import state
+
+
+def has_admin_permission(user: UserDTO | None, permission: Permission | str) -> bool:
+    """Mirror backend permission semantics for navigation/UI hints only.
+
+    This function never replaces backend authorization. It only prevents users
+    from being shown controls that the server would reject.
+    """
+    if user is None or user.role != "ADMIN":
+        return False
+    if user.admin_role == "MAIN_ADMIN":
+        return True
+
+    value = permission.value if isinstance(permission, Permission) else str(permission)
+    if user.permissions:
+        return value in user.permissions
+
+    # Keep legacy/unassigned ADMIN UI behavior aligned with backend defaults.
+    default_permissions = {
+        Permission.COURSE_VIEW.value,
+        Permission.COURSE_CREATE.value,
+        Permission.COURSE_EDIT.value,
+        Permission.COURSE_DELETE.value,
+        Permission.DOCUMENT_VIEW.value,
+        Permission.DOCUMENT_UPLOAD.value,
+        Permission.DOCUMENT_DELETE.value,
+        Permission.DOCUMENT_PUBLISH.value,
+        Permission.DOCUMENT_INDEX.value,
+        Permission.DOCUMENT_INDEX_RETRY.value,
+        Permission.ADMIN_CHAT.value,
+        Permission.ADMIN_VIEW.value,
+        Permission.ADMIN_CREATE.value,
+    }
+    return value in default_permissions
 
 
 def get_nav_items(user: UserDTO | None) -> list[tuple[str, str, str]]:
@@ -27,14 +62,19 @@ def get_nav_items(user: UserDTO | None) -> list[tuple[str, str, str]]:
         return []
 
     if user.role == "ADMIN":
-        return [
+        items: list[tuple[str, str, str]] = [
             ("Dashboard", "/dashboard", "dashboard"),
-            ("Courses", "/knowledge-bases", "menu_book"),
-            ("Documents", "/documents", "description"),
-            ("Administrators", "/administrators", "admin_panel_settings"),
-            ("Chat & Search", "/chat", "chat"),
-            ("Profile", "/profile", "account_circle"),
         ]
+        if has_admin_permission(user, Permission.COURSE_VIEW):
+            items.append(("Courses", "/knowledge-bases", "menu_book"))
+        if has_admin_permission(user, Permission.DOCUMENT_VIEW):
+            items.append(("Documents", "/documents", "description"))
+        if has_admin_permission(user, Permission.ADMIN_CHAT):
+            items.append(("Admin Chat", "/chat", "chat"))
+        if has_admin_permission(user, Permission.ADMIN_VIEW):
+            items.append(("Administrators", "/administrators", "admin_panel_settings"))
+        items.append(("Profile", "/profile", "account_circle"))
+        return items
 
     # Student navigation
     return [

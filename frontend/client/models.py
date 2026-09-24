@@ -204,4 +204,3 @@ class CourseSummaryDTO(BaseModel):
     indexing_documents: int = 0
     failed_documents: int = 0
     document_previews: list[CourseDocumentPreviewDTO] = Field(default_factory=list)
-

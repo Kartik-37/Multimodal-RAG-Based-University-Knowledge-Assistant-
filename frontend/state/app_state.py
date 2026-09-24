@@ -84,5 +84,65 @@ class AppState:
         self._selected_citation = None
 
 
-# Shared presentation state singleton
-state = AppState()
+class _SessionAppStateProxy:
+    """Resolve one AppState instance per NiceGUI browser client."""
+
+    _storage_key = "_rag_frontend_app_state"
+
+    def __init__(self) -> None:
+        self._fallback_state = AppState()
+
+    def _get_state(self) -> AppState:
+        try:
+            from nicegui import app
+
+            storage = app.storage.client
+            current = storage.get(self._storage_key)
+            if not isinstance(current, AppState):
+                current = AppState()
+                storage[self._storage_key] = current
+            return current
+        except Exception:
+            # Direct unit tests do not have an active NiceGUI client context.
+            return self._fallback_state
+
+    @property
+    def current_user(self) -> UserDTO | None:
+        return self._get_state().current_user
+
+    @property
+    def is_admin(self) -> bool:
+        return self._get_state().is_admin
+
+    @property
+    def active_kb(self) -> KnowledgeBaseDTO | None:
+        return self._get_state().active_kb
+
+    @active_kb.setter
+    def active_kb(self, value: KnowledgeBaseDTO | None) -> None:
+        self._get_state().active_kb = value
+
+    @property
+    def selected_citation(self) -> CitationDTO | None:
+        return self._get_state().selected_citation
+
+    @selected_citation.setter
+    def selected_citation(self, value: CitationDTO | None) -> None:
+        self._get_state().selected_citation = value
+
+    @property
+    def chat_history(self) -> list[ChatMessageDTO]:
+        return self._get_state().chat_history
+
+    def add_user_message(self, text: str) -> ChatMessageDTO:
+        return self._get_state().add_user_message(text)
+
+    def add_assistant_message(self, msg: ChatMessageDTO) -> None:
+        self._get_state().add_assistant_message(msg)
+
+    def clear_chat(self) -> None:
+        self._get_state().clear_chat()
+
+
+# Presentation state is scoped to the current NiceGUI browser client.
+state = _SessionAppStateProxy()

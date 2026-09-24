@@ -140,11 +140,62 @@ class FrontendAPIClient:
     def get_knowledge_bases(self) -> list[KnowledgeBaseDTO]:
         """
         Fetch knowledge bases accessible to the current user.
-        FastAPI performs authorization-aware filtering at the database layer.
+
+        Non-success responses are surfaced to the UI instead of being converted
+        into an empty list. An empty list has semantic meaning (the user truly
+        has no authorized courses) and must never hide a 401/403/5xx failure.
         """
         resp = self._http.get("/knowledge-bases")
         if resp.status_code != 200:
-            return []
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="course"))
+
+        items = resp.json()
+        return [
+            KnowledgeBaseDTO(
+                id=str(item["id"]),
+                name=item["name"],
+                description=item.get("description", ""),
+                document_count=len(self._documents.get(str(item["id"]), [])),
+                created_at=item["created_at"][:10],
+            )
+            for item in items
+        ]
+
+    def get_chat_scope_courses(self) -> list[KnowledgeBaseDTO]:
+        """Fetch courses the current user may actually use in chat."""
+        resp = self._http.get("/knowledge-bases/chat-scopes")
+        if resp.status_code != 200:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
+
+        items = resp.json()
+        return [
+            KnowledgeBaseDTO(
+                id=str(item["id"]),
+                name=item["name"],
+                description=item.get("description", ""),
+                document_count=len(self._documents.get(str(item["id"]), [])),
+                created_at=item["created_at"][:10],
+            )
+            for item in items
+        ]
+
+    def get_document_scope_courses(self) -> list[KnowledgeBaseDTO]:
+        """Fetch courses available to document management for this admin."""
+        resp = self._http.get("/knowledge-bases/document-scopes")
+        if resp.status_code != 200:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="document"))
 
         items = resp.json()
         return [
@@ -198,7 +249,11 @@ class FrontendAPIClient:
         """
         resp = self._http.get("/knowledge-bases/summaries")
         if resp.status_code != 200:
-            return []
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="course"))
         items = resp.json()
         return [
             CourseSummaryDTO(
@@ -235,7 +290,11 @@ class FrontendAPIClient:
         """Fetch real documents for an authorized knowledge base from FastAPI."""
         resp = self._http.get(f"/knowledge-bases/{kb_id}/documents")
         if resp.status_code != 200:
-            return []
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="document"))
 
         items = resp.json()
         return [
@@ -899,5 +958,42 @@ class FrontendAPIClient:
             raise ValueError(normalize_error(resp.json(), context="admin"))
 
 
-# Global default client instance for the frontend presentation layer
-api_client = FrontendAPIClient()
+class _SessionAPIClientProxy:
+    """Resolve one FrontendAPIClient per NiceGUI browser client.
+
+    The FastAPI session is stored in the TestClient cookie jar. A module-level
+    FrontendAPIClient therefore cannot be shared between browser users: the
+    last user to log in would overwrite the shared cookie jar and identity.
+    NiceGUI's client storage is server-side and scoped to one connected browser
+    client, so it is the correct lifecycle boundary for the API client.
+
+    Outside a NiceGUI client context (unit tests and CLI code), a private
+    fallback client is used.
+    """
+
+    _storage_key = "_rag_frontend_api_client"
+
+    def __init__(self) -> None:
+        self._fallback_client = FrontendAPIClient()
+
+    def _get_client(self) -> FrontendAPIClient:
+        try:
+            from nicegui import app
+
+            storage = app.storage.client
+            client = storage.get(self._storage_key)
+            if not isinstance(client, FrontendAPIClient):
+                client = FrontendAPIClient()
+                storage[self._storage_key] = client
+            return client
+        except Exception:
+            # No active NiceGUI client context (e.g. direct unit tests).
+            return self._fallback_client
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get_client(), name)
+
+
+# Presentation-layer API boundary. The proxy keeps authentication/session state
+# isolated per NiceGUI browser client while retaining the existing call sites.
+api_client = _SessionAPIClientProxy()

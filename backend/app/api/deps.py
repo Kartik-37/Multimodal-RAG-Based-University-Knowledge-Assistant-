@@ -33,6 +33,7 @@ from backend.app.core.rate_limit import (
 )
 from backend.app.core.security import SESSION_COOKIE_NAME, hash_session_token
 from backend.app.db.session import get_db
+from backend.app.models.document import Document
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import AdminRole, User, UserRole, UserSession
 
@@ -149,7 +150,10 @@ def is_main_admin(user: User) -> bool:
     if user.role != UserRole.ADMIN:
         return False
     role_val = getattr(user, "admin_role", None)
-    return role_val == AdminRole.MAIN_ADMIN or str(role_val) in ("MAIN_ADMIN", "AdminRole.MAIN_ADMIN")
+    return role_val == AdminRole.MAIN_ADMIN or str(role_val) in (
+        "MAIN_ADMIN",
+        "AdminRole.MAIN_ADMIN",
+    )
 
 
 def check_user_permission(user: User, permission: Permission | str) -> bool:
@@ -171,7 +175,10 @@ def check_user_permission(user: User, permission: Permission | str) -> bool:
     role_val = getattr(user, "admin_role", None)
 
     # Faculty Admins with explicit role are strictly checked against assigned permissions
-    if role_val == AdminRole.FACULTY_ADMIN or str(role_val) in ("FACULTY_ADMIN", "AdminRole.FACULTY_ADMIN"):
+    if role_val == AdminRole.FACULTY_ADMIN or str(role_val) in (
+        "FACULTY_ADMIN",
+        "AdminRole.FACULTY_ADMIN",
+    ):
         user_perms = user.permissions or []
         return perm_val in user_perms
 
@@ -186,6 +193,7 @@ def require_permission(permission: Permission):
     """
     FastAPI dependency factory enforcing server-side permission checks.
     """
+
     def _dependency(current_user: AuthenticatedAdmin) -> User:
         if not check_user_permission(current_user, permission):
             raise HTTPException(
@@ -204,6 +212,94 @@ def require_student_or_admin(
     Ensure the authenticated user holds a recognized role (STUDENT or ADMIN).
     """
     return current_user
+
+
+def get_authorized_knowledge_bases(
+    current_user: User,
+    db: Session,
+) -> list[KnowledgeBase]:
+    """Return the canonical course set authorized for the current user.
+
+    This is the single course-visibility rule used by dashboards, course lists,
+    chat selectors, and global retrieval:
+    - MAIN_ADMIN: every course.
+    - FACULTY_ADMIN: courses they created or were explicitly assigned.
+    - STUDENT: courses with an explicit KnowledgeBaseMember row.
+    """
+    if current_user.role == UserRole.ADMIN:
+        if is_main_admin(current_user):
+            stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc())
+        else:
+            stmt = (
+                select(KnowledgeBase)
+                .outerjoin(
+                    KnowledgeBaseMember,
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                )
+                .where(
+                    or_(
+                        KnowledgeBase.created_by_id == current_user.id,
+                        KnowledgeBaseMember.user_id == current_user.id,
+                    )
+                )
+                .distinct()
+                .order_by(KnowledgeBase.created_at.desc())
+            )
+    else:
+        stmt = (
+            select(KnowledgeBase)
+            .join(
+                KnowledgeBaseMember,
+                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+            )
+            .where(KnowledgeBaseMember.user_id == current_user.id)
+            .order_by(KnowledgeBase.created_at.desc())
+        )
+
+    return list(db.execute(stmt).scalars().all())
+
+
+def get_authorized_document(
+    document_id: uuid.UUID,
+    current_user: User,
+    db: Session,
+    knowledge_base_id: uuid.UUID | None = None,
+) -> Document:
+    """Return one document only when its course and publication are authorized.
+
+    Students can only see/query published documents in courses they are enrolled
+    in. Administrators may inspect inactive/unindexed documents when their
+    course/document permissions allow it. A supplied course ID is always
+    checked against the document's actual parent course to prevent ID tampering.
+    """
+    doc = db.execute(select(Document).where(Document.id == document_id)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if knowledge_base_id is not None and doc.knowledge_base_id != knowledge_base_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    # Course authorization is authoritative and intentionally returns 404 for
+    # unauthorized resources to avoid leaking private course/document existence.
+    get_authorized_knowledge_base(
+        kb_id=doc.knowledge_base_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    if current_user.role == UserRole.STUDENT and not doc.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    return doc
 
 
 def get_authorized_knowledge_base(
@@ -310,46 +406,8 @@ def get_authorized_knowledge_base_ids(
     current_user: User,
     db: Session,
 ) -> list[uuid.UUID]:
-    """
-    Retrieve all knowledge base UUIDs authorized for the current user.
-    - MAIN_ADMIN: All knowledge bases in system.
-    - FACULTY_ADMIN: All knowledge bases created by or assigned to this faculty admin.
-    - STUDENT: All knowledge bases where explicit membership was granted.
-    """
-    if current_user.role == UserRole.ADMIN:
-        if is_main_admin(current_user):
-            stmt = (
-                select(KnowledgeBase.id)
-                .order_by(KnowledgeBase.created_at.desc())
-            )
-        else:
-            stmt = (
-                select(KnowledgeBase.id)
-                .outerjoin(
-                    KnowledgeBaseMember,
-                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-                )
-                .where(
-                    or_(
-                        KnowledgeBase.created_by_id == current_user.id,
-                        KnowledgeBaseMember.user_id == current_user.id,
-                    )
-                )
-                .distinct()
-                .order_by(KnowledgeBase.id)
-            )
-    else:
-        stmt = (
-            select(KnowledgeBase.id)
-            .join(
-                KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-            )
-            .where(KnowledgeBaseMember.user_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
-        )
-
-    return list(db.execute(stmt).scalars().all())
+    """Return UUIDs from the canonical course authorization mechanism."""
+    return [kb.id for kb in get_authorized_knowledge_bases(current_user, db)]
 
 
 # =============================================================================

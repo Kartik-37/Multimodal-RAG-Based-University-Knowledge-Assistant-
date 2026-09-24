@@ -4,7 +4,7 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 21D COMPLETE — FUNCTIONAL INTEGRITY: REAL INDEXING JOBS, ADMIN CHAT, AND HIERARCHICAL RBAC
+STEP 21E COMPLETE — REAL USER WORKFLOW INTEGRITY: RESTORE COURSE VISIBILITY AND COMPLETE REAL CHAT WORKFLOW
 
 ## Rules
 
@@ -865,7 +865,17 @@ Non-negotiable requirements:
 
 ## Last verified
 
-2026-09-21 — Step 18 Rate Limiting & Abuse Protection verified with PostgresRateLimitStorage atomic row-locking upserts, anti-spoofing client IP resolution, strict authentication-first dependency ordering, fail-closed auth & fail-open RAG policies, HTTP 429 with Retry-After headers, Step 17 telemetry event recording, and rate limit isolation — 418/418 tests passing across entire repository, and ruff lint/format 100% clean across 194 files.
+2026-09-24 — Step 21E Real User Workflow Integrity verified:
+- Autonomously diagnosed and restored Python 3.14 virtual environment with all dependencies.
+- Brought up PostgreSQL and Ollama services locally.
+- Diagnostic script scripts/diagnose_step21e.py executed successfully against live database.
+- Fixed 6 root causes: per-client NiceGUI frontend API client & state isolation, centralized RBAC course authorization (get_authorized_knowledge_bases), publication gate filtering (is_active=True), deterministic chat & document dropdown cascading, and Ollama reasoning leak neutralization.
+- Pytest suite: 496 passed, 0 failed, 4 warnings in 412.45s (not real_ollama).
+- Static checks: ruff check passed (0 errors), ruff format --check passed (189 files).
+- Database migrations: alembic check passed (no new upgrade operations detected).
+- Real chat workflow executed against KSU-Act-English.pdf with hybrid retrieval, RRF, reranking, and Ollama generation.
+- Browser test: Playwright driver download 404 reported accurately without faking.
+
 
 
 
