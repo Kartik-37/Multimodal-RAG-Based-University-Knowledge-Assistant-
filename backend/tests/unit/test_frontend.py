@@ -823,3 +823,64 @@ class TestStep21CProductUXRepair:
         assert "computer architecture" in PROTECTED_COURSE_NAMES
         assert "official university regulations" in PROTECTED_COURSE_NAMES
         assert "bca" in PROTECTED_COURSE_NAMES
+
+
+class TestStep22AAuthExperience:
+    """Unit tests for Step 22A: Authentication & Entry Experience."""
+
+    def test_auth_pages_register_all_portal_routes(self) -> None:
+        """Verify register_auth_pages registers /login, /student/login, /admin/login, /register."""
+        from nicegui import app
+
+        from frontend.pages.auth_pages import register_auth_pages
+
+        register_auth_pages()
+        registered_paths = [r.path for r in app.routes if hasattr(r, "path")]
+        assert "/login" in registered_paths
+        assert "/student/login" in registered_paths
+        assert "/admin/login" in registered_paths
+        assert "/register" in registered_paths
+
+    def test_api_client_has_portal_methods(self) -> None:
+        """Verify FrontendAPIClient and proxy provide student_login and admin_login."""
+        from frontend.client.api_client import api_client
+
+        assert hasattr(api_client, "student_login")
+        assert callable(api_client.student_login)
+        assert hasattr(api_client, "admin_login")
+        assert callable(api_client.admin_login)
+
+    def test_auth_pages_file_content_security_checks(self) -> None:
+        """Verify no public administrator registration exists in auth pages."""
+        from pathlib import Path
+
+        auth_page_path = Path("frontend/pages/auth_pages.py")
+        content = auth_page_path.read_text(encoding="utf-8")
+
+        # Must not contain administrator registration links or forms
+        assert "Create Administrator Account" not in content
+        assert "Register Administrator" not in content
+        assert "admin_register" not in content
+
+        # Must contain distinct portal branding and links
+        assert "Student Portal" in content
+        assert "Administrator Portal" in content
+        assert "/student/login" in content
+        assert "/admin/login" in content
+        assert "/register" in content
+
+    def test_wrong_portal_error_normalization_preserves_guidance(self) -> None:
+        """Verify directional guidance messages are cleanly passed through error normalizer."""
+        from frontend.client.error_handler import normalize_error
+
+        admin_wrong = (
+            "This account belongs to the Administrator Portal. Please use Administrator Sign In."
+        )
+        student_wrong = (
+            "This account does not have administrator access. Please use Student Sign In."
+        )
+
+        assert normalize_error(admin_wrong, context="auth") == admin_wrong
+        assert normalize_error(student_wrong, context="auth") == student_wrong
+        assert normalize_error({"detail": admin_wrong}, context="auth") == admin_wrong
+        assert normalize_error({"detail": student_wrong}, context="auth") == student_wrong

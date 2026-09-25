@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import and_, delete, func, select
+from sqlalchemy.orm import Session
 
 from backend.app.api.deps import (
     AuthenticatedAdmin,
@@ -97,21 +98,25 @@ def register(
     return UserResponse.model_validate(user)
 
 
-@router.post(
-    "/login",
-    response_model=SessionResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Authenticate and establish user session",
-)
-def login(
+def authenticate_and_create_session(
     payload: UserLoginRequest,
     response: Response,
-    db: DatabaseSession,
-    _rate_limit: RateLimitAuthLogin,
+    db: Session,
+    required_role: UserRole | None = None,
 ) -> SessionResponse:
     """
-    Authenticate user credentials against Argon2id hash.
-    Establishes a server-managed session in PostgreSQL and sets an HttpOnly cookie.
+    Shared authentication and session creation service.
+
+    Security & Role Decisions:
+    - Mitigates timing attacks with dummy Argon2id hash verification on unknown emails.
+    - Verifies password against user Argon2id hash before inspecting account role.
+    - Rejects inactive accounts with a clear message.
+    - If required_role is specified, enforces strict role matching:
+      * required_role == UserRole.STUDENT: Rejects ADMIN accounts with HTTP 403:
+        "This account belongs to the Administrator Portal. Please use Administrator Sign In."
+      * required_role == UserRole.ADMIN: Rejects STUDENT accounts with HTTP 403:
+        "This account does not have administrator access. Please use Student Sign In."
+    - Session credentials are cryptographically generated and stored exclusively as SHA-256 hashes.
     """
     clean_email = payload.email.strip().lower()
 
@@ -141,6 +146,19 @@ def login(
             detail="Account is inactive. Please contact an administrator.",
         )
 
+    # Server-side role enforcement for portal-specific authentication
+    if required_role is not None:
+        if required_role == UserRole.STUDENT and user.role != UserRole.STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account belongs to the Administrator Portal. Please use Administrator Sign In.",
+            )
+        if required_role == UserRole.ADMIN and user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account does not have administrator access. Please use Student Sign In.",
+            )
+
     # Generate secure random token and hash
     raw_token, token_hash = generate_session_token()
     expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -162,6 +180,78 @@ def login(
         user=UserResponse.model_validate(user),
         expires_at=expires_at,
         message="Authenticated successfully",
+    )
+
+
+@router.post(
+    "/login",
+    response_model=SessionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Authenticate and establish user session (general/backward-compatible)",
+)
+def login(
+    payload: UserLoginRequest,
+    response: Response,
+    db: DatabaseSession,
+    _rate_limit: RateLimitAuthLogin,
+) -> SessionResponse:
+    """
+    Authenticate user credentials against Argon2id hash.
+    Establishes a server-managed session in PostgreSQL and sets an HttpOnly cookie.
+    """
+    return authenticate_and_create_session(
+        payload=payload,
+        response=response,
+        db=db,
+        required_role=None,
+    )
+
+
+@router.post(
+    "/login/student",
+    response_model=SessionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Authenticate student for Student Portal",
+)
+def student_login(
+    payload: UserLoginRequest,
+    response: Response,
+    db: DatabaseSession,
+    _rate_limit: RateLimitAuthLogin,
+) -> SessionResponse:
+    """
+    Authenticate student credentials strictly for the Student Portal.
+    Rejects administrative accounts with explicit directional guidance.
+    """
+    return authenticate_and_create_session(
+        payload=payload,
+        response=response,
+        db=db,
+        required_role=UserRole.STUDENT,
+    )
+
+
+@router.post(
+    "/login/admin",
+    response_model=SessionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Authenticate administrator for Administrator Portal",
+)
+def admin_login(
+    payload: UserLoginRequest,
+    response: Response,
+    db: DatabaseSession,
+    _rate_limit: RateLimitAuthLogin,
+) -> SessionResponse:
+    """
+    Authenticate administrator credentials strictly for the Administrator Portal.
+    Rejects non-administrator accounts with explicit directional guidance.
+    """
+    return authenticate_and_create_session(
+        payload=payload,
+        response=response,
+        db=db,
+        required_role=UserRole.ADMIN,
     )
 
 

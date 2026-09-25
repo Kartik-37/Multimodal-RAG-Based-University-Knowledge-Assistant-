@@ -77,18 +77,26 @@ class FrontendAPIClient:
         self._http.headers.pop("Authorization", None)
 
     def _handle_auth_failure(self, status_code: int) -> None:
-        """If response is 401 Unauthorized, automatically invalidate the local session."""
-        if status_code == 401:
+        """If response is 401 Unauthorized or 403 Forbidden, automatically invalidate the local session."""
+        if status_code in (401, 403):
             self.clear_session()
             _set_persistent_token(None)
 
-    def login(self, email: str, password: str) -> UserDTO:
+    def login(self, email: str, password: str, required_role: str | None = None) -> UserDTO:
         """Authenticate user against Argon2id hash and establish PostgreSQL session."""
         if not email or not password:
             raise ValueError("Email and password must not be empty.")
 
+        clean_role = (required_role or "").strip().upper()
+        if clean_role == "STUDENT":
+            endpoint = "/auth/login/student"
+        elif clean_role == "ADMIN":
+            endpoint = "/auth/login/admin"
+        else:
+            endpoint = "/auth/login"
+
         resp = self._http.post(
-            "/auth/login",
+            endpoint,
             json={"email": email.strip(), "password": password},
         )
         if resp.status_code != 200:
@@ -116,6 +124,14 @@ class FrontendAPIClient:
             self._http.headers["Authorization"] = f"Bearer {raw_token}"
         return self._current_user
 
+    def student_login(self, email: str, password: str) -> UserDTO:
+        """Authenticate student credentials strictly against Student Portal."""
+        return self.login(email=email, password=password, required_role="STUDENT")
+
+    def admin_login(self, email: str, password: str) -> UserDTO:
+        """Authenticate administrator credentials strictly against Administrator Portal."""
+        return self.login(email=email, password=password, required_role="ADMIN")
+
     def register(self, email: str, password: str, full_name: str) -> UserDTO:
         """
         Register a new user account via FastAPI backend.
@@ -140,9 +156,9 @@ class FrontendAPIClient:
                 detail = resp.text
             raise ValueError(normalize_error(detail, context="auth"))
 
-        # Automatically authenticate the new user
+        # Automatically authenticate the new student strictly into the student portal
         try:
-            return self.login(email=email, password=password)
+            return self.student_login(email=email, password=password)
         except Exception as exc:
             raise ValueError(
                 f"Account created successfully, but automatic login failed: {exc}"
@@ -1096,13 +1112,19 @@ class _SessionAPIClientProxy:
 
         return client
 
-    def login(self, email: str, password: str) -> UserDTO:
+    def login(self, email: str, password: str, required_role: str | None = None) -> UserDTO:
         client = self._get_client()
-        user = client.login(email, password)
+        user = client.login(email, password, required_role=required_role)
         token = client.get_session_token()
         if token:
             _set_persistent_token(token)
         return user
+
+    def student_login(self, email: str, password: str) -> UserDTO:
+        return self.login(email, password, required_role="STUDENT")
+
+    def admin_login(self, email: str, password: str) -> UserDTO:
+        return self.login(email, password, required_role="ADMIN")
 
     def register(self, email: str, password: str, full_name: str) -> UserDTO:
         client = self._get_client()

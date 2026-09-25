@@ -884,6 +884,32 @@ Non-negotiable requirements:
     * Ollama (port 11434) active.
     * NiceGUI web application (port 8080) active and serving traffic at `http://localhost:8080`.
 
+2026-09-25 — Step 22A Authentication & Entry Experience (COMPLETE):
+- **Core Accomplishments**:
+  1. **Public Authentication Entry Experience Redesign**:
+     - Redesigned `/login` into a high-clarity academic portal selection screen featuring side-by-side cards for Student Portal vs Administrator Portal, distinct role messaging, and a student registration card.
+     - Created `/student/login` providing a dedicated Student Portal authentication interface with WCAG 2.1 AA keyboard support and registration navigation.
+     - Created `/admin/login` providing a restricted Administrator Portal authentication interface with explicit security notices and zero public admin registration exposure.
+     - Redesigned `/register` to match the university design system, strictly provisioning STUDENT accounts.
+  2. **Strict Server-Side Role Enforcement**:
+     - Implemented shared backend service `authenticate_and_create_session(..., required_role=...)` in `backend/app/api/v1/endpoints/auth.py`.
+     - Added `/auth/login/student` enforcing `UserRole.STUDENT` and rejecting administrators with HTTP 403 ("This account belongs to the Administrator Portal. Please use Administrator Sign In.").
+     - Added `/auth/login/admin` enforcing `UserRole.ADMIN` and rejecting students with HTTP 403 ("This account does not have administrator access. Please use Student Sign In.").
+     - Preserved backward-compatible `/auth/login`.
+     - Credentials verified against Argon2id hash prior to inspecting roles (prevents role probing timing attacks).
+  3. **Frontend API Client & Proxy Updates**:
+     - Added `student_login()` and `admin_login()` on `FrontendAPIClient` and `_SessionAPIClientProxy`.
+     - Handled 401 and 403 session clearing defensively on authentication rejection.
+  4. **Verification & Quality Gate**:
+     - `test_step22a_auth_portals.py`: 20/20 passed (100%).
+     - `test_frontend.py`: 41/41 passed (100%).
+     - Full test suite: 530/530 passed (100%).
+     - `ruff check`: 100% clean across all 191 files.
+     - `ruff format --check`: 100% clean across all 191 files.
+     - `alembic check`: 100% clean (no new upgrade operations).
+     - Standing daemons: PostgreSQL (5432), Ollama (11434), NiceGUI (8080) active.
+
+
 
 
 

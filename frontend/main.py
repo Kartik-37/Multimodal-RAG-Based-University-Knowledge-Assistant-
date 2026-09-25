@@ -47,6 +47,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         port=8080,
         show=False,
         reload=settings.DEBUG,
-        favicon="school",
+        favicon="🎓",
         storage_secret=settings.SECRET_KEY,
     )
