@@ -501,20 +501,21 @@ class FrontendAPIClient:
             raise ValueError(detail)
 
         item = resp.json()
+        doc_id = str(item.get("document_id") or item.get("id"))
         return IndexingJobDTO(
             job_id=str(item["job_id"]) if item.get("job_id") else None,
-            document_id=str(item["document_id"]),
-            knowledge_base_id=str(item["knowledge_base_id"]),
-            status=item["status"],
-            stage=item["stage"],
-            total_chunks=item.get("total_chunks", 0),
+            document_id=doc_id,
+            knowledge_base_id=str(item.get("knowledge_base_id", kb_id)),
+            status=item.get("indexing_status") or item.get("status", "PROCESSING"),
+            stage=item.get("stage", "PREPARING"),
+            total_chunks=item.get("chunk_count") or item.get("total_chunks", 0),
             processed_chunks=item.get("processed_chunks", 0),
             embedded_chunks=item.get("embedded_chunks", 0),
             indexed_chunks=item.get("indexed_chunks", 0),
             progress_percent=item.get("progress_percent", 0.0),
-            document_name=item.get("document_name"),
+            document_name=item.get("original_filename") or item.get("document_name"),
             course_name=item.get("course_name"),
-            error_message=item.get("error_message"),
+            error_message=item.get("indexing_error") or item.get("error_message"),
             attempt_number=item.get("attempt_number", 1),
             started_at=str(item["started_at"]) if item.get("started_at") else None,
             completed_at=str(item["completed_at"]) if item.get("completed_at") else None,

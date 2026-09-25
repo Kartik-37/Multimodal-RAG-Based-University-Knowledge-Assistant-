@@ -1126,6 +1126,12 @@ def deactivate_document(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Trigger vector indexing for an ingested document (ADMIN only)",
 )
+@router.post(
+    "/{kb_id}/documents/{document_id}/retry-indexing",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry vector indexing for a failed document (ADMIN only)",
+)
 def index_document_endpoint(
     kb: AdminKB,
     document_id: uuid.UUID,
