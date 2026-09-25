@@ -59,10 +59,10 @@ def register_chat_page() -> None:
     def chat_page(kb_id: str | None = None) -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
-        can_admin_chat = has_admin_permission(user, Permission.ADMIN_CHAT)
-        page_title = "Admin Chat & Semantic Search" if is_admin else "Ask BCA Assistant"
+        can_admin_chat = is_admin or has_admin_permission(user, Permission.ADMIN_CHAT)
+        page_title = "Admin Knowledge Chat" if is_admin else "Ask BCA Assistant"
         page_subtitle = (
-            "Test retrieval, reranking, and citation synthesis across all courses, a specific course, or a single document."
+            "Interactive RAG queries across authorized course materials with verifiable citations and provenance."
             if is_admin
             else "Ask questions across verified course materials with grounded citations."
         )
@@ -73,16 +73,16 @@ def register_chat_page() -> None:
             active_route="/chat",
             require_auth=True,
         ):
-            if is_admin and not can_admin_chat:
+            if not is_admin and not can_admin_chat:
                 with ui.card().classes(
                     "w-full max-w-2xl mx-auto p-6 bg-white border border-rose-200 rounded-lg shadow-xs"
                 ):
                     ui.icon("lock", size="2.5rem").classes("text-rose-500 mb-2")
-                    ui.label("Admin Chat Not Authorized").classes(
+                    ui.label("Chat Not Authorized").classes(
                         "text-lg font-bold text-slate-900"
                     )
                     ui.label(
-                        "Your administrator account does not have the ADMIN_CHAT permission."
+                        "Your account is not authorized to access conversational assistant."
                     ).classes("text-sm text-slate-600")
                 return
 
@@ -583,39 +583,55 @@ def register_chat_page() -> None:
                                         clean_content = sanitize_markdown_text(msg.content)
                                         ui.markdown(clean_content).classes("safe-markdown text-sm")
 
-                                        # Source Citations Pills
+                                        # Source Citations with Provenance
                                         if msg.citations:
-                                            with ui.row().classes(
-                                                "w-full items-center gap-1.5 mt-2 pt-2 border-t border-slate-200 flex-wrap"
+                                            with ui.column().classes(
+                                                "w-full mt-3 pt-2.5 border-t border-slate-200 gap-1.5"
                                             ):
-                                                ui.label("Cited Sources:").classes(
-                                                    "text-[11px] font-semibold text-slate-500 mr-1"
+                                                ui.label("Sources & Evidence:").classes(
+                                                    "text-[11px] font-bold text-slate-700"
                                                 )
                                                 for idx, cit in enumerate(msg.citations, start=1):
-                                                    page_suffix = (
-                                                        f" p.{cit.page_number}"
+                                                    course_lbl = (
+                                                        f" • {cit.course_name}"
+                                                        if cit.course_name
+                                                        else ""
+                                                    )
+                                                    page_lbl = (
+                                                        f" • Page {cit.page_number}"
                                                         if cit.page_number is not None
                                                         else ""
                                                     )
-                                                    pill_text = (
-                                                        f"[{idx}] {cit.document_name}{page_suffix}"
+                                                    chunk_lbl = (
+                                                        f" • Chunk {cit.chunk_id[:8]}"
+                                                        if cit.chunk_id
+                                                        else ""
                                                     )
-                                                    is_active_cit = (
-                                                        state.selected_citation is not None
-                                                        and state.selected_citation.chunk_id
-                                                        == cit.chunk_id
-                                                    )
-                                                    pill_color = (
-                                                        "primary"
-                                                        if is_active_cit
-                                                        else "blue-grey-7"
-                                                    )
-                                                    ui.button(
-                                                        pill_text,
-                                                        on_click=lambda c=cit: select_citation(c),
-                                                    ).props(
-                                                        f"outline dense color={pill_color} no-caps"
-                                                    ).classes("text-[10px] font-mono px-2 py-0.5")
+                                                    with (
+                                                        ui.row()
+                                                        .classes(
+                                                            "w-full items-center justify-between p-2 rounded bg-white border border-slate-200 hover:border-blue-400 transition-colors cursor-pointer"
+                                                        )
+                                                        .on("click", lambda c=cit: select_citation(c))
+                                                    ):
+                                                        with ui.row().classes(
+                                                            "items-center gap-2 min-w-0"
+                                                        ):
+                                                            ui.badge(str(idx), color="blue-700").classes(
+                                                                "text-[9px] font-bold px-1.5 py-0.5"
+                                                            )
+                                                            with ui.column().classes("gap-0 min-w-0"):
+                                                                ui.label(cit.document_name).classes(
+                                                                    "text-xs font-semibold text-slate-900 truncate"
+                                                                )
+                                                                ui.label(
+                                                                    f"Evidence{course_lbl}{page_lbl}{chunk_lbl}"
+                                                                ).classes(
+                                                                    "text-[10px] text-slate-500 font-mono"
+                                                                )
+                                                        ui.icon("chevron_right", size="xs").classes(
+                                                            "text-slate-400"
+                                                        )
 
             # Initial render
             render_messages()
