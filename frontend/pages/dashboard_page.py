@@ -141,165 +141,211 @@ def register_dashboard_page() -> None:
             # ------------------------------------------------------------------
             # ADMINISTRATOR PERSPECTIVE
             # ------------------------------------------------------------------
+            def user_can(perm: str) -> bool:
+                if not user or user.role != "ADMIN":
+                    return False
+                if user.admin_role == "MAIN_ADMIN":
+                    return True
+                return perm in (user.permissions or [])
+
             try:
                 course_summaries = api_client.get_course_summaries()
             except ValueError as err:
                 render_alert(f"Unable to load course data. {err}", "negative")
                 course_summaries = []
+
             try:
-                admins = api_client.get_admins()
+                indexing_jobs = api_client.get_indexing_jobs()
             except Exception:
-                admins = []
+                indexing_jobs = []
+
+            try:
+                activity_events = api_client.get_activity_log()
+            except Exception:
+                activity_events = []
 
             total_courses = len(course_summaries)
             total_documents = sum(c.total_documents for c in course_summaries)
             active_documents = sum(c.active_documents for c in course_summaries)
-            total_admins = len(admins)
             total_indexed = sum(c.indexed_documents for c in course_summaries)
             total_indexing = sum(c.indexing_documents for c in course_summaries)
             total_failed = sum(c.failed_documents for c in course_summaries)
 
-            # 1. Summary Cards (Courses, Documents, Active Documents, Administrators)
+            # Active indexing jobs from persistent backend
+            active_jobs = [
+                j for j in indexing_jobs
+                if j.status in ("PROCESSING", "STARTING", "PARSING", "CHUNKING", "EMBEDDING", "INDEXING", "VERIFYING")
+            ]
+
+            # 1. Compact Operational Summary Cards
             with ui.row().classes("w-full gap-4"):
                 render_stat_card(
                     title="Courses",
                     value=total_courses,
-                    subtitle="Registered university courses",
+                    subtitle=f"{total_courses} registered catalog" if total_courses != 1 else "1 registered course",
                     icon="menu_book",
                     icon_color="blue-600",
                 )
                 render_stat_card(
                     title="Documents",
                     value=total_documents,
-                    subtitle="Course learning materials",
+                    subtitle=f"{active_documents} active in retrieval",
                     icon="description",
                     icon_color="indigo-600",
                 )
                 render_stat_card(
-                    title="Active Documents",
-                    value=active_documents,
-                    subtitle="Published & retrieval eligible",
-                    icon="verified",
-                    icon_color="emerald-600",
+                    title="Indexing",
+                    value=total_indexing,
+                    subtitle=f"{total_indexed} fully indexed" if total_indexing == 0 else f"{len(active_jobs)} active worker job(s)",
+                    icon="autorenew",
+                    icon_color="amber-600" if total_indexing > 0 else "slate-500",
                 )
                 render_stat_card(
-                    title="Administrators",
-                    value=total_admins,
-                    subtitle="Faculty administrators",
-                    icon="admin_panel_settings",
-                    icon_color="purple-600",
+                    title="Failed Jobs",
+                    value=total_failed,
+                    subtitle="No action required" if total_failed == 0 else f"{total_failed} need attention / retry",
+                    icon="error_outline",
+                    icon_color="rose-600" if total_failed > 0 else "emerald-600",
                 )
 
-            # 2. Quick Actions
+            # 2. RBAC-Aware Quick Actions Bar
             with ui.card().classes(
-                "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs mt-1"
+                "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
             ):
-                with ui.row().classes(
-                    "items-center justify-between w-full mb-3 pb-2 border-b border-slate-100"
-                ):
+                with ui.row().classes("items-center justify-between w-full mb-2 pb-2 border-b border-slate-100"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("bolt", size="sm").classes("text-amber-500")
-                        ui.label("Quick Actions").classes("text-sm font-bold text-slate-800")
+                        ui.label("Operational Quick Actions").classes("text-sm font-bold text-slate-800")
+                    ui.label("Actions permitted by assigned administrative role").classes("text-xs text-slate-400")
 
-                with ui.row().classes("w-full gap-3 flex-wrap"):
-                    ui.button(
-                        "Create Course",
-                        icon="add",
-                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                    ).props("color=primary no-caps dense").classes("text-xs font-medium px-4 py-2")
+                with ui.row().classes("w-full gap-3 flex-wrap items-center"):
+                    if user_can("DOCUMENT_UPLOAD"):
+                        ui.button(
+                            "Upload Document",
+                            icon="upload_file",
+                            on_click=lambda: ui.navigate.to("/documents"),
+                        ).props("color=positive no-caps dense").classes("text-xs font-medium px-4 py-2")
 
-                    ui.button(
-                        "Upload Document",
-                        icon="upload_file",
-                        on_click=lambda: ui.navigate.to("/documents"),
-                    ).props("color=positive no-caps dense").classes("text-xs font-medium px-4 py-2")
-
-                    ui.button(
-                        "Manage Courses",
-                        icon="menu_book",
-                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                    ).props("outline color=primary no-caps dense").classes(
-                        "text-xs font-medium px-4 py-2"
-                    )
+                    if user_can("COURSE_CREATE"):
+                        ui.button(
+                            "Create Course",
+                            icon="add",
+                            on_click=lambda: ui.navigate.to("/knowledge-bases"),
+                        ).props("color=primary no-caps dense").classes("text-xs font-medium px-4 py-2")
 
                     ui.button(
-                        "Manage Administrators",
-                        icon="admin_panel_settings",
-                        on_click=lambda: ui.navigate.to("/administrators"),
-                    ).props("outline color=purple no-caps dense").classes(
-                        "text-xs font-medium px-4 py-2"
-                    )
+                        "Indexing Center",
+                        icon="hub",
+                        on_click=lambda: ui.navigate.to("/indexing"),
+                    ).props("outline color=indigo no-caps dense").classes("text-xs font-medium px-4 py-2")
 
-            # 2.5 Vector Index Health Section
+                    if user_can("ADMIN_CHAT") or user.role == "ADMIN":
+                        ui.button(
+                            "Admin Knowledge Chat",
+                            icon="chat",
+                            on_click=lambda: ui.navigate.to("/chat"),
+                        ).props("outline color=blue no-caps dense").classes("text-xs font-medium px-4 py-2")
+
+                    if user_can("ADMIN_VIEW") or user.admin_role == "MAIN_ADMIN":
+                        ui.button(
+                            "Manage Administrators",
+                            icon="admin_panel_settings",
+                            on_click=lambda: ui.navigate.to("/administrators"),
+                        ).props("outline color=purple no-caps dense").classes("text-xs font-medium px-4 py-2")
+
+                    ui.button(
+                        "System Health",
+                        icon="monitor_heart",
+                        on_click=lambda: ui.navigate.to("/system-health"),
+                    ).props("flat color=slate-7 no-caps dense").classes("text-xs font-medium px-3 py-2")
+
+            # 3. Prominent Indexing Activity Section
             with ui.card().classes(
-                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
+                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-3"
             ):
-                with ui.row().classes(
-                    "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
-                ):
+                with ui.row().classes("w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"):
                     with ui.row().classes("items-center gap-2"):
-                        ui.icon("storage", size="sm").classes("text-blue-600")
-                        ui.label("Vector Index Health").classes("text-sm font-bold text-slate-800")
+                        ui.icon("precision_manufacturing", size="sm").classes("text-indigo-600")
+                        ui.label("Indexing Activity & Vector Generation").classes("text-sm font-bold text-slate-800")
+                        if active_jobs:
+                            ui.badge(f"{len(active_jobs)} Active", color="amber-700").classes("text-[10px] font-bold")
+                        else:
+                            ui.badge("Idle", color="slate-500").classes("text-[10px]")
+
                     ui.button(
-                        "Manage Indexing",
+                        "Open Indexing Center",
                         icon="arrow_forward",
-                        on_click=lambda: ui.navigate.to("/documents"),
-                    ).props("flat dense no-caps").classes("text-xs text-blue-600")
+                        on_click=lambda: ui.navigate.to("/indexing"),
+                    ).props("flat dense no-caps").classes("text-xs text-indigo-600 font-medium")
 
-                with ui.row().classes("w-full gap-4"):
-                    render_stat_card(
-                        title="Indexed Documents",
-                        value=total_indexed,
-                        subtitle="Vectors generated & retrieval ready",
-                        icon="check_circle",
-                        icon_color="emerald-600",
-                    )
-                    render_stat_card(
-                        title="Indexing in Progress",
-                        value=total_indexing,
-                        subtitle="Embedding or queued in worker",
-                        icon="autorenew",
-                        icon_color="indigo-600",
-                    )
-                    render_stat_card(
-                        title="Indexing Failed",
-                        value=total_failed,
-                        subtitle="Errors requiring retry",
-                        icon="error_outline",
-                        icon_color="rose-600",
-                    )
-
-                if total_failed > 0:
-                    with ui.card().classes(
-                        "w-full mt-3 p-3 bg-rose-50 border border-rose-200 rounded-md"
-                    ):
-                        with ui.row().classes("w-full items-center justify-between"):
-                            with ui.row().classes("items-center gap-2"):
-                                ui.icon("warning", size="sm").classes("text-rose-600")
+                if not active_jobs:
+                    with ui.row().classes("w-full items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-lg"):
+                        with ui.row().classes("items-center gap-3"):
+                            ui.icon("task_alt", size="md").classes("text-emerald-500")
+                            with ui.column().classes("gap-0"):
+                                ui.label("No documents are currently being indexed").classes("text-sm font-semibold text-slate-800")
                                 ui.label(
-                                    f"{total_failed} document(s) failed vector indexing. They are excluded from retrieval until retried."
-                                ).classes("text-xs font-semibold text-rose-800")
-                            ui.button(
-                                "Resolve in Documents",
-                                icon="arrow_forward",
-                                on_click=lambda: ui.navigate.to("/documents"),
-                            ).props("color=rose-7 dense no-caps").classes("text-xs")
+                                    f"All {total_indexed} indexed document vectors are synchronized in PostgreSQL/pgvector."
+                                ).classes("text-xs text-slate-500")
+                        ui.button(
+                            "View All Jobs",
+                            icon="history",
+                            on_click=lambda: ui.navigate.to("/indexing"),
+                        ).props("outline dense no-caps color=slate-7").classes("text-xs")
+                else:
+                    with ui.column().classes("w-full gap-3"):
+                        for job in active_jobs:
+                            progress_val = (
+                                job.processed_chunks / job.total_chunks
+                                if job.total_chunks > 0 else (job.progress_percent / 100.0)
+                            )
+                            with ui.card().classes("w-full p-4 bg-slate-50 border border-slate-200 rounded-lg gap-2"):
+                                with ui.row().classes("w-full items-center justify-between"):
+                                    with ui.row().classes("items-center gap-2"):
+                                        ui.icon("description", size="sm").classes("text-indigo-600")
+                                        ui.label(job.document_name or f"Document {job.document_id[:8]}").classes(
+                                            "text-sm font-bold text-slate-900"
+                                        )
+                                        if job.course_name:
+                                            ui.badge(job.course_name, color="blue-700").classes("text-[10px]")
+                                    ui.badge(job.stage.upper(), color="amber-800").classes("text-[10px] font-bold")
 
-            # 3. Courses Overview
+                                with ui.row().classes("w-full items-center gap-4 text-xs text-slate-600"):
+                                    ui.label(f"Stage: {job.stage.title()}")
+                                    ui.label(f"Chunks: {job.processed_chunks} / {job.total_chunks}")
+                                    ui.label(f"Vectors: {job.indexed_chunks} / {job.total_chunks}")
+                                    ui.label(f"Status: {job.status.title()}")
+                                    if job.started_at:
+                                        ui.label(f"Started: {job.started_at[:16]}")
+
+                                ui.linear_progress(
+                                    value=min(1.0, max(0.0, progress_val)),
+                                    show_value=False,
+                                    size="8px",
+                                ).props("color=amber rounded")
+
+                                with ui.row().classes("w-full justify-end mt-1"):
+                                    ui.button(
+                                        "View Details",
+                                        icon="visibility",
+                                        on_click=lambda kb_id=job.knowledge_base_id: ui.navigate.to(
+                                            f"/documents?kb_id={kb_id}"
+                                        ),
+                                    ).props("flat dense no-caps color=primary").classes("text-xs")
+
+            # 4. Course Catalog Summary Table
             with ui.card().classes(
-                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
+                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-3"
             ):
-                with ui.row().classes(
-                    "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
-                ):
+                with ui.row().classes("w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("school", size="sm").classes("text-blue-600")
-                        ui.label("Courses").classes("text-sm font-bold text-slate-800")
+                        ui.label("Course Catalog & Material Breakdown").classes("text-sm font-bold text-slate-800")
                     ui.button(
-                        "View All Courses",
+                        "Manage All Courses",
                         icon="arrow_forward",
                         on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                    ).props("flat dense no-caps").classes("text-xs text-blue-600")
+                    ).props("flat dense no-caps").classes("text-xs text-blue-600 font-medium")
 
                 if not course_summaries:
                     render_empty_state(
@@ -311,9 +357,7 @@ def register_dashboard_page() -> None:
                     )
                 else:
                     with ui.element("div").classes("responsive-table-wrapper"):
-                        with ui.element("table").classes(
-                            "w-full text-left text-xs border-collapse"
-                        ):
+                        with ui.element("table").classes("w-full text-left text-xs border-collapse"):
                             with ui.element("thead").classes(
                                 "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
                             ):
@@ -325,20 +369,14 @@ def register_dashboard_page() -> None:
                                     with ui.element("th").classes("py-2.5 px-3"):
                                         ui.label("Active (Published)")
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Inactive (Historical)")
+                                        ui.label("Indexing Status")
                                     with ui.element("th").classes("py-2.5 px-3 text-right"):
                                         ui.label("Action")
 
-                            with ui.element("tbody").classes(
-                                "divide-y divide-slate-100 text-slate-800"
-                            ):
+                            with ui.element("tbody").classes("divide-y divide-slate-100 text-slate-800"):
                                 for c in course_summaries:
-                                    with ui.element("tr").classes(
-                                        "hover:bg-slate-50 transition-colors"
-                                    ):
-                                        with ui.element("td").classes(
-                                            "py-2.5 px-3 font-semibold text-slate-900"
-                                        ):
+                                    with ui.element("tr").classes("hover:bg-slate-50 transition-colors"):
+                                        with ui.element("td").classes("py-2.5 px-3 font-semibold text-slate-900"):
                                             ui.label(c.name)
                                         with ui.element("td").classes("py-2.5 px-3 font-mono"):
                                             ui.label(str(c.total_documents))
@@ -347,10 +385,12 @@ def register_dashboard_page() -> None:
                                                 f"{c.active_documents} Active", color="emerald-700"
                                             ).classes("text-[10px] font-bold")
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            ui.badge(
-                                                f"{c.inactive_documents} Inactive",
-                                                color="slate-500",
-                                            ).classes("text-[10px]")
+                                            if c.indexing_documents > 0:
+                                                ui.badge(f"{c.indexing_documents} Indexing", color="amber-700").classes("text-[10px]")
+                                            elif c.failed_documents > 0:
+                                                ui.badge(f"{c.failed_documents} Failed", color="rose-700").classes("text-[10px]")
+                                            else:
+                                                ui.badge(f"{c.indexed_documents} Indexed", color="emerald-800").classes("text-[10px]")
                                         with ui.element("td").classes("py-2.5 px-3 text-right"):
                                             ui.button(
                                                 "Manage Documents",
@@ -358,95 +398,66 @@ def register_dashboard_page() -> None:
                                                 on_click=lambda course_id=c.id: ui.navigate.to(
                                                     f"/documents?kb_id={course_id}"
                                                 ),
-                                            ).props("flat dense no-caps color=primary").classes(
-                                                "text-xs"
-                                            )
+                                            ).props("flat dense no-caps color=primary").classes("text-xs")
 
-            # 4. Recent Document Activity
-            recent_docs = []
-            for c in course_summaries:
-                for preview in c.document_previews:
-                    recent_docs.append(
-                        {
-                            "course_name": c.name,
-                            "course_id": c.id,
-                            "filename": preview.filename,
-                            "file_type": preview.file_type,
-                            "status": preview.status,
-                            "indexing_status": preview.indexing_status,
-                            "is_active": preview.is_active,
-                        }
-                    )
-
+            # 5. Operational Activity Audit Timeline
             with ui.card().classes(
-                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-2"
+                "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs mt-3 mb-6"
             ):
-                with ui.row().classes(
-                    "w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"
-                ):
+                with ui.row().classes("w-full justify-between items-center mb-3 pb-2 border-b border-slate-100"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("history", size="sm").classes("text-slate-600")
-                        ui.label("Recent Document Activity").classes(
-                            "text-sm font-bold text-slate-800"
-                        )
+                        ui.label("Recent Administrative Activity & Audit Log").classes("text-sm font-bold text-slate-800")
+                    ui.button(
+                        "View Full Audit Log",
+                        icon="arrow_forward",
+                        on_click=lambda: ui.navigate.to("/activity"),
+                    ).props("flat dense no-caps").classes("text-xs text-slate-600 font-medium")
 
-                if not recent_docs:
-                    render_empty_state(
-                        icon="description",
-                        title="No Recent Documents",
-                        description="Uploaded documents across all courses will appear here.",
-                        action_label="Upload Document",
-                        on_action=lambda: ui.navigate.to("/documents"),
-                    )
+                if not activity_events:
+                    with ui.row().classes("w-full items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-lg"):
+                        with ui.row().classes("items-center gap-3"):
+                            ui.icon("event_available", size="md").classes("text-slate-400")
+                            ui.label("No recent administrative operations recorded yet.").classes(
+                                "text-sm text-slate-600"
+                            )
                 else:
                     with ui.element("div").classes("responsive-table-wrapper"):
-                        with ui.element("table").classes(
-                            "w-full text-left text-xs border-collapse"
-                        ):
+                        with ui.element("table").classes("w-full text-left text-xs border-collapse"):
                             with ui.element("thead").classes(
                                 "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
                             ):
                                 with ui.element("tr"):
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Filename")
+                                        ui.label("Time")
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Course")
+                                        ui.label("Actor")
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Format")
+                                        ui.label("Action")
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Processing")
+                                        ui.label("Resource")
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Vector Indexing")
+                                        ui.label("Status")
                                     with ui.element("th").classes("py-2.5 px-3"):
-                                        ui.label("Retrieval Status")
+                                        ui.label("Details")
 
-                            with ui.element("tbody").classes(
-                                "divide-y divide-slate-100 text-slate-800"
-                            ):
-                                for d in recent_docs[:10]:
-                                    with ui.element("tr").classes(
-                                        "hover:bg-slate-50 transition-colors"
-                                    ):
-                                        with ui.element("td").classes(
-                                            "py-2.5 px-3 font-medium text-slate-900 truncate max-w-[220px]"
-                                        ):
-                                            ui.label(d["filename"])
-                                        with ui.element("td").classes("py-2.5 px-3 text-slate-600"):
-                                            ui.label(d["course_name"])
-                                        with ui.element("td").classes("py-2.5 px-3 font-mono"):
-                                            ui.badge(
-                                                d["file_type"].upper(), color="slate-600"
-                                            ).classes("text-[10px]")
+                            with ui.element("tbody").classes("divide-y divide-slate-100 text-slate-800"):
+                                for ev in activity_events[:10]:
+                                    with ui.element("tr").classes("hover:bg-slate-50 transition-colors"):
+                                        with ui.element("td").classes("py-2.5 px-3 text-slate-500 whitespace-nowrap"):
+                                            ui.label(str(ev.timestamp)[:19].replace("T", " "))
+                                        with ui.element("td").classes("py-2.5 px-3 font-medium text-slate-900"):
+                                            ui.label(ev.actor_name or ev.actor_email)
+                                        with ui.element("td").classes("py-2.5 px-3 font-semibold text-slate-800"):
+                                            ui.label(ev.action.replace("_", " ").title())
+                                        with ui.element("td").classes("py-2.5 px-3 text-slate-700"):
+                                            ui.label(f"{ev.resource_type}: {ev.resource_name}")
                                         with ui.element("td").classes("py-2.5 px-3"):
-                                            render_status_badge(d["status"])
-                                        with ui.element("td").classes("py-2.5 px-3"):
-                                            render_indexing_status_badge(d["indexing_status"])
-                                        with ui.element("td").classes("py-2.5 px-3"):
-                                            if d["is_active"]:
-                                                ui.badge("ACTIVE", color="emerald-700").classes(
-                                                    "text-[10px] font-bold"
-                                                )
+                                            if ev.status == "SUCCESS":
+                                                ui.badge("SUCCESS", color="emerald-700").classes("text-[10px] font-bold")
+                                            elif ev.status == "FAILED":
+                                                ui.badge("FAILED", color="rose-700").classes("text-[10px] font-bold")
                                             else:
-                                                ui.badge("INACTIVE", color="slate-500").classes(
-                                                    "text-[10px]"
-                                                )
+                                                ui.badge(ev.status, color="amber-700").classes("text-[10px]")
+                                        with ui.element("td").classes("py-2.5 px-3 text-slate-500 max-w-[200px] truncate"):
+                                            ui.label(ev.details or "—")

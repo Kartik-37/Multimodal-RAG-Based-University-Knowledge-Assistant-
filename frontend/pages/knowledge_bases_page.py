@@ -1,11 +1,11 @@
 """
 Courses Management Page.
 
-Provides university course management:
+Provides complete university course management:
 - Lists authorized university courses with aggregated document metrics and file previews.
+- Search, filter (All, Active, Needs Attention, Indexing, Empty), and sort.
 - Administrators can provision new courses and jump directly to course document management.
 - Uses N+1-safe summaries endpoint to retrieve course document counts and previews.
-- Strictly replaces dynamic content in a single container to guarantee rendering integrity.
 """
 
 from nicegui import ui
@@ -23,16 +23,16 @@ def register_knowledge_bases_page() -> None:
     @ui.page("/knowledge-bases")
     def knowledge_bases_page() -> None:
         with page_layout(
-            title="Courses",
-            subtitle="Manage university courses and their learning material.",
+            title="Course Knowledge Bases",
+            subtitle="Organize university courses, subject materials, and document versioning.",
             active_route="/knowledge-bases",
             require_auth=True,
         ):
             user = state.current_user
             can_create_course = has_admin_permission(user, Permission.COURSE_CREATE)
 
-            # Dynamic content container (Guarantees single view)
-            content_container = ui.column().classes("w-full gap-4")
+            # Dynamic content container
+            content_container = ui.column().classes("w-full gap-5")
 
             # ------------------------------------------------------------------
             # Create Course Dialog (Admin Only)
@@ -54,7 +54,7 @@ def register_knowledge_bases_page() -> None:
                     ui.label("Course Name *").classes("text-xs font-semibold text-slate-700")
                     name_input = (
                         ui.input(
-                            placeholder="e.g. Computer Architecture",
+                            placeholder="e.g. BCA-301 Computer Architecture",
                         )
                         .props("outlined dense")
                         .classes("w-full")
@@ -101,9 +101,13 @@ def register_knowledge_bases_page() -> None:
                     ).classes("text-sm font-medium px-4")
 
             # ------------------------------------------------------------------
-            # Page Renderer
+            # Page Renderer with Search, Filter & Sort
             # ------------------------------------------------------------------
-            search_query = {"text": ""}
+            filter_state = {
+                "query": "",
+                "category": "ALL",
+                "sort": "NAME",
+            }
 
             def refresh_view() -> None:
                 content_container.clear()
@@ -111,44 +115,72 @@ def register_knowledge_bases_page() -> None:
                     render_content()
 
             def render_content() -> None:
-                # Retrieve course summaries with document metrics in a single request (zero N+1)
                 try:
                     summaries = api_client.get_course_summaries()
                 except ValueError as err:
                     render_alert(f"Unable to load courses. {err}", "negative")
                     return
 
-                # Filter by search text if provided
-                filtered_courses = (
-                    [
+                # Apply Search
+                q = filter_state["query"].lower().strip()
+                res = summaries
+                if q:
+                    res = [
                         c
-                        for c in summaries
-                        if search_query["text"].lower() in c.name.lower()
-                        or search_query["text"].lower() in c.description.lower()
+                        for c in res
+                        if q in c.name.lower() or (c.description and q in c.description.lower())
                     ]
-                    if search_query["text"]
-                    else summaries
-                )
 
-                # Action Bar
-                with ui.row().classes(
-                    "w-full justify-between items-center gap-3 bg-white p-4 border border-slate-200 rounded-lg shadow-xs"
+                # Apply Category Filter (Section 12: All, Active, Needs Attention, Indexing, Empty)
+                cat = filter_state["category"]
+                if cat == "ACTIVE":
+                    res = [c for c in res if c.active_documents > 0]
+                elif cat == "ATTENTION":
+                    res = [c for c in res if c.failed_documents > 0]
+                elif cat == "INDEXING":
+                    res = [c for c in res if c.indexing_documents > 0]
+                elif cat == "EMPTY":
+                    res = [c for c in res if c.total_documents == 0]
+
+                # Apply Sorting
+                sort_mode = filter_state["sort"]
+                if sort_mode == "DOCS":
+                    res = sorted(res, key=lambda c: c.total_documents, reverse=True)
+                elif sort_mode == "RECENT":
+                    res = sorted(res, key=lambda c: c.created_at, reverse=True)
+                else:  # NAME
+                    res = sorted(res, key=lambda c: c.name.lower())
+
+                # Top Action & Filter Bar
+                with ui.card().classes(
+                    "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs gap-3"
                 ):
-                    with ui.row().classes("items-center gap-2 flex-1 max-w-md"):
-                        search_box = (
-                            ui.input(
-                                placeholder="Search courses by name or subject...",
-                                value=search_query["text"],
+                    with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap"):
+                        # Search Box
+                        with ui.row().classes("items-center gap-2 flex-1 min-w-[240px] max-w-md"):
+                            s_box = (
+                                ui.input(
+                                    placeholder="Search courses by name or subject...",
+                                    value=filter_state["query"],
+                                )
+                                .props("outlined dense clearable")
+                                .classes("w-full text-xs")
                             )
-                            .props("outlined dense clearable")
-                            .classes("w-full text-xs")
-                        )
-                        search_box.on("input", lambda e: on_search(e.value))
+                            s_box.on("input", lambda e: on_search(e.value))
 
-                    with ui.row().classes("items-center gap-3"):
-                        ui.label(f"{len(filtered_courses)} Course(s)").classes(
-                            "text-xs font-semibold text-slate-500"
-                        )
+                        # Sort Selector
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Sort:").classes("text-xs font-semibold text-slate-500")
+                            ui.select(
+                                options={
+                                    "NAME": "Course Name (A-Z)",
+                                    "DOCS": "Most Documents",
+                                    "RECENT": "Recently Created",
+                                },
+                                value=filter_state["sort"],
+                                on_change=lambda e: on_sort_change(e.value),
+                            ).props("outlined dense options-dense").classes("text-xs min-w-[170px]")
+
                         if can_create_course:
                             ui.button(
                                 "Create Course",
@@ -158,21 +190,43 @@ def register_knowledge_bases_page() -> None:
                                 "text-xs font-medium px-3 py-1.5"
                             )
 
+                    # Filter Chips Row
+                    with ui.row().classes("w-full items-center gap-2 pt-2 border-t border-slate-100 flex-wrap"):
+                        ui.label("Filter:").classes("text-xs font-semibold text-slate-400 mr-1")
+                        chip_options = [
+                            ("ALL", f"All Courses ({len(summaries)})"),
+                            ("ACTIVE", "Active Materials"),
+                            ("INDEXING", "Indexing in Progress"),
+                            ("ATTENTION", "Needs Attention"),
+                            ("EMPTY", "Empty Courses"),
+                        ]
+                        for c_key, c_label in chip_options:
+                            is_active_chip = filter_state["category"] == c_key
+                            chip_cls = "text-xs px-2.5 py-1 rounded transition-colors "
+                            if is_active_chip:
+                                chip_cls += "bg-blue-600 text-white font-semibold shadow-xs"
+                            else:
+                                chip_cls += "text-slate-600 hover:bg-slate-100"
+                            ui.button(
+                                c_label,
+                                on_click=lambda k=c_key: on_category_change(k),
+                            ).props("flat dense no-caps").classes(chip_cls)
+
                 # Empty State
-                if not filtered_courses:
-                    if search_query["text"]:
+                if not res:
+                    if filter_state["query"] or filter_state["category"] != "ALL":
                         render_empty_state(
                             icon="search_off",
                             title="No Matching Courses",
-                            description=f"No courses match your query '{search_query['text']}'.",
-                            action_label="Clear Search",
-                            on_action=lambda: on_search(""),
+                            description="No courses match the active search term or filter.",
+                            action_label="Clear Filters",
+                            on_action=clear_all_filters,
                         )
                     else:
                         render_empty_state(
                             icon="menu_book",
                             title="No Courses Available",
-                            description="No university courses are registered yet.",
+                            description="No university courses are registered in the knowledge platform yet.",
                             action_label="Create Course" if can_create_course else None,
                             on_action=create_dialog.open if can_create_course else None,
                         )
@@ -180,106 +234,123 @@ def register_knowledge_bases_page() -> None:
 
                 # Course Cards Grid
                 with ui.row().classes("w-full gap-4 items-stretch"):
-                    for c in filtered_courses:
+                    for c in res:
                         with ui.card().classes(
                             "w-full md:w-[calc(50%-0.5rem)] p-5 bg-white border border-slate-200 hover:border-blue-300 rounded-lg shadow-xs transition-all flex flex-col justify-between"
                         ):
                             with ui.column().classes("w-full gap-3"):
-                                # Header: Name and icon
+                                # Header: Name and status badge
                                 with ui.row().classes("w-full justify-between items-start gap-2"):
-                                    with ui.row().classes("items-center gap-2"):
-                                        ui.icon("school", size="sm").classes("text-blue-600")
+                                    with ui.row().classes("items-center gap-2.5 min-w-0"):
+                                        with ui.element("div").classes(
+                                            "w-9 h-9 rounded-lg bg-blue-600/10 text-blue-700 flex items-center justify-center font-bold text-sm shrink-0"
+                                        ):
+                                            ui.icon("school", size="xs")
                                         ui.label(c.name).classes(
-                                            "text-base font-bold text-slate-900 tracking-tight"
+                                            "text-base font-bold text-slate-900 tracking-tight truncate"
                                         )
+
+                                    if c.failed_documents > 0:
+                                        ui.badge(f"{c.failed_documents} Failed", color="rose-700").classes("text-[10px] font-bold")
+                                    elif c.indexing_documents > 0:
+                                        ui.badge(f"{c.indexing_documents} Indexing", color="blue-700").classes("text-[10px] font-bold")
+                                    elif c.active_documents > 0:
+                                        ui.badge(f"{c.active_documents} Active", color="emerald-700").classes("text-[10px] font-bold")
 
                                 # Description
                                 ui.label(
                                     c.description
                                     if c.description
-                                    else "No description provided for this academic course."
+                                    else "Official university course materials and knowledge repository."
                                 ).classes("text-xs text-slate-600 line-clamp-2 leading-relaxed")
 
-                                # Document Counts Summary
+                                # Operational Metrics Row (Section 12)
                                 with ui.row().classes(
-                                    "w-full items-center gap-2 py-2 px-3 bg-slate-50 rounded border border-slate-100 text-xs"
+                                    "w-full items-center gap-3 py-2 px-3 bg-slate-50 rounded border border-slate-100 text-xs flex-wrap"
                                 ):
-                                    ui.icon("description", size="xs").classes("text-slate-500")
-                                    ui.label(f"{c.total_documents} Document(s)").classes(
-                                        "font-semibold text-slate-800"
-                                    )
+                                    ui.label(f"{c.total_documents} documents").classes("font-semibold text-slate-800")
                                     ui.label("•").classes("text-slate-300")
-                                    with ui.row().classes("items-center gap-1"):
-                                        ui.badge("●", color="emerald-600").classes(
-                                            "text-[8px] p-0.5"
-                                        )
-                                        ui.label(f"{c.active_documents} Active").classes(
-                                            "text-slate-600"
-                                        )
-                                    ui.label("•").classes("text-slate-300")
-                                    with ui.row().classes("items-center gap-1"):
-                                        ui.badge("○", color="slate-400").classes("text-[8px] p-0.5")
-                                        ui.label(f"{c.inactive_documents} Inactive").classes(
-                                            "text-slate-500"
-                                        )
+                                    ui.label(f"{c.active_documents} active").classes("text-emerald-700 font-medium")
+                                    if c.indexing_documents > 0:
+                                        ui.label("•").classes("text-slate-300")
+                                        ui.label(f"{c.indexing_documents} indexing").classes("text-blue-700 font-medium")
+                                    if c.failed_documents > 0:
+                                        ui.label("•").classes("text-slate-300")
+                                        ui.label(f"{c.failed_documents} needs attention").classes("text-rose-700 font-medium")
 
-                                # File Previews
+                                # Document Previews
                                 with ui.column().classes("w-full gap-1.5 mt-1"):
                                     if not c.document_previews:
                                         ui.label("No documents uploaded yet.").classes(
                                             "text-[11px] text-slate-400 italic"
                                         )
                                     else:
-                                        for doc in c.document_previews:
+                                        for doc in c.document_previews[:3]:
                                             with ui.row().classes(
                                                 "w-full items-center justify-between py-1 px-2 hover:bg-slate-50 rounded text-xs transition-colors"
                                             ):
                                                 with ui.row().classes(
                                                     "items-center gap-1.5 truncate max-w-[240px]"
                                                 ):
-                                                    ui.icon("insert_drive_file", size="xs").classes(
-                                                        "text-slate-400"
-                                                    )
+                                                    ui.icon("description", size="xs").classes("text-slate-400")
                                                     ui.label(doc.filename).classes(
                                                         "font-medium text-slate-700 truncate"
                                                     )
                                                 with ui.row().classes("items-center gap-1"):
                                                     ui.badge(
-                                                        doc.file_type.upper(), color="slate-500"
+                                                        doc.file_type.upper(), color="slate-600"
                                                     ).classes("text-[9px]")
                                                     if doc.is_active:
                                                         ui.badge(
                                                             "ACTIVE", color="emerald-700"
                                                         ).classes("text-[9px] font-bold")
-                                                    else:
-                                                        ui.badge(
-                                                            "INACTIVE", color="slate-400"
-                                                        ).classes("text-[9px]")
 
-                                        remaining = c.total_documents - len(c.document_previews)
+                                        remaining = c.total_documents - min(3, len(c.document_previews))
                                         if remaining > 0:
                                             ui.label(f"+ {remaining} more document(s)").classes(
                                                 "text-[11px] text-blue-600 font-medium pl-2"
                                             )
 
-                            # Footer Action
+                            # Footer Actions (Section 12: Open, Manage Documents, Chat)
                             with ui.row().classes(
                                 "w-full justify-between items-center pt-3 mt-3 border-t border-slate-100 text-xs text-slate-500"
                             ):
-                                ui.label(f"Created {c.created_at}").classes("font-mono text-[11px]")
-                                ui.button(
-                                    "Open Course",
-                                    icon="arrow_forward",
-                                    on_click=lambda course_id=c.id: ui.navigate.to(
-                                        f"/documents?kb_id={course_id}"
-                                    ),
-                                ).props("color=primary dense no-caps").classes(
-                                    "text-xs px-3 py-1 font-medium"
-                                )
+                                ui.label(f"Created {c.created_at[:10]}").classes("font-mono text-[11px]")
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.button(
+                                        "Chat",
+                                        icon="chat",
+                                        on_click=lambda course_id=c.id: ui.navigate.to(
+                                            f"/chat?kb_id={course_id}"
+                                        ),
+                                    ).props("flat dense no-caps color=grey-7").classes("text-xs")
+
+                                    ui.button(
+                                        "Manage Documents",
+                                        icon="folder_open",
+                                        on_click=lambda course_id=c.id: ui.navigate.to(
+                                            f"/documents?kb_id={course_id}"
+                                        ),
+                                    ).props("color=primary dense no-caps").classes(
+                                        "text-xs px-3 py-1 font-semibold"
+                                    )
 
             def on_search(val: str | None) -> None:
-                search_query["text"] = (val or "").strip()
+                filter_state["query"] = val or ""
                 refresh_view()
 
-            # Strictly execute initial render inside content_container via refresh_view
+            def on_category_change(cat: str) -> None:
+                filter_state["category"] = cat
+                refresh_view()
+
+            def on_sort_change(s: str) -> None:
+                filter_state["sort"] = s
+                refresh_view()
+
+            def clear_all_filters() -> None:
+                filter_state["query"] = ""
+                filter_state["category"] = "ALL"
+                filter_state["sort"] = "NAME"
+                refresh_view()
+
             refresh_view()
