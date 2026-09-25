@@ -12,7 +12,6 @@ from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
-from frontend.client.models import IndexingJobDTO
 from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.status_badge import render_indexing_status_badge
 from frontend.components.ui_kit import render_alert, render_empty_state

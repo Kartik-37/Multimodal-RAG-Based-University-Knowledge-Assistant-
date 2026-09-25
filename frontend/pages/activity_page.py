@@ -10,6 +10,8 @@ of all administrative operations:
 All events are retrieved directly from persistent PostgreSQL records.
 """
 
+from typing import Any
+
 from nicegui import ui
 
 from frontend.client.api_client import api_client

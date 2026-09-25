@@ -11,7 +11,6 @@ from nicegui import ui
 
 from frontend.client.api_client import api_client
 from frontend.components.layout import page_layout
-from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
 from frontend.components.ui_kit import render_alert, render_empty_state, render_stat_card
 from frontend.state.app_state import state
 
