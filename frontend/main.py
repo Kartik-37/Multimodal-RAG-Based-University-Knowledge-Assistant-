@@ -16,6 +16,7 @@ from frontend.pages.auth_pages import register_auth_pages
 from frontend.pages.chat_page import register_chat_page
 from frontend.pages.dashboard_page import register_dashboard_page
 from frontend.pages.documents_page import register_documents_page
+from frontend.pages.indexing_page import register_indexing_page
 from frontend.pages.knowledge_bases_page import register_knowledge_bases_page
 from frontend.pages.profile_page import register_profile_page
 
@@ -33,6 +34,7 @@ def init_ui() -> None:
     register_dashboard_page()
     register_knowledge_bases_page()
     register_documents_page()
+    register_indexing_page()
     register_admin_users_page()
     register_chat_page()
     register_profile_page()
