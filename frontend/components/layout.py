@@ -281,3 +281,46 @@ def page_layout(
                     ui.label(subtitle).classes("text-sm text-slate-600 max-w-3xl")
 
         yield
+
+
+@contextmanager
+def auth_layout(
+    max_width_class: str = "max-w-5xl",
+) -> Generator[None, None, None]:
+    """
+    Dedicated minimal authentication layout for public sign-in and registration pages.
+
+    Provides a clean, institutional academic header and subtle footer without
+    redundant global navigation controls (such as 'Sign In' or 'Register' buttons)
+    that already represent the page's primary intent.
+    """
+    # Minimal institutional top header
+    with ui.header().classes(
+        "w-full bg-slate-900 text-white px-4 sm:px-8 py-3 items-center justify-between shadow-xs z-30"
+    ):
+        with (
+            ui.row()
+            .classes("items-center gap-2.5 cursor-pointer")
+            .on("click", lambda: ui.navigate.to("/login"))
+        ):
+            ui.icon("school", size="sm").classes("text-blue-400")
+            ui.label("University RAG Assistant").classes(
+                "text-base sm:text-lg font-bold tracking-tight text-white"
+            )
+        with ui.row().classes("items-center"):
+            ui.label("Academic Knowledge Platform").classes(
+                "text-xs font-medium text-slate-400 hidden sm:inline"
+            )
+
+    # Main content flow with balanced vertical spacing and institutional footer
+    with ui.column().classes(
+        "w-full min-h-[calc(100vh-60px)] flex flex-col justify-between overflow-x-hidden"
+    ):
+        with ui.column().classes(
+            f"w-full {max_width_class} mx-auto px-4 sm:px-6 py-6 sm:py-10 items-center flex-grow box-border"
+        ):
+            yield
+        with ui.row().classes(
+            "w-full justify-center text-center py-6 px-4 text-xs text-slate-400 border-t border-slate-200 mt-auto box-border"
+        ):
+            ui.label("© University RAG Assistant • Institutional Academic Resource")

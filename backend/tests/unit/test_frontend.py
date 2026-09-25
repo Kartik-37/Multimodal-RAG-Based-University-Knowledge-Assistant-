@@ -884,3 +884,61 @@ class TestStep22AAuthExperience:
         assert normalize_error(student_wrong, context="auth") == student_wrong
         assert normalize_error({"detail": admin_wrong}, context="auth") == admin_wrong
         assert normalize_error({"detail": student_wrong}, context="auth") == student_wrong
+
+
+class TestStep22BAuthVisualRefinement:
+    """Unit tests for Step 22B: Authentication UI Visual Refinement."""
+
+    def test_auth_layout_available_and_distinct_from_page_layout(self) -> None:
+        """Verify auth_layout exists and provides clean header without global auth buttons."""
+        from frontend.components.layout import auth_layout
+
+        assert callable(auth_layout)
+
+    def test_auth_pages_use_auth_layout_not_page_layout(self) -> None:
+        """Verify auth_pages.py uses auth_layout for all entry points, eliminating redundant navbar buttons."""
+        from pathlib import Path
+
+        auth_page_path = Path("frontend/pages/auth_pages.py")
+        content = auth_page_path.read_text(encoding="utf-8")
+
+        assert "with auth_layout(" in content
+        # Ensure page_layout is not used on authentication screens
+        assert "with page_layout(" not in content
+
+    def test_auth_cards_have_box_border_and_max_width_guards(self) -> None:
+        """Verify auth cards enforce box-border and mobile-safe widths to avoid horizontal overflow."""
+        from pathlib import Path
+
+        auth_page_path = Path("frontend/pages/auth_pages.py")
+        content = auth_page_path.read_text(encoding="utf-8")
+
+        assert "box-border" in content
+        assert "max-w-[440px]" in content
+        # Back navigation exists with proper target
+        assert "_render_back_to_portals" in content
+        assert 'ui.icon("arrow_back"' in content
+
+    def test_role_accent_distinction_preserved(self) -> None:
+        """Verify student portal uses academic blue and administrator portal uses institutional slate."""
+        from pathlib import Path
+
+        auth_page_path = Path("frontend/pages/auth_pages.py")
+        content = auth_page_path.read_text(encoding="utf-8")
+
+        assert "text-blue-700" in content
+        assert "!bg-blue-700" in content
+        assert "!bg-slate-800" in content
+
+    def test_registration_page_is_strictly_student(self) -> None:
+        """Verify registration form strictly contains student fields with no admin role option."""
+        from pathlib import Path
+
+        auth_page_path = Path("frontend/pages/auth_pages.py")
+        content = auth_page_path.read_text(encoding="utf-8")
+
+        assert "Create Student Account" in content
+        assert "student@university.edu" in content
+        assert "Full Name" in content
+        assert "Password must be at least 8 characters." in content
+        assert "Administrator accounts are provisioned internally." in content

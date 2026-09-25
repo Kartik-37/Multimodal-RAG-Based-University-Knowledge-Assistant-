@@ -78,6 +78,10 @@ def clean_auth_portal_state(db_session: Session):
             is_active=True,
         )
         db_session.add(admin)
+    else:
+        admin.admin_role = AdminRole.MAIN_ADMIN
+        admin.password_hash = get_password_hash("AdminPass123!")
+        admin.is_active = True
 
     # Ensure student exists
     student = db_session.execute(
