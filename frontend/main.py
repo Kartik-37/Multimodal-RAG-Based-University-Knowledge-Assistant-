@@ -11,6 +11,7 @@ from nicegui import ui
 from backend.app.core.config import settings
 from backend.app.services.indexing_worker import run_indexing_worker
 from frontend.components.theme import init_theme
+from frontend.pages.activity_page import register_activity_page
 from frontend.pages.admin_users_page import register_admin_users_page
 from frontend.pages.auth_pages import register_auth_pages
 from frontend.pages.chat_page import register_chat_page
@@ -19,6 +20,7 @@ from frontend.pages.documents_page import register_documents_page
 from frontend.pages.indexing_page import register_indexing_page
 from frontend.pages.knowledge_bases_page import register_knowledge_bases_page
 from frontend.pages.profile_page import register_profile_page
+from frontend.pages.system_health_page import register_system_health_page
 
 
 def init_ui() -> None:
@@ -38,6 +40,8 @@ def init_ui() -> None:
     register_admin_users_page()
     register_chat_page()
     register_profile_page()
+    register_activity_page()
+    register_system_health_page()
 
     async def _start_indexing_worker() -> None:
         import asyncio
