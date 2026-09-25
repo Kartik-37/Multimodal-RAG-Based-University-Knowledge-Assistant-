@@ -44,10 +44,42 @@ class IndexingJobDTO(BaseModel):
     embedded_chunks: int = 0
     indexed_chunks: int = 0
     progress_percent: float = 0.0
+    document_name: str | None = None
+    course_name: str | None = None
     error_message: str | None = None
     attempt_number: int = 1
     started_at: str | None = None
     completed_at: str | None = None
+
+
+class ComponentHealthDTO(BaseModel):
+    """Component health check representation."""
+
+    name: str
+    status: str  # healthy | degraded | unavailable
+    message: str = ""
+
+
+class SystemHealthDTO(BaseModel):
+    """System health overview representation."""
+
+    status: str  # healthy | degraded | unavailable
+    components: list[ComponentHealthDTO] = Field(default_factory=list)
+    checked_at: str = ""
+
+
+class ActivityEventDTO(BaseModel):
+    """Chronological administrative audit/activity event."""
+
+    id: str
+    timestamp: str
+    actor_name: str
+    actor_email: str
+    action: str
+    resource_type: str
+    resource_name: str
+    status: str  # SUCCESS | FAILED | IN_PROGRESS
+    details: str = ""
 
 
 class DocumentDTO(BaseModel):
@@ -92,6 +124,7 @@ class AdminUserDTO(BaseModel):
     role: str = "ADMIN"
     admin_role: str = "MAIN_ADMIN"
     permissions: list[str] = Field(default_factory=list)
+    assigned_courses: list[str] = Field(default_factory=list)
     is_active: bool = True
     created_at: str = ""
 

@@ -72,6 +72,7 @@ class AdminCreateRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     admin_role: AdminRole = AdminRole.FACULTY_ADMIN
     permissions: list[str] = Field(default_factory=list)
+    assigned_course_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class AdminPermissionsUpdateRequest(BaseModel):
@@ -80,6 +81,7 @@ class AdminPermissionsUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     permissions: list[str] = Field(default_factory=list)
+    assigned_course_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class AdminUserResponse(BaseModel):
@@ -95,8 +97,10 @@ class AdminUserResponse(BaseModel):
     role: UserRole = UserRole.ADMIN
     admin_role: AdminRole = AdminRole.MAIN_ADMIN
     permissions: list[str] = Field(default_factory=list)
+    assigned_courses: list[str] = Field(default_factory=list)
     is_active: bool = True
     created_at: datetime
+
 
     @field_validator("admin_role", mode="before")
     @classmethod

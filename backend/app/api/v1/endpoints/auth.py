@@ -15,7 +15,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import (
@@ -38,6 +38,7 @@ from backend.app.core.security import (
     verify_dummy_password,
     verify_password,
 )
+from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import AdminRole, User, UserRole, UserSession
 from backend.app.schemas.auth import (
     AdminCreateRequest,
@@ -369,10 +370,52 @@ def create_admin(
         is_active=True,
     )
     db.add(user)
+    db.flush()
+
+    # Assign courses to faculty admin if requested
+    if payload.admin_role == AdminRole.FACULTY_ADMIN and payload.assigned_course_ids:
+        for cid in payload.assigned_course_ids:
+            membership = KnowledgeBaseMember(
+                knowledge_base_id=cid,
+                user_id=user.id,
+            )
+            db.add(membership)
+
     db.commit()
     db.refresh(user)
 
-    return AdminUserResponse.model_validate(user)
+    return _build_admin_response(user, db)
+
+
+def _build_admin_response(admin: User, db: Session) -> AdminUserResponse:
+    """Build AdminUserResponse enriched with assigned course names."""
+    assigned_courses: list[str] = []
+    if admin.admin_role == AdminRole.MAIN_ADMIN:
+        assigned_courses = ["All Courses"]
+    else:
+        kbs = (
+            db.execute(
+                select(KnowledgeBase.name)
+                .outerjoin(
+                    KnowledgeBaseMember,
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                )
+                .where(
+                    or_(
+                        KnowledgeBase.created_by_id == admin.id,
+                        KnowledgeBaseMember.user_id == admin.id,
+                    )
+                )
+                .distinct()
+            )
+            .scalars()
+            .all()
+        )
+        assigned_courses = list(kbs)
+
+    resp = AdminUserResponse.model_validate(admin)
+    resp.assigned_courses = assigned_courses
+    return resp
 
 
 @router.get(
@@ -397,7 +440,7 @@ def list_admins(
 
     stmt = select(User).where(User.role == UserRole.ADMIN).order_by(User.created_at.desc())
     admins = db.execute(stmt).scalars().all()
-    return [AdminUserResponse.model_validate(a) for a in admins]
+    return [_build_admin_response(a, db) for a in admins]
 
 
 @router.patch(
@@ -450,9 +493,17 @@ def update_admin_permissions(
             )
 
     target.permissions = payload.permissions
+
+    # Update assigned courses if specified
+    if payload.assigned_course_ids is not None:
+        db.execute(delete(KnowledgeBaseMember).where(KnowledgeBaseMember.user_id == target.id))
+        for cid in payload.assigned_course_ids:
+            db.add(KnowledgeBaseMember(knowledge_base_id=cid, user_id=target.id))
+
     db.commit()
     db.refresh(target)
-    return AdminUserResponse.model_validate(target)
+    return _build_admin_response(target, db)
+
 
 
 @router.patch(

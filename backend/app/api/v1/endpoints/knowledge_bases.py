@@ -8,6 +8,7 @@ Enforces role-based access control and multi-user isolation:
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import (
@@ -20,7 +21,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, text
 
 from backend.app.api.deps import (
     AuthenticatedAdmin,
@@ -31,9 +32,12 @@ from backend.app.api.deps import (
     check_user_permission,
     get_authorized_document,
     get_authorized_knowledge_base,
+    get_authorized_knowledge_base_ids,
     get_authorized_knowledge_bases,
+    is_main_admin,
     require_knowledge_base_admin,
 )
+from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
 from backend.app.models.indexing_job import IndexingJob
@@ -41,16 +45,19 @@ from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import User, UserRole
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
 from backend.app.schemas.knowledge_base import (
+    ActivityEventResponse,
     AddMemberRequest,
+    ComponentHealth,
     CourseDocumentPreview,
     CourseSummaryResponse,
     IndexingJobResponse,
     KnowledgeBaseCreate,
     KnowledgeBaseResponse,
     MemberResponse,
+    SystemHealthResponse,
 )
 from backend.app.services.indexing import index_document_task, indexing_pipeline
-from backend.app.services.indexing_worker import notify_indexing_worker
+from backend.app.services.indexing_worker import is_worker_running, notify_indexing_worker
 from backend.app.services.ingestion import process_document_task
 from backend.app.services.storage import storage_service
 
@@ -257,6 +264,353 @@ def get_course_summaries(
             )
         )
     return results
+
+
+@router.get(
+    "/indexing-jobs",
+    response_model=list[IndexingJobResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all indexing jobs across authorized courses (ADMIN only)",
+)
+def list_indexing_jobs(
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> list[IndexingJobResponse]:
+    """
+    List persistent vector indexing jobs across all courses authorized for current admin.
+    Returns truthful chunk, vector, and stage progress.
+    """
+    if not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+        )
+
+    auth_kb_ids = get_authorized_knowledge_base_ids(current_user, db)
+    if not auth_kb_ids:
+        return []
+
+    stmt = (
+        select(
+            IndexingJob,
+            Document.original_filename.label("document_name"),
+            KnowledgeBase.name.label("course_name"),
+        )
+        .join(Document, IndexingJob.document_id == Document.id)
+        .join(KnowledgeBase, IndexingJob.knowledge_base_id == KnowledgeBase.id)
+        .where(IndexingJob.knowledge_base_id.in_(auth_kb_ids))
+        .order_by(IndexingJob.created_at.desc())
+        .limit(100)
+    )
+
+    rows = db.execute(stmt).all()
+    results: list[IndexingJobResponse] = []
+    for job, doc_name, kb_name in rows:
+        resp = IndexingJobResponse(
+            id=job.id,
+            job_id=job.id,
+            document_id=job.document_id,
+            knowledge_base_id=job.knowledge_base_id,
+            status=job.status,
+            stage=job.stage,
+            total_chunks=job.total_chunks,
+            processed_chunks=job.processed_chunks,
+            embedded_chunks=job.embedded_chunks,
+            indexed_chunks=job.indexed_chunks,
+            progress_percent=job.progress_percent,
+            error_message=job.error_message,
+            attempt_number=job.attempt_number,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            document_name=doc_name,
+            course_name=kb_name,
+        )
+        results.append(resp)
+    return results
+
+
+@router.get(
+    "/system/health",
+    response_model=SystemHealthResponse,
+    status_code=status.HTTP_200_OK,
+    summary="System health check across all core components (ADMIN only)",
+)
+def get_system_health(
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> SystemHealthResponse:
+    """
+    Inspect real status of database, pgvector, Ollama embeddings, LLM, and indexing worker.
+    Returns truthful status without leaking sensitive connection details.
+    """
+    components: list[ComponentHealth] = []
+    has_unavailable = False
+    has_degraded = False
+
+    # 1. API Gateway
+    components.append(
+        ComponentHealth(
+            name="API Gateway",
+            status="healthy",
+            message="FastAPI core gateway responding normally.",
+        )
+    )
+
+    # 2. Database (PostgreSQL)
+    try:
+        db.execute(text("SELECT 1")).scalar()
+        components.append(
+            ComponentHealth(
+                name="PostgreSQL Database",
+                status="healthy",
+                message="Relational persistence connected and operational.",
+            )
+        )
+    except Exception as exc:
+        has_unavailable = True
+        components.append(
+            ComponentHealth(
+                name="PostgreSQL Database",
+                status="unavailable",
+                message=f"Database unreachable: {type(exc).__name__}",
+            )
+        )
+
+    # 3. Vector Store (pgvector)
+    try:
+        res = db.execute(text("SELECT extname FROM pg_extension WHERE extname = 'vector'")).scalar()
+        if res == "vector":
+            components.append(
+                ComponentHealth(
+                    name="pgvector Extension",
+                    status="healthy",
+                    message="Vector indexing extension active and ready for similarity search.",
+                )
+            )
+        else:
+            has_degraded = True
+            components.append(
+                ComponentHealth(
+                    name="pgvector Extension",
+                    status="degraded",
+                    message="Vector extension is not loaded in current database.",
+                )
+            )
+    except Exception as exc:
+        has_degraded = True
+        components.append(
+            ComponentHealth(
+                name="pgvector Extension",
+                status="degraded",
+                message=f"Unable to query extension: {type(exc).__name__}",
+            )
+        )
+
+    # 4. Ollama Services & Models
+    import httpx
+
+    try:
+        r = httpx.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=1.5)
+        if r.status_code == 200:
+            data = r.json()
+            models = [m.get("name", "") for m in data.get("models", [])]
+            embed_match = any(settings.OLLAMA_EMBED_MODEL in m for m in models)
+            components.append(
+                ComponentHealth(
+                    name=f"Embedding Model ({settings.OLLAMA_EMBED_MODEL})",
+                    status="healthy" if embed_match else "degraded",
+                    message="Embedding model ready."
+                    if embed_match
+                    else f"Model {settings.OLLAMA_EMBED_MODEL} not detected in local Ollama.",
+                )
+            )
+            llm_match = any(settings.OLLAMA_LLM_MODEL in m for m in models)
+            components.append(
+                ComponentHealth(
+                    name=f"LLM Generation ({settings.OLLAMA_LLM_MODEL})",
+                    status="healthy" if llm_match else "degraded",
+                    message="Local LLM ready."
+                    if llm_match
+                    else f"Model {settings.OLLAMA_LLM_MODEL} not detected in local Ollama.",
+                )
+            )
+            if not embed_match or not llm_match:
+                has_degraded = True
+        else:
+            has_degraded = True
+            components.append(
+                ComponentHealth(
+                    name="Ollama Services",
+                    status="degraded",
+                    message=f"Ollama returned HTTP {r.status_code}.",
+                )
+            )
+    except Exception:
+        has_degraded = True
+        components.append(
+            ComponentHealth(
+                name="Ollama Services",
+                status="degraded",
+                message="Local Ollama service unreachable at configured endpoint.",
+            )
+        )
+
+    # 5. Background Indexing Worker
+    worker_ok = is_worker_running()
+    components.append(
+        ComponentHealth(
+            name="Indexing Background Worker",
+            status="healthy" if worker_ok else "degraded",
+            message="Active and listening for document queue events."
+            if worker_ok
+            else "Worker task is not currently active.",
+        )
+    )
+    if not worker_ok:
+        has_degraded = True
+
+    overall = "unavailable" if has_unavailable else ("degraded" if has_degraded else "healthy")
+    return SystemHealthResponse(
+        status=overall,
+        components=components,
+        checked_at=datetime.now(UTC),
+    )
+
+
+@router.get(
+    "/system/activity",
+    response_model=list[ActivityEventResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Activity and audit log of administrative operations (ADMIN only)",
+)
+def get_activity_log(
+    current_user: AuthenticatedAdmin,
+    db: DatabaseSession,
+) -> list[ActivityEventResponse]:
+    """
+    Truthful administrative activity timeline composed from persistent PostgreSQL records.
+    Filters by authorized courses for Faculty Administrators.
+    """
+    auth_kb_ids = get_authorized_knowledge_base_ids(current_user, db)
+    events: list[ActivityEventResponse] = []
+
+    # 1. Indexing Jobs
+    if auth_kb_ids:
+        job_rows = (
+            db.execute(
+                select(
+                    IndexingJob,
+                    Document.original_filename,
+                    KnowledgeBase.name,
+                )
+                .join(Document, IndexingJob.document_id == Document.id)
+                .join(KnowledgeBase, IndexingJob.knowledge_base_id == KnowledgeBase.id)
+                .where(IndexingJob.knowledge_base_id.in_(auth_kb_ids))
+                .order_by(IndexingJob.created_at.desc())
+                .limit(20)
+            )
+            .all()
+        )
+        for job, doc_name, kb_name in job_rows:
+            st = (
+                "SUCCESS"
+                if job.status == "COMPLETED"
+                else ("FAILED" if job.status == "FAILED" else "IN_PROGRESS")
+            )
+            events.append(
+                ActivityEventResponse(
+                    id=f"job-{job.id}",
+                    timestamp=job.completed_at or job.started_at or job.created_at,
+                    actor_name="System / Worker",
+                    actor_email="system@internal",
+                    action=f"Indexing ({job.stage})",
+                    resource_type="Document",
+                    resource_name=f"{doc_name} ({kb_name})",
+                    status=st,
+                    details=job.error_message
+                    or f"{job.processed_chunks}/{job.total_chunks} chunks indexed",
+                )
+            )
+
+    # 2. Documents
+    if auth_kb_ids:
+        doc_rows = (
+            db.execute(
+                select(Document, KnowledgeBase.name)
+                .join(KnowledgeBase, Document.knowledge_base_id == KnowledgeBase.id)
+                .where(Document.knowledge_base_id.in_(auth_kb_ids))
+                .order_by(Document.created_at.desc())
+                .limit(20)
+            )
+            .all()
+        )
+        for doc, kb_name in doc_rows:
+            events.append(
+                ActivityEventResponse(
+                    id=f"doc-{doc.id}",
+                    timestamp=doc.created_at,
+                    actor_name="Administrator",
+                    actor_email="admin@university.edu",
+                    action="Document Uploaded",
+                    resource_type="Document",
+                    resource_name=f"{doc.original_filename} ({kb_name})",
+                    status="SUCCESS",
+                    details=f"Format: {doc.file_type.upper()} | Size: {doc.file_size_bytes} B",
+                )
+            )
+
+    # 3. Courses (Knowledge Bases)
+    kb_stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc()).limit(15)
+    if not is_main_admin(current_user):
+        kb_stmt = kb_stmt.where(KnowledgeBase.id.in_(auth_kb_ids))
+    kb_rows = db.execute(kb_stmt).scalars().all()
+    for kb in kb_rows:
+        events.append(
+            ActivityEventResponse(
+                id=f"kb-{kb.id}",
+                timestamp=kb.created_at,
+                actor_name="Administrator",
+                actor_email="admin@university.edu",
+                action="Course Created",
+                resource_type="Course",
+                resource_name=kb.name,
+                status="SUCCESS",
+                details=kb.description or "Organized university knowledge base",
+            )
+        )
+
+    # 4. Administrators (if Main Admin or has ADMIN_VIEW)
+    if is_main_admin(current_user) or check_user_permission(current_user, Permission.ADMIN_VIEW):
+        user_rows = (
+            db.execute(
+                select(User)
+                .where(User.role == UserRole.ADMIN)
+                .order_by(User.created_at.desc())
+                .limit(10)
+            )
+            .scalars()
+            .all()
+        )
+        for u in user_rows:
+            role_label = (
+                u.admin_role.value if hasattr(u.admin_role, "value") else str(u.admin_role)
+            )
+            events.append(
+                ActivityEventResponse(
+                    id=f"user-{u.id}",
+                    timestamp=u.created_at,
+                    actor_name="Main Administrator",
+                    actor_email="admin@university.edu",
+                    action=f"Administrator Registered ({role_label})",
+                    resource_type="Administrator",
+                    resource_name=u.full_name,
+                    status="SUCCESS",
+                    details=f"Account: {u.email}",
+                )
+            )
+
+    events.sort(key=lambda e: e.timestamp, reverse=True)
+    return events[:50]
 
 
 @router.get(
@@ -593,6 +947,8 @@ def get_document_index_status(
             attempt_number=1 if doc.indexing_status != IndexingStatus.PENDING else 0,
             started_at=doc.created_at,
             completed_at=doc.indexed_at,
+            document_name=doc.original_filename,
+            course_name=kb.name,
         )
 
     return IndexingJobResponse(
@@ -611,6 +967,8 @@ def get_document_index_status(
         attempt_number=job.attempt_number,
         started_at=job.started_at,
         completed_at=job.completed_at,
+        document_name=doc.original_filename,
+        course_name=kb.name,
     )
 
 

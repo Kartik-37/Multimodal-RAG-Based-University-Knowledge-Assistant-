@@ -89,7 +89,42 @@ class IndexingJobResponse(BaseModel):
     embedded_chunks: int = 0
     indexed_chunks: int = 0
     progress_percent: float = 0.0
+    document_name: str | None = None
+    course_name: str | None = None
+
+
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
     attempt_number: int = 1
+
+
+class ComponentHealth(BaseModel):
+    """Schema for individual system component health check."""
+
+    name: str
+    status: str  # "healthy" | "degraded" | "unavailable"
+    message: str = ""
+
+
+class SystemHealthResponse(BaseModel):
+    """Schema for administrative system health overview."""
+
+    status: str  # "healthy" | "degraded" | "unavailable"
+    components: list[ComponentHealth]
+    checked_at: datetime
+
+
+class ActivityEventResponse(BaseModel):
+    """Schema for chronological administrative audit/activity event."""
+
+    id: str
+    timestamp: datetime
+    actor_name: str
+    actor_email: str
+    action: str
+    resource_type: str
+    resource_name: str
+    status: str  # "SUCCESS" | "FAILED" | "IN_PROGRESS"
+    details: str = ""
+

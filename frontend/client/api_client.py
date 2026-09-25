@@ -22,9 +22,11 @@ from backend.app.core.security import SESSION_COOKIE_NAME
 from backend.app.main import app
 from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
+    ActivityEventDTO,
     AdminUserDTO,
     ChatMessageDTO,
     CitationDTO,
+    ComponentHealthDTO,
     CourseDocumentPreviewDTO,
     CourseSummaryDTO,
     DocumentDTO,
@@ -35,6 +37,7 @@ from frontend.client.models import (
     QueryProcessingResultDTO,
     RerankResultDTO,
     RetrievalResultDTO,
+    SystemHealthDTO,
     UserDTO,
 )
 
@@ -478,11 +481,122 @@ class FrontendAPIClient:
             embedded_chunks=item.get("embedded_chunks", 0),
             indexed_chunks=item.get("indexed_chunks", 0),
             progress_percent=item.get("progress_percent", 0.0),
+            document_name=item.get("document_name"),
+            course_name=item.get("course_name"),
             error_message=item.get("error_message"),
             attempt_number=item.get("attempt_number", 1),
             started_at=str(item["started_at"]) if item.get("started_at") else None,
             completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
         )
+
+    def retry_indexing(self, kb_id: str, document_id: str) -> IndexingJobDTO:
+        """
+        Retry indexing for a failed or stuck document.
+        """
+        resp = self._http.post(f"/knowledge-bases/{kb_id}/documents/{document_id}/retry-indexing")
+        if resp.status_code == 403:
+            raise ValueError("You do not have permission to retry indexing.")
+        if resp.status_code not in (200, 202):
+            detail = resp.json().get("detail", "Failed to retry indexing.")
+            raise ValueError(detail)
+
+        item = resp.json()
+        return IndexingJobDTO(
+            job_id=str(item["job_id"]) if item.get("job_id") else None,
+            document_id=str(item["document_id"]),
+            knowledge_base_id=str(item["knowledge_base_id"]),
+            status=item["status"],
+            stage=item["stage"],
+            total_chunks=item.get("total_chunks", 0),
+            processed_chunks=item.get("processed_chunks", 0),
+            embedded_chunks=item.get("embedded_chunks", 0),
+            indexed_chunks=item.get("indexed_chunks", 0),
+            progress_percent=item.get("progress_percent", 0.0),
+            document_name=item.get("document_name"),
+            course_name=item.get("course_name"),
+            error_message=item.get("error_message"),
+            attempt_number=item.get("attempt_number", 1),
+            started_at=str(item["started_at"]) if item.get("started_at") else None,
+            completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
+        )
+
+    def get_indexing_jobs(self) -> list[IndexingJobDTO]:
+        """
+        List all persistent indexing jobs across authorized courses.
+        """
+        resp = self._http.get("/knowledge-bases/indexing-jobs")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="document"))
+
+        items = resp.json()
+        return [
+            IndexingJobDTO(
+                job_id=str(item["job_id"]) if item.get("job_id") else None,
+                document_id=str(item["document_id"]),
+                knowledge_base_id=str(item["knowledge_base_id"]),
+                status=item["status"],
+                stage=item["stage"],
+                total_chunks=item.get("total_chunks", 0),
+                processed_chunks=item.get("processed_chunks", 0),
+                embedded_chunks=item.get("embedded_chunks", 0),
+                indexed_chunks=item.get("indexed_chunks", 0),
+                progress_percent=item.get("progress_percent", 0.0),
+                document_name=item.get("document_name"),
+                course_name=item.get("course_name"),
+                error_message=item.get("error_message"),
+                attempt_number=item.get("attempt_number", 1),
+                started_at=str(item["started_at"]) if item.get("started_at") else None,
+                completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
+            )
+            for item in items
+        ]
+
+    def get_system_health(self) -> SystemHealthDTO:
+        """
+        Fetch real system health for core backend components.
+        """
+        resp = self._http.get("/knowledge-bases/system/health")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="system"))
+
+        data = resp.json()
+        comps = [
+            ComponentHealthDTO(
+                name=c["name"],
+                status=c["status"],
+                message=c.get("message", ""),
+            )
+            for c in data.get("components", [])
+        ]
+        return SystemHealthDTO(
+            status=data.get("status", "healthy"),
+            components=comps,
+            checked_at=str(data.get("checked_at", "")),
+        )
+
+    def get_activity_log(self) -> list[ActivityEventDTO]:
+        """
+        Fetch administrative activity audit timeline.
+        """
+        resp = self._http.get("/knowledge-bases/system/activity")
+        if resp.status_code != 200:
+            raise ValueError(normalize_error(resp.json(), context="system"))
+
+        items = resp.json()
+        return [
+            ActivityEventDTO(
+                id=item["id"],
+                timestamp=str(item["timestamp"]),
+                actor_name=item["actor_name"],
+                actor_email=item["actor_email"],
+                action=item["action"],
+                resource_type=item["resource_type"],
+                resource_name=item["resource_name"],
+                status=item["status"],
+                details=item.get("details", ""),
+            )
+            for item in items
+        ]
 
     def activate_document(self, kb_id: str, document_id: str) -> DocumentDTO:
         """
@@ -896,6 +1010,7 @@ class FrontendAPIClient:
         full_name: str,
         admin_role: str = "FACULTY_ADMIN",
         permissions: list[str] | None = None,
+        assigned_course_ids: list[str] | None = None,
     ) -> AdminUserDTO:
         """
         Create a new administrator account (MAIN_ADMIN or FACULTY_ADMIN).
@@ -903,15 +1018,19 @@ class FrontendAPIClient:
         if not email or not password or not full_name:
             raise ValueError("All fields are required.")
 
+        payload: dict[str, Any] = {
+            "email": email.strip(),
+            "password": password,
+            "full_name": full_name.strip(),
+            "admin_role": admin_role,
+            "permissions": permissions or [],
+        }
+        if assigned_course_ids is not None:
+            payload["assigned_course_ids"] = assigned_course_ids
+
         resp = self._http.post(
             "/auth/admin",
-            json={
-                "email": email.strip(),
-                "password": password,
-                "full_name": full_name.strip(),
-                "admin_role": admin_role,
-                "permissions": permissions or [],
-            },
+            json=payload,
         )
         if resp.status_code != 201:
             raise ValueError(normalize_error(resp.json(), context="admin"))
@@ -924,6 +1043,7 @@ class FrontendAPIClient:
             role=data["role"],
             admin_role=data.get("admin_role", "FACULTY_ADMIN"),
             permissions=data.get("permissions", []),
+            assigned_courses=data.get("assigned_courses", []),
             is_active=data.get("is_active", True),
             created_at=data.get("created_at", "")[:10],
         )
@@ -945,19 +1065,29 @@ class FrontendAPIClient:
                 role=item["role"],
                 admin_role=item.get("admin_role", "MAIN_ADMIN"),
                 permissions=item.get("permissions", []),
+                assigned_courses=item.get("assigned_courses", []),
                 is_active=item.get("is_active", True),
                 created_at=item.get("created_at", "")[:10],
             )
             for item in items
         ]
 
-    def update_admin_permissions(self, admin_id: str, permissions: list[str]) -> AdminUserDTO:
+    def update_admin_permissions(
+        self,
+        admin_id: str,
+        permissions: list[str],
+        assigned_course_ids: list[str] | None = None,
+    ) -> AdminUserDTO:
         """
-        Update permissions for a faculty administrator.
+        Update permissions and course assignments for a faculty administrator.
         """
+        payload: dict[str, Any] = {"permissions": permissions}
+        if assigned_course_ids is not None:
+            payload["assigned_course_ids"] = assigned_course_ids
+
         resp = self._http.patch(
             f"/auth/admins/{admin_id}/permissions",
-            json={"permissions": permissions},
+            json=payload,
         )
         if resp.status_code != 200:
             raise ValueError(normalize_error(resp.json(), context="admin"))
@@ -970,6 +1100,7 @@ class FrontendAPIClient:
             role=data["role"],
             admin_role=data.get("admin_role", "FACULTY_ADMIN"),
             permissions=data.get("permissions", []),
+            assigned_courses=data.get("assigned_courses", []),
             is_active=data.get("is_active", True),
             created_at=data.get("created_at", "")[:10],
         )
