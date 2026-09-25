@@ -439,6 +439,17 @@ def index_document_task(
     """
     BackgroundTasks / Worker entry point for asynchronous document vector indexing.
     Creates and closes its own fresh database session.
+    When the continuous background worker is active, the worker handles indexing asynchronously,
+    preventing blocking the web application thread.
     """
+    from backend.app.services.indexing_worker import is_worker_running
+
+    if is_worker_running():
+        logger.debug(
+            "Background worker is active; skipping redundant synchronous execution for document %s",
+            document_id,
+        )
+        return
+
     pipeline = IndexingPipeline(provider=provider) if provider else indexing_pipeline
     pipeline.index_document(document_id, job_id=job_id)

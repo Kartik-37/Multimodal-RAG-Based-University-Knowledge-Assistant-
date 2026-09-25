@@ -139,6 +139,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     white-space: nowrap;
     border: 0;
 }
+
+/* Restrained institutional reconnection notification (Section 7) */
+.nicegui-reconnect {
+    background-color: rgba(15, 23, 42, 0.92) !important;
+    backdrop-filter: blur(8px) !important;
+    color: #f8fafc !important;
+    font-size: 0.8125rem !important;
+    font-weight: 500 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+}
 </style>
 """
 

@@ -37,7 +37,12 @@ def init_ui() -> None:
     register_chat_page()
     register_profile_page()
 
-    nicegui_app.on_startup(run_indexing_worker)
+    async def _start_indexing_worker() -> None:
+        import asyncio
+
+        asyncio.create_task(run_indexing_worker())
+
+    nicegui_app.on_startup(_start_indexing_worker)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
