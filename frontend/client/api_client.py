@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from backend.app.core.security import SESSION_COOKIE_NAME
 from backend.app.main import app
 from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
@@ -44,6 +45,7 @@ class FrontendAPIClient:
     def __init__(self, base_url: str = "http://testserver/api/v1") -> None:
         self.base_url = base_url
         self._current_user: UserDTO | None = None
+        self._session_token: str | None = None
         # TestClient handles real FastAPI middleware, cookies, dependencies, and DB sessions
         self._http = TestClient(app, base_url=base_url)
 
@@ -53,6 +55,32 @@ class FrontendAPIClient:
     # --------------------------------------------------------------------------
     # Authentication & Session Boundary
     # --------------------------------------------------------------------------
+
+    def set_session_token(self, token: str | None) -> None:
+        """Explicitly set or clear session token on the internal HTTP client."""
+        self._session_token = token
+        if token:
+            self._http.cookies.set(SESSION_COOKIE_NAME, token)
+            self._http.headers["Authorization"] = f"Bearer {token}"
+        else:
+            self.clear_session()
+
+    def get_session_token(self) -> str | None:
+        """Retrieve active raw session token from cookies or explicit record."""
+        return self._http.cookies.get(SESSION_COOKIE_NAME) or self._session_token
+
+    def clear_session(self) -> None:
+        """Clear all authenticated credentials and identity from this client instance."""
+        self._current_user = None
+        self._session_token = None
+        self._http.cookies.clear()
+        self._http.headers.pop("Authorization", None)
+
+    def _handle_auth_failure(self, status_code: int) -> None:
+        """If response is 401 Unauthorized, automatically invalidate the local session."""
+        if status_code == 401:
+            self.clear_session()
+            _set_persistent_token(None)
 
     def login(self, email: str, password: str) -> UserDTO:
         """Authenticate user against Argon2id hash and establish PostgreSQL session."""
@@ -64,6 +92,7 @@ class FrontendAPIClient:
             json={"email": email.strip(), "password": password},
         )
         if resp.status_code != 200:
+            self._handle_auth_failure(resp.status_code)
             try:
                 err_data = resp.json()
                 detail = err_data.get("detail", err_data)
@@ -81,6 +110,10 @@ class FrontendAPIClient:
             admin_role=user_data.get("admin_role"),
             permissions=user_data.get("permissions", []),
         )
+        raw_token = self._http.cookies.get(SESSION_COOKIE_NAME)
+        if raw_token:
+            self._session_token = raw_token
+            self._http.headers["Authorization"] = f"Bearer {raw_token}"
         return self._current_user
 
     def register(self, email: str, password: str, full_name: str) -> UserDTO:
@@ -108,30 +141,46 @@ class FrontendAPIClient:
             raise ValueError(normalize_error(detail, context="auth"))
 
         # Automatically authenticate the new user
-        return self.login(email=email, password=password)
+        try:
+            return self.login(email=email, password=password)
+        except Exception as exc:
+            raise ValueError(
+                f"Account created successfully, but automatic login failed: {exc}"
+            ) from exc
 
     def logout(self) -> None:
         """Terminate active session in PostgreSQL and clear cookie."""
         try:
             self._http.post("/auth/logout")
         finally:
-            self._current_user = None
+            self.clear_session()
 
     def get_current_user(self) -> UserDTO | None:
-        """Retrieve currently authenticated user identity from backend session."""
-        if self._current_user is None:
-            resp = self._http.get("/auth/me")
-            if resp.status_code == 200:
-                user_data = resp.json()
-                self._current_user = UserDTO(
-                    id=str(user_data["id"]),
-                    email=user_data["email"],
-                    full_name=user_data["full_name"],
-                    role=user_data["role"],
-                    admin_role=user_data.get("admin_role"),
-                    permissions=user_data.get("permissions", []),
-                )
-        return self._current_user
+        """Retrieve currently authenticated user identity from backend session.
+
+        The backend PostgreSQL session is authoritative: if the session is expired,
+        invalidated, or absent, the client state is immediately cleared and None is returned.
+        """
+        token = self.get_session_token()
+        if not token:
+            self._current_user = None
+            return None
+
+        resp = self._http.get("/auth/me")
+        if resp.status_code == 200:
+            user_data = resp.json()
+            self._current_user = UserDTO(
+                id=str(user_data["id"]),
+                email=user_data["email"],
+                full_name=user_data["full_name"],
+                role=user_data["role"],
+                admin_role=user_data.get("admin_role"),
+                permissions=user_data.get("permissions", []),
+            )
+            return self._current_user
+        else:
+            self.clear_session()
+            return None
 
     # --------------------------------------------------------------------------
     # Knowledge Bases Boundary
@@ -958,37 +1007,135 @@ class FrontendAPIClient:
             raise ValueError(normalize_error(resp.json(), context="admin"))
 
 
+_session_clients: dict[str, FrontendAPIClient] = {}
+
+
+def _get_browser_session_id() -> str | None:
+    """Extract browser session identifier from active NiceGUI / Starlette request context."""
+    # 1. From NiceGUI storage request contextvar
+    try:
+        from nicegui.storage import request_contextvar
+
+        req = request_contextvar.get()
+        if req and hasattr(req, "session") and "id" in req.session:
+            return str(req.session["id"])
+    except Exception:
+        pass
+
+    # 2. From NiceGUI context.client.request
+    try:
+        from nicegui import context
+
+        client = context.client
+        if client and hasattr(client, "request") and client.request:
+            req = client.request
+            if hasattr(req, "session") and "id" in req.session:
+                return str(req.session["id"])
+    except Exception:
+        pass
+
+    return None
+
+
+def _get_persistent_token() -> str | None:
+    """Retrieve session token from server-side app.storage.user if in UI context."""
+    try:
+        from nicegui import app
+
+        if hasattr(app, "storage") and hasattr(app.storage, "user"):
+            return app.storage.user.get("auth_session_token")
+    except Exception:
+        pass
+    return None
+
+
+def _set_persistent_token(token: str | None) -> None:
+    """Save or remove session token in server-side app.storage.user if in UI context."""
+    try:
+        from nicegui import app
+
+        if hasattr(app, "storage") and hasattr(app.storage, "user"):
+            if token:
+                app.storage.user["auth_session_token"] = token
+            else:
+                app.storage.user.pop("auth_session_token", None)
+    except Exception:
+        pass
+
+
 class _SessionAPIClientProxy:
-    """Resolve one FrontendAPIClient per NiceGUI browser client.
+    """Resolve one FrontendAPIClient per browser session.
 
-    The FastAPI session is stored in the TestClient cookie jar. A module-level
-    FrontendAPIClient therefore cannot be shared between browser users: the
-    last user to log in would overwrite the shared cookie jar and identity.
-    NiceGUI's client storage is server-side and scoped to one connected browser
-    client, so it is the correct lifecycle boundary for the API client.
+    The FastAPI session is stored in PostgreSQL and authenticated via an HttpOnly
+    cookie or Authorization header. In NiceGUI, each browser user is identified by
+    a persistent session ID (via Starlette SessionMiddleware).
 
-    Outside a NiceGUI client context (unit tests and CLI code), a private
-    fallback client is used.
+    This proxy ensures:
+    - Each browser client has an isolated FrontendAPIClient with its own cookie jar.
+    - User A never shares or inherits User B's authentication or cookies.
+    - Authentication survives page navigation (e.g. /login -> /dashboard).
+    - When outside a NiceGUI client context (unit tests / CLI code), a private fallback client is used.
     """
-
-    _storage_key = "_rag_frontend_api_client"
 
     def __init__(self) -> None:
         self._fallback_client = FrontendAPIClient()
 
     def _get_client(self) -> FrontendAPIClient:
-        try:
-            from nicegui import app
-
-            storage = app.storage.client
-            client = storage.get(self._storage_key)
-            if not isinstance(client, FrontendAPIClient):
-                client = FrontendAPIClient()
-                storage[self._storage_key] = client
-            return client
-        except Exception:
+        session_id = _get_browser_session_id()
+        if not session_id:
             # No active NiceGUI client context (e.g. direct unit tests).
             return self._fallback_client
+
+        client = _session_clients.get(session_id)
+        if client is None:
+            client = FrontendAPIClient()
+            saved_token = _get_persistent_token()
+            if saved_token:
+                client.set_session_token(saved_token)
+            _session_clients[session_id] = client
+
+        return client
+
+    def login(self, email: str, password: str) -> UserDTO:
+        client = self._get_client()
+        user = client.login(email, password)
+        token = client.get_session_token()
+        if token:
+            _set_persistent_token(token)
+        return user
+
+    def register(self, email: str, password: str, full_name: str) -> UserDTO:
+        client = self._get_client()
+        user = client.register(email, password, full_name)
+        token = client.get_session_token()
+        if token:
+            _set_persistent_token(token)
+        return user
+
+    def logout(self) -> None:
+        session_id = _get_browser_session_id()
+        client = self._get_client()
+        try:
+            client.logout()
+        finally:
+            _set_persistent_token(None)
+            if session_id and session_id in _session_clients:
+                _session_clients.pop(session_id, None)
+
+    def get_current_user(self) -> UserDTO | None:
+        client = self._get_client()
+        user = client.get_current_user()
+        if user is None:
+            _set_persistent_token(None)
+        return user
+
+    def clear_session(self) -> None:
+        session_id = _get_browser_session_id()
+        client = self._get_client()
+        client.clear_session()
+        _set_persistent_token(None)
+        if session_id and session_id in _session_clients:
+            _session_clients.pop(session_id, None)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._get_client(), name)

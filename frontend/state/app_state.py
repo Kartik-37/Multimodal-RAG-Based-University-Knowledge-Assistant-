@@ -7,7 +7,7 @@ Maintains UI state across page views:
 - Active conversation message thread
 """
 
-from frontend.client.api_client import api_client
+from frontend.client.api_client import _get_browser_session_id, api_client
 from frontend.client.models import (
     ChatMessageDTO,
     CitationDTO,
@@ -84,27 +84,34 @@ class AppState:
         self._selected_citation = None
 
 
-class _SessionAppStateProxy:
-    """Resolve one AppState instance per NiceGUI browser client."""
+_session_app_states: dict[str, AppState] = {}
 
-    _storage_key = "_rag_frontend_app_state"
+
+class _SessionAppStateProxy:
+    """Resolve one AppState instance per browser session."""
 
     def __init__(self) -> None:
         self._fallback_state = AppState()
 
     def _get_state(self) -> AppState:
-        try:
-            from nicegui import app
-
-            storage = app.storage.client
-            current = storage.get(self._storage_key)
-            if not isinstance(current, AppState):
-                current = AppState()
-                storage[self._storage_key] = current
-            return current
-        except Exception:
+        session_id = _get_browser_session_id()
+        if not session_id:
             # Direct unit tests do not have an active NiceGUI client context.
             return self._fallback_state
+
+        state_inst = _session_app_states.get(session_id)
+        if state_inst is None:
+            state_inst = AppState()
+            _session_app_states[session_id] = state_inst
+        return state_inst
+
+    def reset_session_state(self) -> None:
+        """Reset presentation state for active browser session."""
+        session_id = _get_browser_session_id()
+        if session_id and session_id in _session_app_states:
+            _session_app_states.pop(session_id, None)
+        else:
+            self._fallback_state = AppState()
 
     @property
     def current_user(self) -> UserDTO | None:

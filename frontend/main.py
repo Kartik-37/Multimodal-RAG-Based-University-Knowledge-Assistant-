@@ -22,6 +22,12 @@ from frontend.pages.profile_page import register_profile_page
 
 def init_ui() -> None:
     """Register all frontend presentation routes, theme, and pages."""
+    from nicegui.storage import Storage
+    from nicegui.ui_run import set_storage_secret
+
+    if Storage.secret is None:
+        set_storage_secret(settings.SECRET_KEY)
+
     init_theme()
     register_auth_pages()
     register_dashboard_page()
@@ -42,4 +48,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         show=False,
         reload=settings.DEBUG,
         favicon="school",
+        storage_secret=settings.SECRET_KEY,
     )

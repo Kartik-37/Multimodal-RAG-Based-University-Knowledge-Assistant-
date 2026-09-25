@@ -70,4 +70,5 @@ dist/
 
 # Scratch & temporary workspace files
 scratch/
+.nicegui/
 

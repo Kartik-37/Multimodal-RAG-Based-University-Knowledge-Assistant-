@@ -22,26 +22,26 @@ def main() -> None:
     print()
 
     with get_db_session() as db:
-        users = db.execute(
-            select(User).order_by(User.created_at.asc())
-        ).scalars().all()
-        courses = db.execute(
-            select(KnowledgeBase).order_by(KnowledgeBase.created_at.asc())
-        ).scalars().all()
-        members = db.execute(
-            select(KnowledgeBaseMember).order_by(KnowledgeBaseMember.granted_at.asc())
-        ).scalars().all()
-        documents = db.execute(
-            select(Document).order_by(Document.created_at.asc())
-        ).scalars().all()
+        users = db.execute(select(User).order_by(User.created_at.asc())).scalars().all()
+        courses = (
+            db.execute(select(KnowledgeBase).order_by(KnowledgeBase.created_at.asc()))
+            .scalars()
+            .all()
+        )
+        members = (
+            db.execute(select(KnowledgeBaseMember).order_by(KnowledgeBaseMember.granted_at.asc()))
+            .scalars()
+            .all()
+        )
+        documents = db.execute(select(Document).order_by(Document.created_at.asc())).scalars().all()
 
         chunk_count = db.execute(select(func.count(DocumentChunk.id))).scalar_one()
         embedding_count = db.execute(
             select(func.count(DocumentChunk.id)).where(DocumentChunk.embedding.is_not(None))
         ).scalar_one()
-        jobs = db.execute(
-            select(IndexingJob).order_by(IndexingJob.created_at.desc())
-        ).scalars().all()
+        jobs = (
+            db.execute(select(IndexingJob).order_by(IndexingJob.created_at.desc())).scalars().all()
+        )
 
         print("USERS")
         for user in users:
@@ -52,9 +52,7 @@ def main() -> None:
 
         print("\nCOURSES")
         for course in courses:
-            print(
-                f"- {course.name} | id={course.id} | created_by={course.created_by_id}"
-            )
+            print(f"- {course.name} | id={course.id} | created_by={course.created_by_id}")
 
         print("\nCOURSE MEMBERSHIPS")
         if members:

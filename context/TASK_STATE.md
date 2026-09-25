@@ -863,18 +863,28 @@ Non-negotiable requirements:
      - No secrets committed; sensitive attribute redaction verified.
 * **Next Safe Task**: Step 19 (next roadmap stage / Backend security audit).
 
-## Last verified
+2026-09-25 — Step 21E Authentication & Session Persistence Regression Fix (COMPLETE):
+- **Diagnosed & Fixed Root Cause**:
+  1. `app.storage.client` in NiceGUI is volatile and discarded on every page navigation/route change. The proxy had previously stored `FrontendAPIClient` in client storage, causing redirects (e.g., `/login` -> `/dashboard`) to recreate an unauthenticated `TestClient` with an empty cookie jar, triggering HTTP 401 and "Authentication Required".
+  2. `ui.run` in `frontend/main.py` configured with `storage_secret=settings.SECRET_KEY`, enabling persistent Starlette session middleware cookies.
+  3. `FrontendAPIClient` and `AppState` proxies updated to resolve per-browser sessions using `_get_browser_session_id()` backed by server-side registries `_session_clients` and `_session_app_states`.
+  4. Authoritative server-side validation against `GET /auth/me` on user retrieval.
+- **Verification Completed**:
+  - `backend/tests/integration/test_auth_session_persistence.py`: 10/10 passed (100%).
+  - `backend/tests/unit/test_frontend.py`: 37/37 passed (100%).
+  - `backend/tests/integration/test_step21e_workflow_integrity.py`: 5/5 passed (100%).
+  - `backend/tests/unit/test_step21e_api_client_integrity.py`: 6/6 passed (100%).
+  - `backend/tests/unit/test_step21e_frontend_workflow.py`: 3/3 passed (100%).
+  - Total 61/61 automated tests passing cleanly.
+  - `scripts/diagnose_step21e.py`: Run successfully against PostgreSQL database `rag_assistant_db`.
+  - `ruff check`: 100% clean (0 errors across 215 files).
+  - `ruff format --check`: 100% clean (215 files).
+  - Standing daemons:
+    * PostgreSQL (port 5432) active.
+    * Ollama (port 11434) active.
+    * NiceGUI web application (port 8080) active and serving traffic at `http://localhost:8080`.
 
-2026-09-24 — Step 21E Real User Workflow Integrity verified:
-- Autonomously diagnosed and restored Python 3.14 virtual environment with all dependencies.
-- Brought up PostgreSQL and Ollama services locally.
-- Diagnostic script scripts/diagnose_step21e.py executed successfully against live database.
-- Fixed 6 root causes: per-client NiceGUI frontend API client & state isolation, centralized RBAC course authorization (get_authorized_knowledge_bases), publication gate filtering (is_active=True), deterministic chat & document dropdown cascading, and Ollama reasoning leak neutralization.
-- Pytest suite: 496 passed, 0 failed, 4 warnings in 412.45s (not real_ollama).
-- Static checks: ruff check passed (0 errors), ruff format --check passed (189 files).
-- Database migrations: alembic check passed (no new upgrade operations detected).
-- Real chat workflow executed against KSU-Act-English.pdf with hybrid retrieval, RRF, reranking, and Ollama generation.
-- Browser test: Playwright driver download 404 reported accurately without faking.
+
 
 
 

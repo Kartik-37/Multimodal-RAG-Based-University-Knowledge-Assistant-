@@ -90,6 +90,7 @@ def _handle_logout() -> None:
     api_client.logout()
     state.clear_chat()
     state.active_kb = None
+    state.reset_session_state()
     ui.notify("Signed out successfully.", type="info")
     ui.navigate.to("/login")
 

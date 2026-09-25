@@ -17,6 +17,10 @@ def register_auth_pages() -> None:
 
     @ui.page("/login")
     def login_page() -> None:
+        if api_client.get_current_user() is not None:
+            ui.navigate.to("/dashboard")
+            return
+
         with page_layout(title="", require_auth=False):
             with ui.card().classes(
                 "w-full max-w-md mx-auto p-6 sm:p-8 bg-white border border-slate-200 rounded-lg shadow-sm mt-8"
@@ -100,6 +104,10 @@ def register_auth_pages() -> None:
 
     @ui.page("/register")
     def register_page() -> None:
+        if api_client.get_current_user() is not None:
+            ui.navigate.to("/dashboard")
+            return
+
         with page_layout(title="", require_auth=False):
             with ui.card().classes(
                 "w-full max-w-md mx-auto p-6 sm:p-8 bg-white border border-slate-200 rounded-lg shadow-sm mt-8"
