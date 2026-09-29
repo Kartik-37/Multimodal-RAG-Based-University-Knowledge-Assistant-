@@ -60,7 +60,18 @@ COLOR_INFO_TEXT = "#002147"
 # Global CSS Stylesheet
 # ------------------------------------------------------------------------------
 GLOBAL_THEME_CSS = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+/* Modern Typography font families */
+.font-inter {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+.font-roboto {
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+
 /* Quasar Theme Variables: Oxford Blue (#002147) & Academic Slate */
 :root {
     --q-primary: #002147;
@@ -75,7 +86,7 @@ GLOBAL_THEME_CSS = """
 
 /* Base typography and light Off-White (#F8F9FA) canvas to reduce eye strain */
 html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: #F8F9FA !important;
     color: #0f172a;
     -webkit-font-smoothing: antialiased;
@@ -86,6 +97,42 @@ html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
 .main-page-container {
     padding: 2rem !important;
     box-sizing: border-box !important;
+}
+
+/* Minimalist modern input and select styling */
+.minimalist-input .q-field__control,
+.minimalist-select .q-field__control {
+    border-radius: 8px !important;
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.02) !important;
+    transition: all 0.15s ease-in-out !important;
+    height: 40px !important;
+    min-height: 40px !important;
+}
+.minimalist-input .q-field__control:hover,
+.minimalist-select .q-field__control:hover {
+    border-color: #cbd5e1 !important;
+}
+.minimalist-input .q-field__control:focus-within,
+.minimalist-select .q-field__control:focus-within {
+    border-color: #002147 !important;
+    box-shadow: 0 0 0 2px rgba(0, 33, 71, 0.08) !important;
+}
+.minimalist-input .q-field__native,
+.minimalist-select .q-field__native {
+    font-size: 0.8125rem !important;
+    color: #1e293b !important;
+}
+
+/* Modern Course Card Hover Effect */
+.modern-course-card {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease !important;
+}
+.modern-course-card:hover {
+    transform: translateY(-4px) scale(1.008) !important;
+    box-shadow: 0 12px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04) !important;
+    border-color: #cbd5e1 !important;
 }
 
 /* Modern Flat Sidebar: eliminate default border lines and dark dividers on drawer */

@@ -651,14 +651,14 @@ def page_layout(
                                     crumb_title,
                                     crumb_url,
                                 ).classes(
-                                    "text-slate-500 hover:text-blue-800 font-medium hover:underline transition-colors"
+                                    "text-slate-500 hover:text-[#002147] font-medium hover:underline transition-colors"
                                 )
                             else:
                                 ui.label(crumb_title).classes(
                                     "text-slate-900 font-bold truncate max-w-[220px] sm:max-w-none"
                                 )
 
-                if not is_root_dashboard:
+                if not is_root_dashboard and show_back:
                     with ui.link(
                         target="/dashboard",
                     ).classes("text-slate-400 hover:text-slate-700 items-center gap-1 hidden sm:flex text-[11px] font-medium transition-colors"):
@@ -667,7 +667,7 @@ def page_layout(
 
         if title:
             with ui.column().classes("gap-0.5"):
-                ui.label(title).classes("text-2xl font-bold tracking-tight text-slate-900")
+                ui.label(title).classes("text-2xl font-bold tracking-tight text-slate-900 font-inter").style("font-family: 'Inter', -apple-system, sans-serif;")
                 if subtitle:
                     ui.label(subtitle).classes("text-sm text-slate-600 max-w-3xl")
 

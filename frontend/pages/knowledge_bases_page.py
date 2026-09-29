@@ -1,11 +1,10 @@
 """
-Courses Management Page.
+Courses Management & Catalog Page.
 
-Provides complete university course management:
-- Lists authorized university courses with aggregated document metrics and file previews.
-- Search, filter (All, Active, Needs Attention, Indexing, Empty), and sort.
-- Administrators can provision new courses and jump directly to course document management.
-- Uses N+1-safe summaries endpoint to retrieve course document counts and previews.
+Provides a modern academic course directory with role-tailored interaction:
+- STUDENTS: Clean course dashboard with top accent bars, metadata summaries, and direct 'Enter Classroom' actions.
+- ADMINISTRATORS: Course provisioning, document lifecycle metrics, and management entry points.
+- Professional breadcrumbs (Home > Courses) and modern minimalist search & filtering.
 """
 
 from nicegui import ui
@@ -17,22 +16,39 @@ from frontend.components.ui_kit import render_alert, render_empty_state
 from frontend.state.app_state import state
 
 
+def get_course_accent_color(course_name: str) -> str:
+    """Return colored accent bar hex based on course name."""
+    nl = course_name.lower()
+    if "bca" in nl:
+        return "#002147"  # Oxford Blue
+    elif "architecture" in nl or "computer" in nl:
+        return "#059669"  # Emerald / Green
+    elif "regulation" in nl or "policy" in nl:
+        return "#4f46e5"  # Indigo
+    else:
+        palettes = ["#002147", "#059669", "#4f46e5", "#0891b2", "#d97706", "#7c3aed"]
+        return palettes[sum(ord(ch) for ch in course_name) % len(palettes)]
+
+
 def register_knowledge_bases_page() -> None:
     """Register /knowledge-bases route with NiceGUI."""
 
     @ui.page("/knowledge-bases")
     def knowledge_bases_page() -> None:
+        user = state.current_user
+        can_create_course = has_admin_permission(user, Permission.COURSE_CREATE)
+        is_student = (user is None or user.role == "STUDENT")
+
         with page_layout(
             title="Course Knowledge Bases",
-            subtitle="Organize university courses, subject materials, and document versioning.",
+            subtitle="Explore published academic courses, learning modules, and verified reference documents.",
             active_route="/knowledge-bases",
             require_auth=True,
+            breadcrumbs=[("Home", "/dashboard"), ("Courses", None)],
+            show_back=False,
         ):
-            user = state.current_user
-            can_create_course = has_admin_permission(user, Permission.COURSE_CREATE)
-
-            # Dynamic content container
-            content_container = ui.column().classes("w-full gap-5")
+            # Dynamic content container with generous vertical breathing room
+            content_container = ui.column().classes("w-full gap-8 my-2")
 
             # ------------------------------------------------------------------
             # Create Course Dialog (Admin Only)
@@ -40,10 +56,10 @@ def register_knowledge_bases_page() -> None:
             with (
                 ui.dialog() as create_dialog,
                 ui.card().classes(
-                    "w-full max-w-md p-6 bg-white border border-slate-200 rounded-lg shadow-md"
+                    "w-full max-w-md p-6 bg-white border border-slate-200 rounded-xl shadow-md"
                 ),
             ):
-                ui.label("Create New Course").classes("text-lg font-bold text-slate-900 mb-1")
+                ui.label("Create New Course").classes("text-lg font-bold text-slate-900 font-inter mb-1")
                 ui.label(
                     "Provision a new university course to host syllabi, lecture notes, and learning materials."
                 ).classes("text-xs text-slate-500 mb-4")
@@ -57,7 +73,7 @@ def register_knowledge_bases_page() -> None:
                             placeholder="e.g. BCA-301 Computer Architecture",
                         )
                         .props("outlined dense")
-                        .classes("w-full")
+                        .classes("w-full minimalist-input")
                     )
 
                 with ui.column().classes("w-full gap-1 mb-5"):
@@ -97,8 +113,10 @@ def register_knowledge_bases_page() -> None:
                         "text-sm text-slate-600"
                     )
                     ui.button("Create Course", icon="check", on_click=handle_create).props(
-                        "color=primary no-caps"
-                    ).classes("text-sm font-medium px-4")
+                        "no-caps"
+                    ).classes(
+                        "text-sm font-semibold px-4 py-2 !bg-[#002147] hover:!bg-[#001833] !text-white rounded-lg shadow-xs"
+                    )
 
             # ------------------------------------------------------------------
             # Page Renderer with Search, Filter & Sort
@@ -131,7 +149,7 @@ def register_knowledge_bases_page() -> None:
                         if q in c.name.lower() or (c.description and q in c.description.lower())
                     ]
 
-                # Apply Category Filter (Section 12: All, Active, Needs Attention, Indexing, Empty)
+                # Apply Category Filter
                 cat = filter_state["category"]
                 if cat == "ACTIVE":
                     res = [c for c in res if c.active_documents > 0]
@@ -151,26 +169,25 @@ def register_knowledge_bases_page() -> None:
                 else:  # NAME
                     res = sorted(res, key=lambda c: c.name.lower())
 
-                # Top Action & Filter Bar
+                # Top Action & Filter Bar (Minimalist Border Style & Same Horizontal Line)
                 with ui.card().classes(
-                    "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs gap-3"
+                    "w-full p-4 bg-white border border-slate-200/90 rounded-xl shadow-xs gap-3"
                 ):
-                    with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap"):
+                    with ui.row().classes("w-full items-center justify-between gap-4 flex-wrap md:flex-nowrap"):
                         # Search Box
-                        with ui.row().classes("items-center gap-2 flex-1 min-w-[240px] max-w-md"):
+                        with ui.row().classes("items-center gap-2 flex-1 min-w-[240px]"):
                             s_box = (
                                 ui.input(
-                                    placeholder="Search courses by name or subject...",
+                                    placeholder="Search courses by name, subject, or code...",
                                     value=filter_state["query"],
                                 )
                                 .props("outlined dense clearable")
-                                .classes("w-full text-xs")
+                                .classes("w-full minimalist-input")
                             )
                             s_box.on("input", lambda e: on_search(e.value))
 
-                        # Sort Selector
-                        with ui.row().classes("items-center gap-2"):
-                            ui.label("Sort:").classes("text-xs font-semibold text-slate-500")
+                        # Sort Selector and Create Button on the same horizontal line
+                        with ui.row().classes("items-center gap-3 shrink-0"):
                             ui.select(
                                 options={
                                     "NAME": "Course Name (A-Z)",
@@ -179,20 +196,20 @@ def register_knowledge_bases_page() -> None:
                                 },
                                 value=filter_state["sort"],
                                 on_change=lambda e: on_sort_change(e.value),
-                            ).props("outlined dense options-dense").classes("text-xs min-w-[170px]")
+                            ).props("outlined dense options-dense").classes("w-48 minimalist-select")
 
-                        if can_create_course:
-                            ui.button(
-                                "Create Course",
-                                icon="add",
-                                on_click=create_dialog.open,
-                            ).props("color=primary no-caps dense").classes(
-                                "text-xs font-medium px-3 py-1.5"
-                            )
+                            if can_create_course:
+                                ui.button(
+                                    "Create Course",
+                                    icon="add",
+                                    on_click=create_dialog.open,
+                                ).props("no-caps dense").classes(
+                                    "text-xs font-semibold px-4 py-2 !bg-[#002147] hover:!bg-[#001833] !text-white rounded-lg shadow-xs shrink-0 transition-colors"
+                                )
 
                     # Filter Chips Row
-                    with ui.row().classes("w-full items-center gap-2 pt-2 border-t border-slate-100 flex-wrap"):
-                        ui.label("Filter:").classes("text-xs font-semibold text-slate-400 mr-1")
+                    with ui.row().classes("w-full items-center gap-2 pt-3 border-t border-slate-100 flex-wrap"):
+                        ui.label("Filter:").classes("text-xs font-medium text-slate-400 mr-1")
                         chip_options = [
                             ("ALL", f"All Courses ({len(summaries)})"),
                             ("ACTIVE", "Active Materials"),
@@ -202,11 +219,11 @@ def register_knowledge_bases_page() -> None:
                         ]
                         for c_key, c_label in chip_options:
                             is_active_chip = filter_state["category"] == c_key
-                            chip_cls = "text-xs px-2.5 py-1 rounded transition-colors "
+                            chip_cls = "text-xs px-3 py-1 rounded-full transition-all "
                             if is_active_chip:
-                                chip_cls += "bg-blue-600 text-white font-semibold shadow-xs"
+                                chip_cls += "bg-[#002147] text-white font-semibold shadow-xs"
                             else:
-                                chip_cls += "text-slate-600 hover:bg-slate-100"
+                                chip_cls += "text-slate-600 bg-slate-100 hover:bg-slate-200"
                             ui.button(
                                 c_label,
                                 on_click=lambda k=c_key: on_category_change(k),
@@ -232,108 +249,107 @@ def register_knowledge_bases_page() -> None:
                         )
                     return
 
-                # Course Cards Grid
-                with ui.row().classes("w-full gap-4 items-stretch"):
+                # Course Cards Grid (Modern Dashboard Cards with Colored Accent Bar & Subtle Hover)
+                with ui.row().classes("w-full gap-5 items-stretch flex-wrap"):
                     for c in res:
                         with ui.card().classes(
-                            "w-full md:w-[calc(50%-0.5rem)] p-5 bg-white border border-slate-200 hover:border-blue-300 rounded-lg shadow-xs transition-all flex flex-col justify-between"
+                            "modern-course-card w-full md:w-[calc(50%-0.625rem)] lg:w-[calc(33.333%-0.85rem)] p-0 bg-white border border-slate-200/90 rounded-xl shadow-xs flex flex-col justify-between overflow-hidden"
                         ):
-                            with ui.column().classes("w-full gap-3"):
-                                # Header: Name and status badge
-                                with ui.row().classes("w-full justify-between items-start gap-2"):
-                                    with ui.row().classes("items-center gap-2.5 min-w-0"):
-                                        with ui.element("div").classes(
-                                            "w-9 h-9 rounded-lg bg-blue-600/10 text-blue-700 flex items-center justify-center font-bold text-sm shrink-0"
-                                        ):
-                                            ui.icon("school", size="xs")
-                                        ui.label(c.name).classes(
-                                            "text-base font-bold text-slate-900 tracking-tight truncate"
-                                        )
+                            # Colored accent bar at top of card (e.g. BCA = Blue, Computer Architecture = Green)
+                            bar_color = get_course_accent_color(c.name)
+                            ui.element("div").classes("w-full h-1.5 shrink-0").style(f"background-color: {bar_color};")
 
+                            # Card Body
+                            with ui.column().classes("w-full p-5 gap-3 flex-1"):
+                                # Header: Title & Status Badge
+                                with ui.row().classes("w-full justify-between items-start gap-2"):
+                                    ui.label(c.name).classes(
+                                        "text-base font-bold text-slate-900 tracking-tight leading-snug line-clamp-1 font-inter"
+                                    )
                                     if c.failed_documents > 0:
-                                        ui.badge(f"{c.failed_documents} Failed", color="rose-700").classes("text-[10px] font-bold")
+                                        ui.badge(f"{c.failed_documents} Needs Attention", color="rose-700").classes("text-[10px] font-bold shrink-0")
                                     elif c.indexing_documents > 0:
-                                        ui.badge(f"{c.indexing_documents} Indexing", color="blue-700").classes("text-[10px] font-bold")
+                                        ui.badge(f"{c.indexing_documents} Indexing", color="blue-700").classes("text-[10px] font-bold shrink-0")
                                     elif c.active_documents > 0:
-                                        ui.badge(f"{c.active_documents} Active", color="emerald-700").classes("text-[10px] font-bold")
+                                        ui.badge("Active", color="emerald-700").classes("text-[10px] font-semibold shrink-0")
 
                                 # Description
                                 ui.label(
                                     c.description
                                     if c.description
                                     else "Official university course materials and knowledge repository."
-                                ).classes("text-xs text-slate-600 line-clamp-2 leading-relaxed")
+                                ).classes("text-xs text-slate-500 line-clamp-2 leading-relaxed")
 
-                                # Operational Metrics Row (Section 12)
-                                with ui.row().classes(
-                                    "w-full items-center gap-3 py-2 px-3 bg-slate-50 rounded border border-slate-100 text-xs flex-wrap"
-                                ):
-                                    ui.label(f"{c.total_documents} documents").classes("font-semibold text-slate-800")
-                                    ui.label("•").classes("text-slate-300")
-                                    ui.label(f"{c.active_documents} active").classes("text-emerald-700 font-medium")
-                                    if c.indexing_documents > 0:
-                                        ui.label("•").classes("text-slate-300")
-                                        ui.label(f"{c.indexing_documents} indexing").classes("text-blue-700 font-medium")
-                                    if c.failed_documents > 0:
-                                        ui.label("•").classes("text-slate-300")
-                                        ui.label(f"{c.failed_documents} needs attention").classes("text-rose-700 font-medium")
-
-                                # Document Previews
-                                with ui.column().classes("w-full gap-1.5 mt-1"):
-                                    if not c.document_previews:
-                                        ui.label("No documents uploaded yet.").classes(
-                                            "text-[11px] text-slate-400 italic"
-                                        )
-                                    else:
-                                        for doc in c.document_previews[:3]:
+                                # Document Previews (compact, elegant pill list)
+                                if c.document_previews:
+                                    with ui.column().classes("w-full gap-1 pt-1"):
+                                        for doc in c.document_previews[:2]:
                                             with ui.row().classes(
-                                                "w-full items-center justify-between py-1 px-2 hover:bg-slate-50 rounded text-xs transition-colors"
+                                                "w-full items-center justify-between py-1 px-2.5 bg-slate-50 rounded-md border border-slate-100 text-xs"
                                             ):
-                                                with ui.row().classes(
-                                                    "items-center gap-1.5 truncate max-w-[240px]"
-                                                ):
-                                                    ui.icon("description", size="xs").classes("text-slate-400")
+                                                with ui.row().classes("items-center gap-1.5 min-w-0"):
+                                                    ui.icon("description", size="14px").classes("text-slate-400 shrink-0")
                                                     ui.label(doc.filename).classes(
-                                                        "font-medium text-slate-700 truncate"
+                                                        "font-medium text-slate-700 truncate max-w-[180px] sm:max-w-[210px]"
                                                     )
-                                                with ui.row().classes("items-center gap-1"):
-                                                    ui.badge(
-                                                        doc.file_type.upper(), color="slate-600"
-                                                    ).classes("text-[9px]")
-                                                    if doc.is_active:
-                                                        ui.badge(
-                                                            "ACTIVE", color="emerald-700"
-                                                        ).classes("text-[9px] font-bold")
-
-                                        remaining = c.total_documents - min(3, len(c.document_previews))
+                                                ui.badge(doc.file_type.upper(), color="slate-500").classes("text-[9px] font-mono")
+                                        remaining = c.total_documents - min(2, len(c.document_previews))
                                         if remaining > 0:
-                                            ui.label(f"+ {remaining} more document(s)").classes(
-                                                "text-[11px] text-blue-600 font-medium pl-2"
+                                            ui.label(f"+ {remaining} more material(s)").classes(
+                                                "text-[10px] text-slate-400 pl-1"
                                             )
 
-                            # Footer Actions (Section 12: Open, Manage Documents, Chat)
-                            with ui.row().classes(
-                                "w-full justify-between items-center pt-3 mt-3 border-t border-slate-100 text-xs text-slate-500"
-                            ):
-                                ui.label(f"Created {c.created_at[:10]}").classes("font-mono text-[11px]")
-                                with ui.row().classes("items-center gap-2"):
-                                    ui.button(
-                                        "Chat",
-                                        icon="chat",
-                                        on_click=lambda course_id=c.id: ui.navigate.to(
-                                            f"/chat?kb_id={course_id}"
-                                        ),
-                                    ).props("flat dense no-caps color=grey-7").classes("text-xs")
-
-                                    ui.button(
-                                        "Manage Documents",
-                                        icon="folder_open",
-                                        on_click=lambda course_id=c.id: ui.navigate.to(
-                                            f"/documents?kb_id={course_id}"
-                                        ),
-                                    ).props("color=primary dense no-caps").classes(
-                                        "text-xs px-3 py-1 font-semibold"
+                            # Card Bottom: Clean metadata row + Action buttons
+                            with ui.column().classes("w-full px-5 pb-5 pt-0 gap-3 mt-auto"):
+                                # Clean metadata row with small, light-grey text
+                                with ui.row().classes(
+                                    "w-full items-center justify-between text-xs pt-3 border-t border-slate-100"
+                                ):
+                                    doc_cnt_text = (
+                                        f"{c.total_documents} document"
+                                        if c.total_documents == 1
+                                        else f"{c.total_documents} documents"
                                     )
+                                    active_cnt_text = f"{c.active_documents} active"
+                                    ui.label(f"{doc_cnt_text} • {active_cnt_text}").classes(
+                                        "text-[11px] text-slate-400 font-normal"
+                                    )
+                                    ui.label(f"Created {c.created_at[:10]}").classes(
+                                        "text-[11px] text-slate-400 font-mono"
+                                    )
+
+                                # Buttons: Students see 'Enter Classroom'; Admins see 'Chat' & 'Manage Documents'
+                                with ui.row().classes("w-full justify-between items-center"):
+                                    if is_student:
+                                        ui.button(
+                                            "Enter Classroom",
+                                            icon="arrow_forward",
+                                            on_click=lambda course_id=c.id: ui.navigate.to(
+                                                f"/chat?kb_id={course_id}"
+                                            ),
+                                        ).props("no-caps dense").classes(
+                                            "w-full py-2.5 text-xs font-semibold !bg-[#002147] hover:!bg-[#001833] !text-white rounded-lg shadow-xs transition-colors justify-center"
+                                        )
+                                    else:
+                                        with ui.row().classes("w-full justify-end items-center gap-2"):
+                                            ui.button(
+                                                "Chat",
+                                                icon="chat",
+                                                on_click=lambda course_id=c.id: ui.navigate.to(
+                                                    f"/chat?kb_id={course_id}"
+                                                ),
+                                            ).props("flat dense no-caps").classes(
+                                                "text-xs text-slate-600 hover:text-slate-900 px-2.5 py-1.5"
+                                            )
+                                            ui.button(
+                                                "Manage Documents",
+                                                icon="folder_open",
+                                                on_click=lambda course_id=c.id: ui.navigate.to(
+                                                    f"/documents?kb_id={course_id}"
+                                                ),
+                                            ).props("no-caps dense").classes(
+                                                "text-xs px-3.5 py-1.5 font-semibold !bg-[#002147] hover:!bg-[#001833] !text-white rounded-lg shadow-xs"
+                                            )
 
             def on_search(val: str | None) -> None:
                 filter_state["query"] = val or ""
