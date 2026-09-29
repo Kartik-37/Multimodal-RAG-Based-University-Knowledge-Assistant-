@@ -508,16 +508,26 @@ def register_documents_page() -> None:
                         with ui.element("table").classes("w-full text-left text-xs border-collapse"):
                             with ui.element("thead").classes("bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"):
                                 with ui.element("tr"):
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Document")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Format")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Size")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Processing")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Indexing")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Chunks")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Vectors")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Retrieval")
-                                    ui.element("th").classes("py-2.5 px-3").set_text("Updated")
-                                    ui.element("th").classes("py-2.5 px-3 text-right").set_text("Actions")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Document")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Format")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Size")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Processing")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Indexing")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Chunks")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Vectors")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Retrieval")
+                                    with ui.element("th").classes("py-2.5 px-3"):
+                                        ui.label("Updated")
+                                    with ui.element("th").classes("py-2.5 px-3 text-right"):
+                                        ui.label("Actions")
 
                             with ui.element("tbody").classes("divide-y divide-slate-100 text-slate-800"):
                                 for doc in filtered_docs:

@@ -226,12 +226,18 @@ def register_indexing_page() -> None:
                                 with ui.element("table").classes("w-full text-left text-xs border-collapse"):
                                     with ui.element("thead").classes("bg-slate-50 border-b border-slate-200"):
                                         with ui.element("tr"):
-                                            ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600").set_text("Document")
-                                            ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600").set_text("Course")
-                                            ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600").set_text("Total Chunks")
-                                            ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600").set_text("Vectors Verified")
-                                            ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600").set_text("Completed At")
-                                            ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600").set_text("Status")
+                                            with ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600"):
+                                                ui.label("Document")
+                                            with ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600"):
+                                                ui.label("Course")
+                                            with ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600"):
+                                                ui.label("Total Chunks")
+                                            with ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600"):
+                                                ui.label("Vectors Verified")
+                                            with ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600"):
+                                                ui.label("Completed At")
+                                            with ui.element("th").classes("py-2.5 px-3 font-semibold text-slate-600"):
+                                                ui.label("Status")
 
                                     with ui.element("tbody").classes("divide-y divide-slate-100"):
                                         for job in completed_jobs[:25]:
