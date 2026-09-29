@@ -10,15 +10,16 @@ design target, not a claimed certification).
 from nicegui import ui
 
 # ------------------------------------------------------------------------------
-# Academic Color Palette Tokens: Institutional Navy & Academic Slate Theme
+# Academic Color Palette Tokens: Oxford Blue & Academic Slate Theme
 # ------------------------------------------------------------------------------
-# Institutional Navy Spectrum
-COLOR_INSTITUTIONAL_NAVY_DARK = "#0b1528"   # Deep institutional midnight navy (headers, chrome)
-COLOR_INSTITUTIONAL_NAVY = "#0f1d38"        # Primary institutional navy
-COLOR_INSTITUTIONAL_NAVY_SURFACE = "#16284c"# Navy secondary surface
-COLOR_NAVY_PRIMARY = "#1e3a8a"              # Institutional Navy (Blue 900) for primary actions
-COLOR_NAVY_INTERACTIVE = "#2563eb"          # Interactive accent & focus ring (Blue 600)
-COLOR_NAVY_HOVER = "#1d4ed8"                # Hover state for interactive navy elements
+# Oxford Blue Spectrum
+COLOR_OXFORD_BLUE = "#002147"               # Oxford Blue primary brand color
+COLOR_INSTITUTIONAL_NAVY_DARK = "#001833"   # Deep institutional navy
+COLOR_INSTITUTIONAL_NAVY = "#002147"        # Primary institutional Oxford Blue
+COLOR_INSTITUTIONAL_NAVY_SURFACE = "#0b2b54"# Oxford Blue secondary surface
+COLOR_NAVY_PRIMARY = "#002147"              # Oxford Blue for primary actions
+COLOR_NAVY_INTERACTIVE = "#003366"          # Interactive accent & focus ring
+COLOR_NAVY_HOVER = "#001a38"                # Hover state for interactive Oxford Blue elements
 
 # Academic Slate Spectrum
 COLOR_ACADEMIC_SLATE_900 = "#0f172a"        # High-contrast typography & headings
@@ -30,14 +31,14 @@ COLOR_ACADEMIC_SLATE_400 = "#94a3b8"        # Subtle icon accents & disabled sta
 COLOR_ACADEMIC_SLATE_300 = "#cbd5e1"        # Active borders & prominent dividers
 COLOR_ACADEMIC_SLATE_200 = "#e2e8f0"        # Standard subtle card borders
 COLOR_ACADEMIC_SLATE_100 = "#f1f5f9"        # Chip/badge background & muted containers
-COLOR_ACADEMIC_SLATE_50 = "#f8fafc"         # Clean academic canvas page background
+COLOR_ACADEMIC_SLATE_50 = "#F8F9FA"         # Light Off-White page background
 
 # Backward-compatible Token Aliases
 COLOR_BRAND_NAVY = COLOR_INSTITUTIONAL_NAVY_DARK
 COLOR_BRAND_SLATE = COLOR_ACADEMIC_SLATE_800
-COLOR_BRAND_BLUE = COLOR_NAVY_PRIMARY
+COLOR_BRAND_BLUE = COLOR_OXFORD_BLUE
 COLOR_BRAND_LIGHT_BLUE = COLOR_NAVY_INTERACTIVE
-COLOR_CANVAS = COLOR_ACADEMIC_SLATE_50
+COLOR_CANVAS = "#F8F9FA"                    # Light Off-White background to reduce eye strain
 COLOR_SURFACE = "#ffffff"
 COLOR_BORDER = COLOR_ACADEMIC_SLATE_200
 COLOR_BORDER_STRONG = COLOR_ACADEMIC_SLATE_300
@@ -53,44 +54,105 @@ COLOR_WARNING_TEXT = "#92400e"
 COLOR_DANGER_BG = "#fee2e2"
 COLOR_DANGER_TEXT = "#991b1b"
 COLOR_INFO_BG = "#dbeafe"
-COLOR_INFO_TEXT = "#1e40af"
+COLOR_INFO_TEXT = "#002147"
 
 # ------------------------------------------------------------------------------
 # Global CSS Stylesheet
 # ------------------------------------------------------------------------------
 GLOBAL_THEME_CSS = """
 <style>
-/* Quasar Theme Variables: Institutional Navy & Academic Slate */
+/* Quasar Theme Variables: Oxford Blue (#002147) & Academic Slate */
 :root {
-    --q-primary: #1e3a8a;
+    --q-primary: #002147;
     --q-secondary: #475569;
-    --q-accent: #2563eb;
-    --q-dark: #0b1528;
+    --q-accent: #002147;
+    --q-dark: #001833;
     --q-positive: #166534;
     --q-negative: #991b1b;
-    --q-info: #1e40af;
+    --q-info: #002147;
     --q-warning: #92400e;
 }
 
-/* Base typography and smooth institutional rendering */
-body {
+/* Base typography and light Off-White (#F8F9FA) canvas to reduce eye strain */
+html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: #f8fafc;
+    background-color: #F8F9FA !important;
     color: #0f172a;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* Consistent Main Page Container Padding (at least 2rem) */
+.main-page-container {
+    padding: 2rem !important;
+    box-sizing: border-box !important;
+}
+
+/* Modern Flat Sidebar: eliminate default border lines and dark dividers on drawer */
+.q-drawer, .q-drawer--left, .q-drawer--right, .q-drawer--bordered, .q-drawer--standard {
+    border: none !important;
+    border-right: none !important;
+    border-left: none !important;
+    box-shadow: none !important;
+}
+.q-drawer-container, .q-drawer-container .q-drawer, .q-drawer__content {
+    border: none !important;
+    border-right: none !important;
+    box-shadow: none !important;
+}
+.q-drawer::after, .q-drawer--left::after, .q-drawer--right::after {
+    display: none !important;
+    border: none !important;
+    content: none !important;
+}
+
+/* Rounded Corners for Sidebar Navigation Links */
+.sidebar-nav-item, .sidebar-link {
+    border-radius: 0.75rem !important;
+    transition: all 0.15s ease-in-out !important;
+}
+.sidebar-nav-item-active, .sidebar-link-active {
+    background-color: #002147 !important;
+    color: #ffffff !important;
+    border-radius: 0.75rem !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 33, 71, 0.2) !important;
+}
+
+/* Primary Oxford Blue Global Utility Overrides */
+.bg-primary, .q-btn--standard.bg-primary {
+    background-color: #002147 !important;
+}
+.text-primary {
+    color: #002147 !important;
+}
+.q-btn.bg-primary:hover, .q-btn--standard.bg-primary:hover {
+    background-color: #001833 !important;
+}
+
+/* Ensure all primary buttons and accent badges use Oxford Blue #002147 */
+.bg-blue-600, .bg-blue-700, .bg-blue-800, .bg-blue-900 {
+    background-color: #002147 !important;
+}
+.text-blue-700, .text-blue-800, .text-blue-900 {
+    color: #002147 !important;
+}
+.border-blue-600, .border-blue-700, .border-blue-800, .border-blue-900 {
+    border-color: #002147 !important;
+}
+
 /* WCAG 2.1 AA Engineering Design Target: Visible Keyboard Focus Rings */
 *:focus-visible {
-    outline: 2px solid #2563eb !important;
+    outline: 2px solid #2563eb;
+    outline: 2px solid #002147 !important;
     outline-offset: 2px !important;
     border-radius: 4px;
 }
 
 /* Buttons and interactive elements focus transition */
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
-    outline: 2px solid #2563eb !important;
+    outline: 2px solid #2563eb;
+    outline: 2px solid #002147 !important;
     outline-offset: 2px !important;
 }
 
@@ -212,7 +274,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     transition: color 0.15s ease;
 }
 .academic-breadcrumb a:hover {
-    color: #1e3a8a;
+    color: #002147;
     text-decoration: underline;
 }
 .academic-breadcrumb .active-crumb {
