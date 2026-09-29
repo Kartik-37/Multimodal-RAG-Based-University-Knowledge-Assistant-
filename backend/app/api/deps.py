@@ -224,9 +224,31 @@ def get_authorized_knowledge_bases(
     chat selectors, and global retrieval:
     - MAIN_ADMIN: every course.
     - FACULTY_ADMIN: courses they created or were explicitly assigned.
-    - STUDENT: courses with an explicit KnowledgeBaseMember row.
+    - STUDENT: all courses/folders marked active or published by default.
     """
-    if current_user.role == UserRole.ADMIN:
+    user_id_val = current_user.id
+    if isinstance(user_id_val, str):
+        try:
+            user_id_val = uuid.UUID(user_id_val)
+        except (ValueError, AttributeError):
+            pass
+
+    role_val = getattr(current_user, "role", None)
+    if hasattr(role_val, "value"):
+        role_val = role_val.value
+    role_str = str(role_val).upper() if role_val is not None else ""
+
+    if role_str == "STUDENT" or role_val == UserRole.STUDENT:
+        # All students have default access to all published / active courses without membership restrictions
+        stmt = select(KnowledgeBase)
+        if "is_active" in KnowledgeBase.__table__.columns:
+            stmt = stmt.where(KnowledgeBase.is_active.is_(True))
+        elif "is_published" in KnowledgeBase.__table__.columns:
+            stmt = stmt.where(KnowledgeBase.is_published.is_(True))
+        stmt = stmt.order_by(KnowledgeBase.created_at.desc())
+        return list(db.execute(stmt).scalars().all())
+
+    if role_str == "ADMIN" or role_val == UserRole.ADMIN:
         if is_main_admin(current_user):
             stmt = select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc())
         else:
@@ -238,24 +260,22 @@ def get_authorized_knowledge_bases(
                 )
                 .where(
                     or_(
-                        KnowledgeBase.created_by_id == current_user.id,
-                        KnowledgeBaseMember.user_id == current_user.id,
+                        KnowledgeBase.created_by_id == user_id_val,
+                        KnowledgeBaseMember.user_id == user_id_val,
                     )
                 )
                 .distinct()
                 .order_by(KnowledgeBase.created_at.desc())
             )
-    else:
-        stmt = (
-            select(KnowledgeBase)
-            .join(
-                KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-            )
-            .where(KnowledgeBaseMember.user_id == current_user.id)
-            .order_by(KnowledgeBase.created_at.desc())
-        )
+        return list(db.execute(stmt).scalars().all())
 
+    # Fallback default: all active/published courses without membership restriction
+    stmt = select(KnowledgeBase)
+    if "is_active" in KnowledgeBase.__table__.columns:
+        stmt = stmt.where(KnowledgeBase.is_active.is_(True))
+    elif "is_published" in KnowledgeBase.__table__.columns:
+        stmt = stmt.where(KnowledgeBase.is_published.is_(True))
+    stmt = stmt.order_by(KnowledgeBase.created_at.desc())
     return list(db.execute(stmt).scalars().all())
 
 
@@ -303,7 +323,7 @@ def get_authorized_document(
 
 
 def get_authorized_knowledge_base(
-    kb_id: uuid.UUID,
+    kb_id: uuid.UUID | str,
     current_user: AuthenticatedUser,
     db: DatabaseSession,
 ) -> KnowledgeBase:
@@ -313,10 +333,32 @@ def get_authorized_knowledge_base(
     Access Rules:
     - MAIN_ADMIN: Can access any knowledge base in the system.
     - FACULTY_ADMIN: Can access knowledge bases they created or where they were granted membership.
-    - STUDENT: Can only access knowledge bases where explicit membership was granted.
+    - STUDENT: Can access any active or published knowledge base as long as the course exists.
     - If unauthorized: Returns HTTP 404 to avoid leaking knowledge base existence.
     """
-    if current_user.role == UserRole.ADMIN:
+    if isinstance(kb_id, str):
+        try:
+            kb_id = uuid.UUID(kb_id)
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Knowledge base not found.",
+            ) from None
+
+    role_val = getattr(current_user, "role", None)
+    if hasattr(role_val, "value"):
+        role_val = role_val.value
+    role_str = str(role_val).upper() if role_val is not None else ""
+
+    if role_str == "STUDENT" or role_val == UserRole.STUDENT:
+        # Student access: All students have default access to all published/active courses as long as the course exists
+        stmt = select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        if "is_active" in KnowledgeBase.__table__.columns:
+            stmt = stmt.where(KnowledgeBase.is_active.is_(True))
+        elif "is_published" in KnowledgeBase.__table__.columns:
+            stmt = stmt.where(KnowledgeBase.is_published.is_(True))
+        kb = db.execute(stmt).scalar_one_or_none()
+    elif role_str == "ADMIN" or role_val == UserRole.ADMIN:
         if is_main_admin(current_user):
             stmt = select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
         else:
@@ -339,20 +381,11 @@ def get_authorized_knowledge_base(
             )
         kb = db.execute(stmt).scalar_one_or_none()
     else:
-        # Student access requires explicit membership grant
-        stmt = (
-            select(KnowledgeBase)
-            .join(
-                KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
-            )
-            .where(
-                and_(
-                    KnowledgeBase.id == kb_id,
-                    KnowledgeBaseMember.user_id == current_user.id,
-                )
-            )
-        )
+        stmt = select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        if "is_active" in KnowledgeBase.__table__.columns:
+            stmt = stmt.where(KnowledgeBase.is_active.is_(True))
+        elif "is_published" in KnowledgeBase.__table__.columns:
+            stmt = stmt.where(KnowledgeBase.is_published.is_(True))
         kb = db.execute(stmt).scalar_one_or_none()
 
     if not kb:

@@ -73,16 +73,19 @@ def register_chat_page() -> None:
             active_route="/chat",
             require_auth=True,
         ):
-            if not is_admin and not can_admin_chat:
+            if not user:
+                return
+
+            if is_admin and not can_admin_chat:
                 with ui.card().classes(
                     "w-full max-w-2xl mx-auto p-6 bg-white border border-rose-200 rounded-lg shadow-xs"
                 ):
                     ui.icon("lock", size="2.5rem").classes("text-rose-500 mb-2")
-                    ui.label("Chat Not Authorized").classes(
+                    ui.label("Admin Chat Not Authorized").classes(
                         "text-lg font-bold text-slate-900"
                     )
                     ui.label(
-                        "Your account is not authorized to access conversational assistant."
+                        "Your administrative account does not have permission for Admin Chat. Please contact the Main Administrator."
                     ).classes("text-sm text-slate-600")
                 return
 
@@ -92,16 +95,45 @@ def register_chat_page() -> None:
             course_load_error: str | None = None
             try:
                 kbs = api_client.get_chat_scope_courses()
+                # For students, ensure all published courses from the global catalog are available
+                if not is_admin:
+                    all_courses = api_client.get_knowledge_bases()
+                    existing_ids = {k.id for k in kbs}
+                    for c in all_courses:
+                        if c.id not in existing_ids:
+                            kbs.append(c)
             except ValueError as err:
-                course_load_error = str(err)
+                try:
+                    kbs = api_client.get_knowledge_bases()
+                except Exception:
+                    course_load_error = str(err)
 
+            # Check requested course; verify existence across global catalog if not in initial list
             requested_kb = next((course for course in kbs if course.id == kb_id), None)
+            if kb_id and requested_kb is None:
+                try:
+                    all_courses = api_client.get_knowledge_bases()
+                    requested_kb = next((course for course in all_courses if course.id == kb_id), None)
+                    if requested_kb and not any(k.id == requested_kb.id for k in kbs):
+                        kbs.append(requested_kb)
+                except Exception:
+                    pass
+
+            # For students, permission check allows course access as long as the course exists
             if kb_id and requested_kb is None and course_load_error is None:
-                ui.notify("The requested course is not available to your account.", type="warning")
+                ui.notify("The requested course could not be found.", type="warning")
 
             selected_kb = requested_kb or state.active_kb
             if selected_kb is not None and not any(k.id == selected_kb.id for k in kbs):
-                selected_kb = None
+                try:
+                    all_courses = api_client.get_knowledge_bases()
+                    if any(c.id == selected_kb.id for c in all_courses):
+                        match_kb = next(c for c in all_courses if c.id == selected_kb.id)
+                        kbs.append(match_kb)
+                    else:
+                        selected_kb = None
+                except Exception:
+                    selected_kb = None
 
             # Determine initial scope and selections
             initial_scope = "COURSE" if selected_kb else "ALL_COURSES"
@@ -311,40 +343,65 @@ def register_chat_page() -> None:
                             label="Document",
                         ).props("outlined dense options-dense").classes("text-xs min-w-[220px]")
 
-                    # Action diagnostics for Admin
+                    # Action diagnostics & chat controls
                     with ui.row().classes("ml-auto items-center gap-2 flex-wrap"):
-                        if is_admin and active_scope["kb_id"]:
-                            kb_name = next(
-                                (k.name for k in kbs if k.id == active_scope["kb_id"]), "Course"
+                        diag_kb_id = active_scope["kb_id"] or (kbs[0].id if kbs else None)
+                        if diag_kb_id:
+                            diag_kb_name = next(
+                                (k.name for k in kbs if k.id == diag_kb_id), "Course"
                             )
-                            ui.button(
-                                "Dense Vector",
-                                icon="manage_search",
-                                on_click=lambda: open_vector_retrieval_dialog(
-                                    active_scope["kb_id"], kb_name
-                                ),
-                            ).props("outline dense no-caps").classes("text-xs text-blue-700")
-                            ui.button(
-                                "Lexical FTS",
-                                icon="search",
-                                on_click=lambda: open_lexical_retrieval_dialog(
-                                    active_scope["kb_id"], kb_name
-                                ),
-                            ).props("outline dense no-caps").classes("text-xs text-teal-700")
-                            ui.button(
-                                "Hybrid RRF",
-                                icon="layers",
-                                on_click=lambda: open_hybrid_retrieval_dialog(
-                                    active_scope["kb_id"], kb_name
-                                ),
-                            ).props("outline dense no-caps").classes("text-xs text-indigo-700")
-                            ui.button(
-                                "Reranker",
-                                icon="tune",
-                                on_click=lambda: open_rerank_inspection_dialog(
-                                    active_scope["kb_id"], kb_name
-                                ),
-                            ).props("outline dense no-caps").classes("text-xs text-purple-700")
+                            with ui.button("Debug Mode", icon="bug_report").props(
+                                "outline dense no-caps icon-right=arrow_drop_down"
+                            ).classes(
+                                "text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
+                            ):
+                                with ui.menu().classes(
+                                    "p-2 bg-white border border-slate-200 shadow-lg rounded-lg"
+                                ) as debug_menu:
+                                    ui.label("RAG Diagnostics").classes(
+                                        "text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1"
+                                    )
+                                    with ui.column().classes("gap-1 w-full min-w-[180px]"):
+                                        ui.button(
+                                            "Dense Vector",
+                                            icon="manage_search",
+                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: (
+                                                debug_menu.close(),
+                                                open_vector_retrieval_dialog(k, n),
+                                            ),
+                                        ).props("flat dense no-caps align=left").classes(
+                                            "w-full text-xs text-blue-700 justify-start hover:bg-blue-50"
+                                        )
+                                        ui.button(
+                                            "Lexical FTS",
+                                            icon="search",
+                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: (
+                                                debug_menu.close(),
+                                                open_lexical_retrieval_dialog(k, n),
+                                            ),
+                                        ).props("flat dense no-caps align=left").classes(
+                                            "w-full text-xs text-teal-700 justify-start hover:bg-teal-50"
+                                        )
+                                        ui.button(
+                                            "Hybrid RRF",
+                                            icon="layers",
+                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: (
+                                                debug_menu.close(),
+                                                open_hybrid_retrieval_dialog(k, n),
+                                            ),
+                                        ).props("flat dense no-caps align=left").classes(
+                                            "w-full text-xs text-indigo-700 justify-start hover:bg-indigo-50"
+                                        )
+                                        ui.button(
+                                            "Reranker",
+                                            icon="tune",
+                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: (
+                                                debug_menu.close(),
+                                                open_rerank_inspection_dialog(k, n),
+                                            ),
+                                        ).props("flat dense no-caps align=left").classes(
+                                            "w-full text-xs text-purple-700 justify-start hover:bg-purple-50"
+                                        )
 
                         def clear_chat_history() -> None:
                             state.clear_chat()

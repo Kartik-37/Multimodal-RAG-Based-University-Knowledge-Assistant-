@@ -17,18 +17,18 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.permissions import Permission
 from backend.app.core.security import get_password_hash
-from backend.app.models.document import Document, DocumentChunk, DocumentStatus
+from backend.app.models.document import Document, DocumentStatus
 from backend.app.models.indexing_job import IndexingJob, IndexingJobStage, IndexingJobStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import AdminRole, User, UserRole
 from frontend.client.api_client import api_client
 from frontend.client.models import UserDTO
-from frontend.components.layout import get_admin_nav_groups, get_nav_items, has_admin_permission
+from frontend.components.layout import get_admin_nav_groups, get_nav_items
 
 
 @pytest.fixture
