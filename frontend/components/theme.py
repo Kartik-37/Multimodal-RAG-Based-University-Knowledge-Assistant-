@@ -60,6 +60,18 @@ COLOR_INFO_TEXT = "#1e40af"
 # ------------------------------------------------------------------------------
 GLOBAL_THEME_CSS = """
 <style>
+/* Quasar Theme Variables: Institutional Navy & Academic Slate */
+:root {
+    --q-primary: #1e3a8a;
+    --q-secondary: #475569;
+    --q-accent: #2563eb;
+    --q-dark: #0b1528;
+    --q-positive: #166534;
+    --q-negative: #991b1b;
+    --q-info: #1e40af;
+    --q-warning: #92400e;
+}
+
 /* Base typography and smooth institutional rendering */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -239,14 +251,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 def init_theme() -> None:
     """Inject global design system styling and institutional palette into NiceGUI."""
-    ui.colors(
-        primary=COLOR_NAVY_PRIMARY,          # Institutional Navy (#1e3a8a)
-        secondary=COLOR_ACADEMIC_SLATE_600,  # Academic Slate (#475569)
-        accent=COLOR_NAVY_INTERACTIVE,       # Interactive Navy Accent (#2563eb)
-        dark=COLOR_INSTITUTIONAL_NAVY_DARK,  # Deep Midnight Institutional Navy (#0b1528)
-        positive="#166534",                  # Academic Emerald
-        negative="#991b1b",                  # Crimson Alert
-        info="#1e40af",                      # Academic Info
-        warning="#92400e",                   # Amber Notice
-    )
     ui.add_head_html(GLOBAL_THEME_CSS, shared=True)
