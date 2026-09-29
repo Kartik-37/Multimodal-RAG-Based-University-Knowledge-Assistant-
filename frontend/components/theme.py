@@ -10,19 +10,40 @@ design target, not a claimed certification).
 from nicegui import ui
 
 # ------------------------------------------------------------------------------
-# Academic Color Palette Tokens
+# Academic Color Palette Tokens: Institutional Navy & Academic Slate Theme
 # ------------------------------------------------------------------------------
-COLOR_BRAND_NAVY = "#0f172a"  # Slate 900: Institutional chrome, deep contrast
-COLOR_BRAND_SLATE = "#1e293b"  # Slate 800: Secondary chrome, headers
-COLOR_BRAND_BLUE = "#1d4ed8"  # Blue 700: Primary actions, focused interactive
-COLOR_BRAND_LIGHT_BLUE = "#2563eb"  # Blue 600: Links, focus ring
-COLOR_CANVAS = "#f8fafc"  # Slate 50: Neutral page background
-COLOR_SURFACE = "#ffffff"  # White: Cards and content containers
-COLOR_BORDER = "#e2e8f0"  # Slate 200: Subtle card borders
-COLOR_BORDER_STRONG = "#cbd5e1"  # Slate 300: Active or focused borders
-COLOR_TEXT_PRIMARY = "#0f172a"  # Slate 900: High-contrast body & headings
-COLOR_TEXT_SECONDARY = "#475569"  # Slate 600: Secondary descriptions
-COLOR_TEXT_MUTED = "#64748b"  # Slate 500: Helper text, metadata
+# Institutional Navy Spectrum
+COLOR_INSTITUTIONAL_NAVY_DARK = "#0b1528"   # Deep institutional midnight navy (headers, chrome)
+COLOR_INSTITUTIONAL_NAVY = "#0f1d38"        # Primary institutional navy
+COLOR_INSTITUTIONAL_NAVY_SURFACE = "#16284c"# Navy secondary surface
+COLOR_NAVY_PRIMARY = "#1e3a8a"              # Institutional Navy (Blue 900) for primary actions
+COLOR_NAVY_INTERACTIVE = "#2563eb"          # Interactive accent & focus ring (Blue 600)
+COLOR_NAVY_HOVER = "#1d4ed8"                # Hover state for interactive navy elements
+
+# Academic Slate Spectrum
+COLOR_ACADEMIC_SLATE_900 = "#0f172a"        # High-contrast typography & headings
+COLOR_ACADEMIC_SLATE_800 = "#1e293b"        # Secondary chrome & prominent subheaders
+COLOR_ACADEMIC_SLATE_700 = "#334155"        # Card titles & emphasized text
+COLOR_ACADEMIC_SLATE_600 = "#475569"        # Standard body text & secondary labels
+COLOR_ACADEMIC_SLATE_500 = "#64748b"        # Muted metadata, timestamps & captions
+COLOR_ACADEMIC_SLATE_400 = "#94a3b8"        # Subtle icon accents & disabled state
+COLOR_ACADEMIC_SLATE_300 = "#cbd5e1"        # Active borders & prominent dividers
+COLOR_ACADEMIC_SLATE_200 = "#e2e8f0"        # Standard subtle card borders
+COLOR_ACADEMIC_SLATE_100 = "#f1f5f9"        # Chip/badge background & muted containers
+COLOR_ACADEMIC_SLATE_50 = "#f8fafc"         # Clean academic canvas page background
+
+# Backward-compatible Token Aliases
+COLOR_BRAND_NAVY = COLOR_INSTITUTIONAL_NAVY_DARK
+COLOR_BRAND_SLATE = COLOR_ACADEMIC_SLATE_800
+COLOR_BRAND_BLUE = COLOR_NAVY_PRIMARY
+COLOR_BRAND_LIGHT_BLUE = COLOR_NAVY_INTERACTIVE
+COLOR_CANVAS = COLOR_ACADEMIC_SLATE_50
+COLOR_SURFACE = "#ffffff"
+COLOR_BORDER = COLOR_ACADEMIC_SLATE_200
+COLOR_BORDER_STRONG = COLOR_ACADEMIC_SLATE_300
+COLOR_TEXT_PRIMARY = COLOR_ACADEMIC_SLATE_900
+COLOR_TEXT_SECONDARY = COLOR_ACADEMIC_SLATE_600
+COLOR_TEXT_MUTED = COLOR_ACADEMIC_SLATE_500
 
 # Semantic Status Tokens (Color + Icon + Text pair)
 COLOR_SUCCESS_BG = "#dcfce7"
@@ -39,7 +60,7 @@ COLOR_INFO_TEXT = "#1e40af"
 # ------------------------------------------------------------------------------
 GLOBAL_THEME_CSS = """
 <style>
-/* Base typography and smooth rendering */
+/* Base typography and smooth institutional rendering */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: #f8fafc;
@@ -61,7 +82,44 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     outline-offset: 2px !important;
 }
 
-/* Custom restrained scrollbars */
+/* Standardized Subtle Card Borders and Shadows */
+.q-card {
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03) !important;
+    border-radius: 0.5rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Refined Subtle Shadow Utility Overrides */
+.shadow-2xs, .shadow-xs {
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03) !important;
+}
+.shadow-sm {
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03) !important;
+}
+.shadow-md {
+    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03) !important;
+}
+.shadow-lg {
+    box-shadow: 0 8px 16px -3px rgba(15, 23, 42, 0.06), 0 3px 6px -2px rgba(15, 23, 42, 0.03) !important;
+}
+.shadow-xl, .shadow-2xl {
+    box-shadow: 0 12px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -3px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* Subtle Card Interactive Hover Transitions */
+.card-hover:hover, .q-card.hover-lift:hover {
+    border-color: #cbd5e1 !important;
+    box-shadow: 0 4px 8px -2px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* Modal Dialog Cards: Subtle elevation instead of harsh drop-shadows */
+.q-dialog .q-card {
+    box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -3px rgba(15, 23, 42, 0.06) !important;
+    border: 1px solid #cbd5e1 !important;
+}
+
+/* Custom restrained academic scrollbars */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -106,12 +164,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     border: 1px solid #e2e8f0;
 }
 .safe-markdown pre {
-    background-color: #0f172a;
+    background-color: #0b1528;
     color: #f8fafc;
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
     overflow-x: auto;
     margin-bottom: 0.75rem;
+    border: 1px solid #1e293b;
 }
 .safe-markdown pre code {
     background-color: transparent;
@@ -127,6 +186,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     -webkit-overflow-scrolling: touch;
 }
 
+/* Breadcrumb Navigation Trail Component */
+.academic-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: #64748b;
+}
+.academic-breadcrumb a {
+    color: #475569;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+.academic-breadcrumb a:hover {
+    color: #1e3a8a;
+    text-decoration: underline;
+}
+.academic-breadcrumb .active-crumb {
+    color: #0f172a;
+    font-weight: 600;
+}
+
 /* Screen reader only utility class */
 .sr-only {
     position: absolute;
@@ -140,9 +221,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     border: 0;
 }
 
-/* Restrained institutional reconnection notification (Section 7) */
+/* Restrained institutional reconnection notification */
 .nicegui-reconnect {
-    background-color: rgba(15, 23, 42, 0.92) !important;
+    background-color: rgba(11, 21, 40, 0.94) !important;
     backdrop-filter: blur(8px) !important;
     color: #f8fafc !important;
     font-size: 0.8125rem !important;
@@ -150,12 +231,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 8px !important;
     padding: 10px 20px !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+    box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.25) !important;
 }
 </style>
 """
 
 
 def init_theme() -> None:
-    """Inject global design system styling into the NiceGUI application head."""
+    """Inject global design system styling and institutional palette into NiceGUI."""
+    ui.colors(
+        primary=COLOR_NAVY_PRIMARY,          # Institutional Navy (#1e3a8a)
+        secondary=COLOR_ACADEMIC_SLATE_600,  # Academic Slate (#475569)
+        accent=COLOR_NAVY_INTERACTIVE,       # Interactive Navy Accent (#2563eb)
+        dark=COLOR_INSTITUTIONAL_NAVY_DARK,  # Deep Midnight Institutional Navy (#0b1528)
+        positive="#166534",                  # Academic Emerald
+        negative="#991b1b",                  # Crimson Alert
+        info="#1e40af",                      # Academic Info
+        warning="#92400e",                   # Amber Notice
+    )
     ui.add_head_html(GLOBAL_THEME_CSS, shared=True)

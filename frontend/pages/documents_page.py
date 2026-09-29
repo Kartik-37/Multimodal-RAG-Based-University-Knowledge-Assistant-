@@ -91,11 +91,22 @@ def register_documents_page() -> None:
             else "Select a university course to view and manage its learning materials."
         )
 
+        crumbs = (
+            [("Dashboard", "/dashboard"), ("Courses", "/knowledge-bases"), (f"{selected_course.name} Documents", None)]
+            if selected_course
+            else [("Dashboard", "/dashboard"), ("Courses", "/knowledge-bases"), ("Course Documents", None)]
+        )
+        b_route = "/knowledge-bases" if selected_course else "/dashboard"
+        b_label = "Courses" if selected_course else "Dashboard"
+
         with page_layout(
             title=page_title,
             subtitle=page_subtitle,
             active_route="/documents",
             require_auth=True,
+            breadcrumbs=crumbs,
+            back_route=b_route,
+            back_label=b_label,
         ):
             # If no course is selected, display course selection list
             if not selected_course:
