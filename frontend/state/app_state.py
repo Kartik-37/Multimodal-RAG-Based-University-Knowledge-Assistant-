@@ -7,6 +7,8 @@ Maintains UI state across page views:
 - Active conversation message thread
 """
 
+from typing import Any
+
 from frontend.client.api_client import _get_browser_session_id, api_client
 from frontend.client.models import (
     ChatMessageDTO,
@@ -23,6 +25,77 @@ class AppState:
         self._active_kb: KnowledgeBaseDTO | None = None
         self._selected_citation: CitationDTO | None = None
         self._chat_history: list[ChatMessageDTO] = []
+        self._is_generating: bool = False
+        self._generation_error: str | None = None
+        self._active_task: Any = None
+
+    @property
+    def is_generating(self) -> bool:
+        """Check if assistant is actively synthesizing an answer in the background."""
+        return self._is_generating
+
+    @property
+    def generation_error(self) -> str | None:
+        """Get background query generation error if any."""
+        return self._generation_error
+
+    def clear_generation_error(self) -> None:
+        """Clear generation error state."""
+        self._generation_error = None
+
+    def start_background_generation(
+        self,
+        kb_id: str | None,
+        question: str,
+        document_id: str | None = None,
+        scope: str = "ALL_COURSES",
+    ) -> None:
+        """
+        Launch background query synthesis decoupled from the NiceGUI page lifecycle.
+        Continues executing even if the student switches pages.
+        """
+        if self._is_generating:
+            return
+
+        import asyncio
+
+        self._is_generating = True
+        self._generation_error = None
+
+        async def _run_async_query() -> None:
+            try:
+                resp = await asyncio.to_thread(
+                    api_client.send_chat_message,
+                    kb_id=kb_id,
+                    question=question,
+                    document_id=document_id,
+                    scope=scope,
+                )
+                self._chat_history.append(resp)
+                if resp.citations:
+                    self._selected_citation = resp.citations[0]
+            except Exception as e:
+                self._generation_error = str(e)
+                err_msg = ChatMessageDTO(
+                    id=f"msg-err-{len(self._chat_history) + 1}",
+                    role="assistant",
+                    content=f"Unable to complete query synthesis: {e}",
+                    citations=[],
+                )
+                self._chat_history.append(err_msg)
+            finally:
+                self._is_generating = False
+                self._active_task = None
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop_policy().get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        self._active_task = loop.create_task(_run_async_query())
 
     @property
     def current_user(self) -> UserDTO | None:
@@ -79,7 +152,12 @@ class AppState:
         self._chat_history.append(msg)
 
     def clear_chat(self) -> None:
-        """Reset conversation history."""
+        """Reset conversation history and cancel running background task if active."""
+        if self._active_task and not self._active_task.done():
+            self._active_task.cancel()
+        self._is_generating = False
+        self._active_task = None
+        self._generation_error = None
         self._chat_history.clear()
         self._selected_citation = None
 
@@ -146,6 +224,31 @@ class _SessionAppStateProxy:
 
     def add_assistant_message(self, msg: ChatMessageDTO) -> None:
         self._get_state().add_assistant_message(msg)
+
+    @property
+    def is_generating(self) -> bool:
+        return self._get_state().is_generating
+
+    @property
+    def generation_error(self) -> str | None:
+        return self._get_state().generation_error
+
+    def clear_generation_error(self) -> None:
+        self._get_state().clear_generation_error()
+
+    def start_background_generation(
+        self,
+        kb_id: str | None,
+        question: str,
+        document_id: str | None = None,
+        scope: str = "ALL_COURSES",
+    ) -> None:
+        self._get_state().start_background_generation(
+            kb_id=kb_id,
+            question=question,
+            document_id=document_id,
+            scope=scope,
+        )
 
     def clear_chat(self) -> None:
         self._get_state().clear_chat()

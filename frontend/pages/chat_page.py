@@ -22,8 +22,45 @@ from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.lexical_inspect import open_lexical_retrieval_dialog
 from frontend.components.rerank_inspect import open_rerank_inspection_dialog
 from frontend.components.retrieval_inspect import open_vector_retrieval_dialog
-from frontend.components.status_badge import render_grounding_status_badge
+from frontend.components.source_viewer import open_source_viewer
 from frontend.state.app_state import state
+
+
+def format_citation_links(text: str, citations: list[CitationDTO]) -> str:
+    """
+    Transform citation tags [1], [2] or [source_1], [source_2] in assistant markdown into interactive citation pills.
+    Clicking any citation pill triggers the Source Viewer side drawer to open to that page.
+    """
+    if not citations or not text:
+        return text
+
+    # Map both source_id (e.g. "source_1") and 1-based index (e.g. "1") to citation
+    cit_lookup: dict[str, tuple[int, CitationDTO]] = {}
+    for i, c in enumerate(citations, start=1):
+        cit_lookup[str(i)] = (i, c)
+        if c.source_id:
+            cit_lookup[c.source_id.lower()] = (i, c)
+            m = re.match(r"source_(\d+)", c.source_id, re.IGNORECASE)
+            if m:
+                cit_lookup[m.group(1)] = (i, c)
+
+    def replace_cit(m: re.Match) -> str:
+        key = m.group(1).lower()
+        if key in cit_lookup:
+            idx, cit = cit_lookup[key]
+            page_info = f" • Page {cit.page_number}" if cit.page_number else ""
+            title_text = f"Click to view {cit.document_name}{page_info} in Source Viewer"
+            return (
+                f'<a href="javascript:void(0)" data-citation-index="{idx}" '
+                f'title="{title_text}" '
+                f'class="citation-pill inline-flex items-center px-1.5 py-0.5 mx-0.5 text-[11px] font-bold font-mono '
+                f"text-blue-700 bg-blue-100 hover:bg-blue-200 hover:text-blue-950 rounded cursor-pointer "
+                f'no-underline border border-blue-300 transition-colors shadow-2xs">[{idx}]</a>'
+            )
+        return m.group(0)
+
+    # Match bracketed integers [1] or [source_1] not part of markdown links [1](url)
+    return re.sub(r"\[(?:source_)?(\d+)\](?!\()", replace_cit, text, flags=re.IGNORECASE)
 
 
 def sanitize_markdown_text(raw_text: str) -> str:
@@ -60,7 +97,7 @@ def register_chat_page() -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
         can_admin_chat = is_admin or has_admin_permission(user, Permission.ADMIN_CHAT)
-        page_title = "Admin Knowledge Chat" if is_admin else "Ask BCA Assistant"
+        page_title = "Admin Knowledge Chat" if is_admin else "Ask Academic Assistant"
         page_subtitle = (
             "Interactive RAG queries across authorized course materials with verifiable citations and provenance."
             if is_admin
@@ -113,7 +150,9 @@ def register_chat_page() -> None:
             if kb_id and requested_kb is None:
                 try:
                     all_courses = api_client.get_knowledge_bases()
-                    requested_kb = next((course for course in all_courses if course.id == kb_id), None)
+                    requested_kb = next(
+                        (course for course in all_courses if course.id == kb_id), None
+                    )
                     if requested_kb and not any(k.id == requested_kb.id for k in kbs):
                         kbs.append(requested_kb)
                 except Exception:
@@ -162,10 +201,13 @@ def register_chat_page() -> None:
             if active_scope["kb_id"]:
                 load_docs_for_current_kb()
 
-            # Dynamic containers
-            scope_controls_row = ui.row().classes("w-full items-center gap-3 flex-wrap")
-            scope_error_container = ui.column().classes("w-full")
-            doc_warning_container = ui.column().classes("w-full")
+            # Top Context & Controls Card
+            with ui.card().classes(
+                "w-full p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs mb-1"
+            ):
+                scope_controls_row = ui.row().classes("w-full items-center gap-3 flex-wrap")
+                scope_error_container = ui.column().classes("w-full")
+                doc_warning_container = ui.column().classes("w-full")
 
             def refresh_scope_error() -> None:
                 scope_error_container.clear()
@@ -346,14 +388,16 @@ def register_chat_page() -> None:
                     # Action diagnostics & chat controls
                     with ui.row().classes("ml-auto items-center gap-2 flex-wrap"):
                         diag_kb_id = active_scope["kb_id"] or (kbs[0].id if kbs else None)
-                        if diag_kb_id:
+                        if is_admin and diag_kb_id:
                             diag_kb_name = next(
                                 (k.name for k in kbs if k.id == diag_kb_id), "Course"
                             )
-                            with ui.button("Debug Mode", icon="bug_report").props(
-                                "outline dense no-caps icon-right=arrow_drop_down"
-                            ).classes(
-                                "text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
+                            with (
+                                ui.button("Debug Mode", icon="bug_report")
+                                .props("outline dense no-caps icon-right=arrow_drop_down")
+                                .classes(
+                                    "text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
+                                )
                             ):
                                 with ui.menu().classes(
                                     "p-2 bg-white border border-slate-200 shadow-lg rounded-lg"
@@ -405,6 +449,11 @@ def register_chat_page() -> None:
 
                         def clear_chat_history() -> None:
                             state.clear_chat()
+                            try:
+                                send_btn.enable()
+                                input_box.enable()
+                            except NameError:
+                                pass
                             ui.notify("Conversation cleared.", type="info")
                             render_messages()
                             render_evidence()
@@ -417,11 +466,8 @@ def register_chat_page() -> None:
                             "text-xs text-rose-600 hover:bg-rose-50"
                         )
 
-            # Top Context & Controls Card
-            with ui.card().classes(
-                "w-full p-3.5 bg-white border border-slate-200 rounded-lg shadow-xs mb-1"
-            ):
-                render_controls()
+            # Top Context & Controls populated directly inside card
+            render_controls()
 
             # Scope/document load diagnostics
             refresh_scope_error()
@@ -429,51 +475,50 @@ def register_chat_page() -> None:
             # Warning banner for unindexed target doc
             refresh_doc_warning()
 
-            # Main Two-Column Layout (Chat Thread + Evidence Panel)
-            with ui.row().classes("w-full gap-6 items-start mt-2"):
-                # Left Column: Conversation Thread (approx 65% width on desktop)
-                with ui.column().classes("flex-1 min-w-[300px] w-full gap-4"):
-                    # Message Container
-                    message_container = ui.column().classes(
-                        "w-full min-h-[400px] max-h-[600px] overflow-y-auto p-4 sm:p-5 bg-white border border-slate-200 rounded-lg shadow-xs gap-4"
-                    )
+            # Evidence Inspection Dialog (On-Demand Deep Technical Provenance)
+            evidence_dialog = ui.dialog().props("position=right")
+            with evidence_dialog:
+                with ui.card().classes(
+                    "w-[94vw] md:w-[540px] max-w-full h-full p-4 bg-white flex flex-col rounded-none md:rounded-l-2xl border-l border-slate-200"
+                ):
+                    with ui.row().classes("w-full items-center justify-between pb-3 border-b border-slate-100 mb-2"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("find_in_page", size="sm").classes("text-blue-600")
+                            ui.label("Technical Grounding Inspection").classes("text-sm font-bold text-slate-800")
+                        ui.button(icon="close", on_click=evidence_dialog.close).props("flat round dense")
+                    evidence_container = ui.column().classes("w-full flex-1 overflow-y-auto")
 
-                    # Loading Indicator (Asynchronous Processing Indicator)
-                    loading_row = ui.row().classes(
-                        "w-full items-center gap-2.5 p-3 bg-blue-50 border border-blue-200 rounded-md shadow-xs"
-                    )
-                    with loading_row:
-                        ui.spinner(size="sm", color="primary")
-                        ui.label(
-                            "Searching course materials and synthesizing verified answer..."
-                        ).classes("text-xs font-medium text-blue-900")
-                    loading_row.visible = False
+            # Main Centered Chat Container
+            with ui.column().classes("w-full max-w-4xl mx-auto gap-4 mt-2"):
+                # Message Container (Responsive Studio Height)
+                message_container = ui.column().classes(
+                    "w-full min-h-[500px] max-h-[68vh] overflow-y-auto p-4 sm:p-6 bg-slate-50/60 border border-slate-200/90 rounded-2xl shadow-xs gap-4"
+                )
 
-                    # Input Bar
-                    input_placeholder = (
-                        "Ask a question about course materials, syllabi, grading, prerequisites..."
-                        if not is_admin
-                        else "Ask a question to test retrieval, reranking, and citation synthesis..."
-                    )
-                    with ui.card().classes(
-                        "w-full p-2 bg-white border border-slate-200 rounded-lg shadow-xs"
-                    ):
-                        with ui.row().classes("w-full items-center gap-2"):
-                            input_box = (
-                                ui.input(
-                                    placeholder=input_placeholder,
-                                )
-                                .props("outlined dense")
-                                .classes("flex-1 text-sm")
+                # Floating Input Dock
+                input_placeholder = (
+                    "Ask a question about course materials, syllabi, grading, prerequisites..."
+                    if not is_admin
+                    else "Ask a question to test retrieval, reranking, and citation synthesis..."
+                )
+                with ui.card().classes(
+                    "w-full p-2.5 bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all"
+                ):
+                    with ui.row().classes("w-full items-center gap-2"):
+                        input_box = (
+                            ui.input(
+                                placeholder=input_placeholder,
                             )
-                            send_btn = (
-                                ui.button(icon="send")
-                                .props("color=primary dense")
-                                .classes("px-3 py-1.5")
+                            .props("outlined dense")
+                            .classes("flex-1 text-sm minimalist-input")
+                        )
+                        send_btn = (
+                            ui.button(icon="send")
+                            .props("color=primary dense")
+                            .classes(
+                                "w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs shrink-0 flex items-center justify-center transition-colors"
                             )
-
-                # Right Column: Evidence / Citation Panel (Collapsible or side panel)
-                evidence_container = ui.column().classes("w-full lg:w-96 min-w-[280px] gap-2")
+                        ).tooltip("Send question (Enter)")
 
             # Controller functions in proper lexical scope
             async def send_message(question_text: str) -> None:
@@ -509,34 +554,29 @@ def register_chat_page() -> None:
                         )
                         return
 
-                # Append user question to state
+                if state.is_generating:
+                    ui.notify("Academic Assistant is still thinking. Please wait...", type="info")
+                    return
+
+                # Append user question to state immediately
                 state.add_user_message(q)
+                send_btn.disable()
+                input_box.disable()
                 render_messages()
                 render_evidence()
 
-                # Enable loading state
-                loading_row.visible = True
-                send_btn.disable()
-
-                try:
-                    response = api_client.send_chat_message(
-                        question=q,
-                        kb_id=target_kb_id,
-                        document_id=target_doc_id,
-                        scope=cur_scope,
-                    )
-                    state.add_assistant_message(response)
-                    if response.citations:
-                        state.selected_citation = response.citations[0]
-                except ValueError as err:
-                    ui.notify(f"{err}", type="negative")
-                finally:
-                    loading_row.visible = False
-                    send_btn.enable()
-                    render_messages()
-                    render_evidence()
+                # Launch decoupled background generation so navigating pages doesn't abort it
+                state.start_background_generation(
+                    kb_id=target_kb_id,
+                    question=q,
+                    document_id=target_doc_id,
+                    scope=cur_scope,
+                )
 
             async def handle_submit() -> None:
+                if state.is_generating:
+                    ui.notify("Academic Assistant is still thinking. Please wait...", type="info")
+                    return
                 q = (input_box.value or "").strip()
                 if not q:
                     ui.notify("Please enter a question.", type="warning")
@@ -547,10 +587,79 @@ def register_chat_page() -> None:
             send_btn.on("click", handle_submit)
             input_box.on("keydown.enter", handle_submit)
 
+            # Observe background generation state across page visits
+            was_generating = {"value": state.is_generating}
+
+            def check_generation_status() -> None:
+                is_now = state.is_generating
+                if was_generating["value"] != is_now:
+                    was_generating["value"] = is_now
+                    if not is_now:
+                        send_btn.enable()
+                        input_box.enable()
+                        if state.generation_error:
+                            ui.notify(f"Query error: {state.generation_error}", type="negative")
+                            state.clear_generation_error()
+                        render_messages()
+                        render_evidence()
+                    else:
+                        send_btn.disable()
+                        input_box.disable()
+                        render_messages()
+
+            ui.timer(0.3, check_generation_status)
+
+            if state.is_generating:
+                send_btn.disable()
+                input_box.disable()
+
             def select_citation(cit: CitationDTO) -> None:
                 state.selected_citation = cit
                 render_messages()
                 render_evidence()
+
+            def open_citation_viewer(cit: CitationDTO) -> None:
+                state.selected_citation = cit
+                try:
+                    evidence_dialog.close()
+                except Exception:
+                    pass
+                open_source_viewer(
+                    document_id=cit.document_id,
+                    document_name=cit.document_name,
+                    kb_id=cit.knowledge_base_id,
+                    page_number=cit.page_number,
+                    course_name=cit.course_name,
+                    snippet=cit.snippet,
+                )
+
+            def open_evidence_for_message(target_msg: Any) -> None:
+                evidence_container.clear()
+                with evidence_container:
+                    citations = getattr(target_msg, "citations", []) or []
+                    render_evidence_panel(
+                        citations=citations,
+                        selected_citation=citations[0] if citations else None,
+                        on_select=select_citation,
+                        on_open_viewer=open_citation_viewer,
+                        is_admin=is_admin,
+                    )
+                evidence_dialog.open()
+
+            def handle_citation_click(idx_val: Any) -> None:
+                try:
+                    idx = int(idx_val)
+                except (ValueError, TypeError):
+                    return
+                assistant_msgs = [m for m in state.chat_history if m.role == "assistant"]
+                if not assistant_msgs:
+                    return
+                latest_msg = assistant_msgs[-1]
+                if not latest_msg.citations or idx < 1 or idx > len(latest_msg.citations):
+                    return
+                open_citation_viewer(latest_msg.citations[idx - 1])
+
+            ui.on("citation_click", lambda e: handle_citation_click(e.args))
 
             def render_evidence() -> None:
                 evidence_container.clear()
@@ -561,6 +670,7 @@ def register_chat_page() -> None:
                         citations=citations,
                         selected_citation=state.selected_citation,
                         on_select=select_citation,
+                        on_open_viewer=open_citation_viewer,
                         is_admin=is_admin,
                     )
 
@@ -569,21 +679,25 @@ def register_chat_page() -> None:
                 with message_container:
                     if not state.chat_history:
                         with ui.column().classes(
-                            "w-full py-16 items-center justify-center text-center"
+                            "w-full py-12 items-center justify-center text-center"
                         ):
-                            ui.icon("chat_bubble_outline", size="3rem").classes(
-                                "text-slate-300 mb-2"
-                            )
-                            ui.label("No Questions Asked Yet").classes(
-                                "text-base font-bold text-slate-800"
+                            with ui.element("div").classes(
+                                "w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm mb-3.5"
+                            ):
+                                ui.icon("school", size="28px")
+                            ui.label("Academic Assistant").classes(
+                                "text-lg font-bold text-slate-900 tracking-tight"
                             )
                             ui.label(
-                                "Type your academic question below. The assistant will retrieve relevant passages, "
-                                "rerank evidence, and synthesize an answer with verified citations."
-                            ).classes("text-xs text-slate-500 max-w-md mt-1 mb-5 leading-relaxed")
+                                "Type your question below. Answers are synthesized strictly from authorized university "
+                                "textbooks, syllabi, and official regulations with verifiable page citations."
+                            ).classes("text-xs text-slate-500 max-w-md mt-1.5 mb-6 leading-relaxed")
 
                             # Starter prompts
-                            with ui.row().classes("gap-2 flex-wrap justify-center"):
+                            ui.label("SUGGESTED QUESTIONS").classes(
+                                "text-[10px] font-bold text-slate-400 tracking-wider mb-2"
+                            )
+                            with ui.row().classes("gap-2 flex-wrap justify-center max-w-xl"):
                                 starter_prompts = [
                                     "What are the examination grading criteria?",
                                     "Explain the core algorithms in this syllabus.",
@@ -598,97 +712,181 @@ def register_chat_page() -> None:
                                         prompt,
                                         on_click=make_prompt_handler(),
                                     ).props("outline dense no-caps").classes(
-                                        "text-xs text-blue-700 border-blue-200 hover:bg-blue-50"
+                                        "text-xs text-slate-700 border-slate-200 bg-white hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50/50 rounded-xl px-3 py-1.5 shadow-2xs transition-all"
                                     )
                     else:
+                        user_initials = (
+                            "".join(p[0].upper() for p in user.full_name.split()[:2])
+                            if user and user.full_name
+                            else "U"
+                        )
                         for msg in state.chat_history:
                             if msg.role == "user":
-                                with ui.row().classes("w-full justify-end"):
-                                    with ui.card().classes(
-                                        "max-w-xl bg-blue-700 text-white p-3.5 rounded-lg shadow-xs"
+                                with ui.row().classes("w-full justify-end items-end gap-2.5"):
+                                    with ui.element("div").classes(
+                                        "max-w-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-3.5 rounded-2xl rounded-tr-xs shadow-xs text-sm leading-relaxed font-sans select-text"
                                     ):
                                         ui.label(msg.content).classes(
-                                            "text-sm text-white leading-relaxed"
+                                            "text-white leading-relaxed font-medium"
                                         )
+                                    with ui.element("div").classes(
+                                        "w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0 mb-0.5 shadow-2xs"
+                                    ):
+                                        ui.label(user_initials)
                             else:
-                                with ui.row().classes("w-full justify-start"):
+                                with ui.row().classes("w-full justify-start items-start gap-2.5"):
+                                    with ui.element("div").classes(
+                                        "w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-2xs shrink-0 mt-1"
+                                    ):
+                                        ui.icon("school", size="18px")
                                     with ui.card().classes(
-                                        "w-full max-w-2xl bg-slate-50 border border-slate-200 p-4 rounded-lg shadow-xs gap-2"
+                                        "w-full max-w-3xl bg-white border border-slate-200/90 p-5 sm:p-6 rounded-2xl rounded-tl-xs shadow-xs gap-3"
                                     ):
                                         # Assistant Header Meta
                                         with ui.row().classes(
-                                            "w-full justify-between items-center mb-1"
+                                            "w-full justify-between items-center mb-0.5"
                                         ):
-                                            with ui.row().classes("items-center gap-1.5"):
-                                                ui.icon("school", size="xs").classes(
-                                                    "text-blue-600"
+                                            with ui.row().classes("items-center gap-2"):
+                                                ui.label("Academic Assistant").classes(
+                                                    "text-xs font-bold text-slate-900"
                                                 )
-                                                ui.label("Assistant").classes(
-                                                    "text-xs font-bold text-slate-800"
-                                                )
-                                                if msg.grounding_status:
-                                                    render_grounding_status_badge(
-                                                        msg.grounding_status,
-                                                        is_grounded=msg.is_grounded,
-                                                    )
                                             if msg.total_pipeline_ms:
-                                                ui.label(f"{msg.total_pipeline_ms:.0f}ms").classes(
-                                                    "text-[10px] text-slate-400 font-mono"
-                                                )
+                                                with ui.badge(
+                                                    color="slate-100", text_color="slate-700"
+                                                ).classes(
+                                                    "text-[10px] font-mono border border-slate-200 px-2 py-0.5"
+                                                ):
+                                                    ui.label(f"⚡ {msg.total_pipeline_ms:.0f}ms")
 
-                                        # Sanitized Markdown Answer
-                                        clean_content = sanitize_markdown_text(msg.content)
-                                        ui.markdown(clean_content).classes("safe-markdown text-sm")
+                                        # Sanitized Markdown Answer with Interactive Citation Links
+                                        formatted_content = format_citation_links(
+                                            msg.content, msg.citations
+                                        )
+                                        clean_content = sanitize_markdown_text(formatted_content)
+                                        ui.markdown(clean_content).classes(
+                                            "safe-markdown text-sm leading-relaxed text-slate-800"
+                                        )
 
-                                        # Source Citations with Provenance
+                                        # Source Citations with Provenance & Quick PDF View
                                         if msg.citations:
                                             with ui.column().classes(
-                                                "w-full mt-3 pt-2.5 border-t border-slate-200 gap-1.5"
+                                                "w-full mt-3 pt-3 border-t border-slate-100 gap-2"
                                             ):
-                                                ui.label("Sources & Evidence:").classes(
-                                                    "text-[11px] font-bold text-slate-700"
-                                                )
-                                                for idx, cit in enumerate(msg.citations, start=1):
-                                                    course_lbl = (
-                                                        f" • {cit.course_name}"
-                                                        if cit.course_name
-                                                        else ""
-                                                    )
-                                                    page_lbl = (
-                                                        f" • Page {cit.page_number}"
-                                                        if cit.page_number is not None
-                                                        else ""
-                                                    )
-                                                    chunk_lbl = (
-                                                        f" • Chunk {cit.chunk_id[:8]}"
-                                                        if cit.chunk_id
-                                                        else ""
-                                                    )
-                                                    with (
-                                                        ui.row()
-                                                        .classes(
-                                                            "w-full items-center justify-between p-2 rounded bg-white border border-slate-200 hover:border-blue-400 transition-colors cursor-pointer"
+                                                with ui.row().classes(
+                                                    "items-center justify-between w-full flex-wrap gap-2"
+                                                ):
+                                                    with ui.row().classes("items-center gap-1.5"):
+                                                        ui.icon("verified", size="16px").classes(
+                                                            "text-blue-600"
                                                         )
-                                                        .on("click", lambda c=cit: select_citation(c))
+                                                        ui.label(
+                                                            f"Grounding Sources ({len(msg.citations)})"
+                                                        ).classes("text-xs font-bold text-slate-800")
+                                                        ui.label(
+                                                            "• Click card to read in PDF Viewer"
+                                                        ).classes(
+                                                            "text-[11px] text-slate-400 font-normal"
+                                                        )
+                                                    ui.button(
+                                                        "Inspect Provenance",
+                                                        icon="find_in_page",
+                                                        on_click=lambda m=msg: open_evidence_for_message(m),
+                                                    ).props("flat dense no-caps").classes(
+                                                        "text-[11px] text-blue-700 hover:bg-blue-50 font-semibold"
+                                                    )
+
+                                                with ui.row().classes("w-full gap-2 flex-wrap"):
+                                                    for idx, cit in enumerate(
+                                                        msg.citations, start=1
                                                     ):
-                                                        with ui.row().classes(
-                                                            "items-center gap-2 min-w-0"
-                                                        ):
-                                                            ui.badge(str(idx), color="blue-700").classes(
-                                                                "text-[9px] font-bold px-1.5 py-0.5"
-                                                            )
-                                                            with ui.column().classes("gap-0 min-w-0"):
-                                                                ui.label(cit.document_name).classes(
-                                                                    "text-xs font-semibold text-slate-900 truncate"
-                                                                )
-                                                                ui.label(
-                                                                    f"Evidence{course_lbl}{page_lbl}{chunk_lbl}"
-                                                                ).classes(
-                                                                    "text-[10px] text-slate-500 font-mono"
-                                                                )
-                                                        ui.icon("chevron_right", size="xs").classes(
-                                                            "text-slate-400"
+                                                        page_lbl = (
+                                                            f"Page {cit.page_number}"
+                                                            if cit.page_number is not None
+                                                            else "Document"
                                                         )
+                                                        chunk_lbl = (
+                                                            f" • Chunk {cit.chunk_id[:8]}"
+                                                            if cit.chunk_id
+                                                            else ""
+                                                        )
+                                                        is_p = cit.document_name.lower().endswith(
+                                                            ".pdf"
+                                                        )
+                                                        with (
+                                                            ui.card()
+                                                            .classes(
+                                                                "flex-1 min-w-[240px] p-3 bg-slate-50 border border-slate-200/80 rounded-xl hover:border-blue-400 hover:bg-blue-50/30 transition-all cursor-pointer group shadow-2xs flex flex-col justify-between"
+                                                            )
+                                                            .tooltip(
+                                                                f"Open '{cit.document_name}' at {page_lbl} in Source Viewer"
+                                                            )
+                                                            .on(
+                                                                "click",
+                                                                lambda c=cit: open_citation_viewer(
+                                                                    c
+                                                                ),
+                                                            )
+                                                        ):
+                                                            with ui.row().classes(
+                                                                "items-center justify-between w-full"
+                                                            ):
+                                                                with ui.row().classes(
+                                                                    "items-center gap-1.5 min-w-0 flex-1"
+                                                                ):
+                                                                    ui.badge(
+                                                                        str(idx), color="blue-600"
+                                                                    ).classes(
+                                                                        "text-[9px] font-bold px-1.5 py-0.5 rounded-md"
+                                                                    )
+                                                                    ui.label(
+                                                                        cit.document_name
+                                                                    ).classes(
+                                                                        "text-xs font-semibold text-slate-800 group-hover:text-blue-800 truncate"
+                                                                    )
+                                                                with ui.badge(
+                                                                    color="blue-100",
+                                                                    text_color="blue-900",
+                                                                ).classes(
+                                                                    "text-[10px] font-semibold px-2 py-0.5 border border-blue-200 shrink-0 gap-1 items-center"
+                                                                ):
+                                                                    ui.icon(
+                                                                        "picture_as_pdf"
+                                                                        if is_p
+                                                                        else "description",
+                                                                        size="11px",
+                                                                    ).classes(
+                                                                        "text-rose-500"
+                                                                        if is_p
+                                                                        else "text-slate-500"
+                                                                    )
+                                                                    ui.label(
+                                                                        f"Page {cit.page_number}"
+                                                                        if cit.page_number
+                                                                        else "Read"
+                                                                    )
+
+                                                            meta_text = f"{cit.course_name or 'Course'}{chunk_lbl}"
+                                                            ui.label(meta_text).classes(
+                                                                "text-[10px] text-slate-400 font-mono mt-1 truncate"
+                                                            )
+                                                            if cit.snippet:
+                                                                ui.label(
+                                                                    f'"{cit.snippet.strip()}"'
+                                                                ).classes(
+                                                                    "text-[11px] text-slate-600 italic line-clamp-1 mt-0.5 font-sans"
+                                                                )
+
+                        if state.is_generating:
+                            with ui.row().classes("w-full justify-start items-center gap-2.5 py-1 px-1"):
+                                with ui.element("div").classes(
+                                    "w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-2xs shrink-0"
+                                ):
+                                    ui.icon("school", size="16px")
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.spinner(size="xs", color="primary")
+                                    ui.label("Thinking...").classes(
+                                        "text-xs font-medium text-slate-500 animate-pulse tracking-wide"
+                                    )
 
             # Initial render
             render_messages()

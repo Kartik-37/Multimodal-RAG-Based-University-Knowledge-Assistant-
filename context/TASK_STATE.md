@@ -4,7 +4,14 @@ This file is maintained by Antigravity.
 
 ## Current phase
 
-STEP 21E COMPLETE — REAL USER WORKFLOW INTEGRITY: RESTORE COURSE VISIBILITY AND COMPLETE REAL CHAT WORKFLOW
+STEP 23 — ACADEMIC ASSISTANT CHAT OPTIMIZATIONS & SOURCE VIEWER REPAIRS
+- Branding: Renamed "BCA Academic Assistant" -> "Academic Assistant" and "Ask BCA Assistant" -> "Ask Academic Assistant" across all student-facing headers, tooltips, and layouts.
+- Background Cross-Page Execution: Added decoupled `start_background_generation` in AppState with reactive `ui.timer` status checking. Synthesis continues in the background if student navigates to courses or profile, restoring thinking/answer state immediately upon return.
+- Single-Line Gemini Thinking State: Replaced bulky 2-line box with sleek, minimalist single-line `Thinking...` indicator with pulse animation. Removed duplicate `loading_row` to eliminate double loading screen.
+- Grounding Badge Cleanup: Removed `UNVERIFIABLE`, `PARTIALLY GROUNDED`, and `FULLY GROUNDED` badges from assistant message headers for clean, distraction-free reading.
+- Empty Box & Debug Mode Elimination: Fixed layout nesting in `chat_page.py` that created an empty white box below scope controls; restricted `Debug Mode` diagnostics strictly to administrator accounts.
+- Source Viewer PDF Fix: Updated Quasar slide drawer and CSS with explicit `calc(100vh - 170px)` and `min-height: 520px` rules on `<object>` and `<iframe>`, preventing empty collapsed preview boxes.
+- Test Suite: 10/10 student dashboard tests, 3/3 source viewer tests, and 46/46 frontend client tests passing (100%).
 
 ## Rules
 
@@ -908,6 +915,34 @@ Non-negotiable requirements:
      - `ruff format --check`: 100% clean across all 191 files.
      - `alembic check`: 100% clean (no new upgrade operations).
      - Standing daemons: PostgreSQL (5432), Ollama (11434), NiceGUI (8080) active.
+
+2026-10-01 — Source Viewer Feature (COMPLETE):
+- **Core Accomplishments**:
+  1. **Backend Document File Streaming Endpoints**:
+     - Implemented `GET /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/file` streaming physical files with `content_disposition_type="inline"` and authoritative RBAC (`get_authorized_document`).
+     - Added `GET /api/v1/documents/{document_id}/file` and `GET /api/v1/documents/by-name` in `backend/app/api/v1/endpoints/documents.py`.
+     - Updated `get_current_user_optional` in `backend/app/api/deps.py` to support `?token=` parameter and `session` storage for seamless iframe embedding.
+  2. **Modern Source Viewer Side Drawer Component**:
+     - Created `frontend/components/source_viewer.py` implementing `open_source_viewer()`.
+     - Uses Quasar full-height right-side slide drawer (`ui.dialog().props("position=right full-height")`) styled with Oxford Blue (`#002147`), Slate borders, and clear typography.
+     - Embeds native browser PDF engine via `iframe src="{pdf_url}#page={page_number}&view=FitH"`.
+     - Includes page bookmark badge, maximize/restore toggle, "Open in new tab" link, and cited evidence grounding snippet box.
+  3. **Knowledge Bases Page Integration**:
+     - Updated `frontend/pages/knowledge_bases_page.py` making document previews interactive with hover states, PDF icons, and click-to-open handlers.
+     - Added interactive "+ X more material(s)" modal dialog allowing students to view and open any course document in the side drawer.
+  4. **Chat Page Citation & Evidence Grounding Integration**:
+     - Updated `frontend/pages/chat_page.py` with `format_citation_links()` converting bracketed citations `[1]`, `[2]` into clickable interactive pills (`<a data-citation-index=... class="citation-pill...">`).
+     - Injected global JavaScript listener for citation clicks in `frontend/main.py` delegating to `handle_citation_click` in `chat_page.py`.
+     - Clicking a citation opens the PDF viewer side drawer directly to the cited page (`#page=N`) displaying the grounding evidence excerpt.
+     - Enhanced "Sources & Evidence" accordion and `evidence_panel.py` with direct "Read in PDF (Page X)" buttons.
+  5. **Verification & Quality Gate**:
+     - `backend/tests/unit/test_source_viewer.py`: 3/3 passed (100%).
+     - `backend/tests/unit/test_frontend.py`: 46/46 passed (100%).
+     - `backend/tests/security/test_security_rbac.py`: 18/18 passed (100%).
+     - `backend/tests/security/test_backend_security_audit.py`: 19/19 passed (100%).
+     - `ruff check`: 100% clean (0 errors across 225 files).
+     - `ruff format --check`: 100% clean (225 files already formatted).
+     - Zero secret leaks, server-side RBAC strictly preserved.
 
 
 

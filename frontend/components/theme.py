@@ -13,32 +13,32 @@ from nicegui import ui
 # Academic Color Palette Tokens: Oxford Blue & Academic Slate Theme
 # ------------------------------------------------------------------------------
 # Oxford Blue Spectrum
-COLOR_OXFORD_BLUE = "#002147"               # Oxford Blue primary brand color
-COLOR_INSTITUTIONAL_NAVY_DARK = "#001833"   # Deep institutional navy
-COLOR_INSTITUTIONAL_NAVY = "#002147"        # Primary institutional Oxford Blue
-COLOR_INSTITUTIONAL_NAVY_SURFACE = "#0b2b54"# Oxford Blue secondary surface
-COLOR_NAVY_PRIMARY = "#002147"              # Oxford Blue for primary actions
-COLOR_NAVY_INTERACTIVE = "#003366"          # Interactive accent & focus ring
-COLOR_NAVY_HOVER = "#001a38"                # Hover state for interactive Oxford Blue elements
+COLOR_OXFORD_BLUE = "#002147"  # Oxford Blue primary brand color
+COLOR_INSTITUTIONAL_NAVY_DARK = "#001833"  # Deep institutional navy
+COLOR_INSTITUTIONAL_NAVY = "#002147"  # Primary institutional Oxford Blue
+COLOR_INSTITUTIONAL_NAVY_SURFACE = "#0b2b54"  # Oxford Blue secondary surface
+COLOR_NAVY_PRIMARY = "#002147"  # Oxford Blue for primary actions
+COLOR_NAVY_INTERACTIVE = "#003366"  # Interactive accent & focus ring
+COLOR_NAVY_HOVER = "#001a38"  # Hover state for interactive Oxford Blue elements
 
 # Academic Slate Spectrum
-COLOR_ACADEMIC_SLATE_900 = "#0f172a"        # High-contrast typography & headings
-COLOR_ACADEMIC_SLATE_800 = "#1e293b"        # Secondary chrome & prominent subheaders
-COLOR_ACADEMIC_SLATE_700 = "#334155"        # Card titles & emphasized text
-COLOR_ACADEMIC_SLATE_600 = "#475569"        # Standard body text & secondary labels
-COLOR_ACADEMIC_SLATE_500 = "#64748b"        # Muted metadata, timestamps & captions
-COLOR_ACADEMIC_SLATE_400 = "#94a3b8"        # Subtle icon accents & disabled state
-COLOR_ACADEMIC_SLATE_300 = "#cbd5e1"        # Active borders & prominent dividers
-COLOR_ACADEMIC_SLATE_200 = "#e2e8f0"        # Standard subtle card borders
-COLOR_ACADEMIC_SLATE_100 = "#f1f5f9"        # Chip/badge background & muted containers
-COLOR_ACADEMIC_SLATE_50 = "#F8F9FA"         # Light Off-White page background
+COLOR_ACADEMIC_SLATE_900 = "#0f172a"  # High-contrast typography & headings
+COLOR_ACADEMIC_SLATE_800 = "#1e293b"  # Secondary chrome & prominent subheaders
+COLOR_ACADEMIC_SLATE_700 = "#334155"  # Card titles & emphasized text
+COLOR_ACADEMIC_SLATE_600 = "#475569"  # Standard body text & secondary labels
+COLOR_ACADEMIC_SLATE_500 = "#64748b"  # Muted metadata, timestamps & captions
+COLOR_ACADEMIC_SLATE_400 = "#94a3b8"  # Subtle icon accents & disabled state
+COLOR_ACADEMIC_SLATE_300 = "#cbd5e1"  # Active borders & prominent dividers
+COLOR_ACADEMIC_SLATE_200 = "#e2e8f0"  # Standard subtle card borders
+COLOR_ACADEMIC_SLATE_100 = "#f1f5f9"  # Chip/badge background & muted containers
+COLOR_ACADEMIC_SLATE_50 = "#F8F9FA"  # Light Off-White page background
 
 # Backward-compatible Token Aliases
 COLOR_BRAND_NAVY = COLOR_INSTITUTIONAL_NAVY_DARK
 COLOR_BRAND_SLATE = COLOR_ACADEMIC_SLATE_800
 COLOR_BRAND_BLUE = COLOR_OXFORD_BLUE
 COLOR_BRAND_LIGHT_BLUE = COLOR_NAVY_INTERACTIVE
-COLOR_CANVAS = "#F8F9FA"                    # Light Off-White background to reduce eye strain
+COLOR_CANVAS = "#F8F9FA"  # Light Off-White background to reduce eye strain
 COLOR_SURFACE = "#ffffff"
 COLOR_BORDER = COLOR_ACADEMIC_SLATE_200
 COLOR_BORDER_STRONG = COLOR_ACADEMIC_SLATE_300
@@ -62,144 +62,157 @@ COLOR_INFO_TEXT = "#002147"
 GLOBAL_THEME_CSS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* Modern Typography font families */
-.font-inter {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+/* Modern Academic Tech Typography */
+.font-sans, .font-inter, html, body {
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
 }
-.font-roboto {
-    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+.font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
 }
 
-/* Quasar Theme Variables: Oxford Blue (#002147) & Academic Slate */
+/* Quasar Theme Variables: Modern Academic Obsidian & Vibrant Sapphire */
 :root {
-    --q-primary: #002147;
-    --q-secondary: #475569;
-    --q-accent: #002147;
-    --q-dark: #001833;
-    --q-positive: #166534;
-    --q-negative: #991b1b;
-    --q-info: #002147;
-    --q-warning: #92400e;
+    --q-primary: #0f172a;
+    --q-secondary: #2563eb;
+    --q-accent: #3b82f6;
+    --q-dark: #020617;
+    --q-positive: #10b981;
+    --q-negative: #ef4444;
+    --q-info: #2563eb;
+    --q-warning: #f59e0b;
 }
 
-/* Base typography and light Off-White (#F8F9FA) canvas to reduce eye strain */
+/* Base typography and crisp Modern Academic Canvas */
 html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: #F8F9FA !important;
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #f8fafc !important;
     color: #0f172a;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Consistent Main Page Container Padding (at least 2rem) */
+/* Consistent Main Page Container with Generous Padding */
 .main-page-container {
     padding: 2rem !important;
+    max-width: 1540px;
+    margin: 0 auto;
     box-sizing: border-box !important;
 }
 
-/* Minimalist modern input and select styling */
+/* Minimalist Modern Inputs and Selects */
 .minimalist-input .q-field__control,
 .minimalist-select .q-field__control {
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     background-color: #ffffff !important;
     border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.02) !important;
-    transition: all 0.15s ease-in-out !important;
-    height: 40px !important;
-    min-height: 40px !important;
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03) !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    min-height: 42px !important;
 }
 .minimalist-input .q-field__control:hover,
 .minimalist-select .q-field__control:hover {
-    border-color: #cbd5e1 !important;
+    border-color: #94a3b8 !important;
 }
 .minimalist-input .q-field__control:focus-within,
 .minimalist-select .q-field__control:focus-within {
-    border-color: #002147 !important;
-    box-shadow: 0 0 0 2px rgba(0, 33, 71, 0.08) !important;
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
 }
 .minimalist-input .q-field__native,
 .minimalist-select .q-field__native {
-    font-size: 0.8125rem !important;
-    color: #1e293b !important;
+    font-size: 0.875rem !important;
+    color: #0f172a !important;
+    font-weight: 500 !important;
+}
+
+/* Modern Academic Card Primitives */
+.academic-card {
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.03), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.academic-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.06), 0 4px 8px -2px rgba(15, 23, 42, 0.03);
+    transform: translateY(-2px);
 }
 
 /* Modern Course Card Hover Effect */
 .modern-course-card {
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(226, 232, 240, 0.85) !important;
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.02) !important;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, border-color 0.22s ease !important;
 }
 .modern-course-card:hover {
-    transform: translateY(-4px) scale(1.008) !important;
-    box-shadow: 0 12px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04) !important;
-    border-color: #cbd5e1 !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 14px 28px -4px rgba(15, 23, 42, 0.07), 0 4px 10px -2px rgba(15, 23, 42, 0.03) !important;
+    border-color: #93c5fd !important;
 }
 
-/* Modern Flat Sidebar: eliminate default border lines and dark dividers on drawer */
-.q-drawer, .q-drawer--left, .q-drawer--right, .q-drawer--bordered, .q-drawer--standard {
-    border: none !important;
-    border-right: none !important;
-    border-left: none !important;
-    box-shadow: none !important;
+/* Modern Collapsible Slim Sidebar Styling */
+.slim-sidebar-rail {
+    background: #ffffff !important;
+    border-right: 1px solid #e2e8f0 !important;
+    transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
-.q-drawer-container, .q-drawer-container .q-drawer, .q-drawer__content {
-    border: none !important;
-    border-right: none !important;
-    box-shadow: none !important;
+.sidebar-link {
+    border-radius: 10px !important;
+    transition: all 0.18s ease-in-out !important;
+    font-weight: 500 !important;
 }
-.q-drawer::after, .q-drawer--left::after, .q-drawer--right::after {
-    display: none !important;
-    border: none !important;
-    content: none !important;
-}
-
-/* Rounded Corners for Sidebar Navigation Links */
-.sidebar-nav-item, .sidebar-link {
-    border-radius: 0.75rem !important;
-    transition: all 0.15s ease-in-out !important;
-}
-.sidebar-nav-item-active, .sidebar-link-active {
-    background-color: #002147 !important;
-    color: #ffffff !important;
-    border-radius: 0.75rem !important;
+.sidebar-link-active {
+    background: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border-radius: 10px !important;
     font-weight: 600 !important;
-    box-shadow: 0 1px 3px 0 rgba(0, 33, 71, 0.2) !important;
+    border-left: 3px solid #2563eb !important;
+    box-shadow: 0 1px 2px 0 rgba(37, 99, 235, 0.06) !important;
+}
+.sidebar-link:hover:not(.sidebar-link-active) {
+    background: #f8fafc !important;
+    color: #0f172a !important;
 }
 
-/* Primary Oxford Blue Global Utility Overrides */
-.bg-primary, .q-btn--standard.bg-primary {
-    background-color: #002147 !important;
+/* Sleek Citation Pills */
+.citation-pill {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.25rem !important;
+    padding: 0.15rem 0.55rem !important;
+    margin: 0 0.15rem !important;
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+    font-weight: 700 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    color: #1d4ed8 !important;
+    background-color: #eff6ff !important;
+    border: 1px solid #bfdbfe !important;
+    cursor: pointer !important;
+    text-decoration: none !important;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    box-shadow: 0 1px 2px 0 rgba(37, 99, 235, 0.05) !important;
 }
-.text-primary {
-    color: #002147 !important;
-}
-.q-btn.bg-primary:hover, .q-btn--standard.bg-primary:hover {
-    background-color: #001833 !important;
+.citation-pill:hover {
+    background-color: #dbeafe !important;
+    color: #1e40af !important;
+    border-color: #60a5fa !important;
+    box-shadow: 0 2px 6px 0 rgba(37, 99, 235, 0.2) !important;
+    transform: translateY(-1px) scale(1.03) !important;
 }
 
-/* Ensure all primary buttons and accent badges use Oxford Blue #002147 */
-.bg-blue-600, .bg-blue-700, .bg-blue-800, .bg-blue-900 {
-    background-color: #002147 !important;
-}
-.text-blue-700, .text-blue-800, .text-blue-900 {
-    color: #002147 !important;
-}
-.border-blue-600, .border-blue-700, .border-blue-800, .border-blue-900 {
-    border-color: #002147 !important;
-}
-
-/* WCAG 2.1 AA Engineering Design Target: Visible Keyboard Focus Rings */
+/* Visible Keyboard Focus Rings (WCAG 2.1 AA Target) */
 *:focus-visible {
     outline: 2px solid #2563eb;
-    outline: 2px solid #002147 !important;
     outline-offset: 2px !important;
-    border-radius: 4px;
+    border-radius: 6px;
 }
-
-/* Buttons and interactive elements focus transition */
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
     outline: 2px solid #2563eb;
-    outline: 2px solid #002147 !important;
     outline-offset: 2px !important;
 }
 
@@ -321,7 +334,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     transition: color 0.15s ease;
 }
 .academic-breadcrumb a:hover {
-    color: #002147;
+    color: #2563eb;
     text-decoration: underline;
 }
 .academic-breadcrumb .active-crumb {
@@ -342,17 +355,50 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     border: 0;
 }
 
-/* Restrained institutional reconnection notification */
-.nicegui-reconnect {
-    background-color: rgba(11, 21, 40, 0.94) !important;
-    backdrop-filter: blur(8px) !important;
-    color: #f8fafc !important;
-    font-size: 0.8125rem !important;
-    font-weight: 500 !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-    padding: 10px 20px !important;
-    box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.25) !important;
+/* Suppress disruptive Quasar/NiceGUI reconnection popup overlay across entire app */
+.nicegui-reconnect-alert,
+.nicegui-reconnect,
+#reconnection_modal,
+.q-reconnect,
+div[class*="reconnect"] {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+
+/* Source Viewer Side Drawer Full Height & Zero Empty Space */
+.source-viewer-card {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+.source-viewer-card .q-tab-panels,
+.source-viewer-card .q-tab-panels > .q-panel,
+.source-viewer-card .q-tab-panel {
+    height: 100% !important;
+    flex: 1 1 0% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+.source-viewer-card .nicegui-html {
+    width: 100% !important;
+    height: calc(100vh - 170px) !important;
+    flex: 1 1 auto !important;
+    display: flex !important;
+}
+.source-viewer-card iframe,
+.source-viewer-card object,
+.source-viewer-card embed {
+    width: 100% !important;
+    height: calc(100vh - 170px) !important;
+    min-height: 520px !important;
+    flex: 1 1 auto !important;
+    border: none !important;
+    display: block !important;
 }
 </style>
 """
