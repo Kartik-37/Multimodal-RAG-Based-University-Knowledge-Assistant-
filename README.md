@@ -52,8 +52,8 @@ The **Multimodal RAG-Based University Knowledge Assistant** delivers grounded ac
 
 ## 3. Project Status & Roadmap
 
-- **Phase 1: Security & Backend Correctness Hardening** — **COMPLETED** (572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification).
-- **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED**.
+- **Phase 1: Security & Backend Correctness Hardening** — **COMPLETED & VERIFIED** (572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification).
+- **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED & VERIFIED**.
 - **Phase 3: Test Suite Rewrite** — **PENDING** (Recreating behavior-focused frontend test contracts).
 - **Phase 4: Frontend Rebuild from Scratch** — **PENDING** (Restrained, beautiful, responsive NiceGUI interface).
 - **Multimodal RAG** — **FUTURE / DEFERRED** (Vision models, image retrieval, and OCR pipelines).

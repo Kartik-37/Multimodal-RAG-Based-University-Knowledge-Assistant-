@@ -38,7 +38,7 @@ The project is governed by a strict phased plan.
   - *Resolved:* Source viewer embeds same-origin authenticated document streaming (`GET /api/v1/documents/{id}/file`); no tokens in URLs, no JavaScript `document.cookie` injection.
   - *Resolved:* Student course access confirmed and verified as **strictly membership-based** (`KnowledgeBaseMember`).
   - *Resolved:* Untracked scratch files removed; working tree clean.
-- **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED**.
+- **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED & VERIFIED**.
 - **Phase 3: Test Suite Rewrite from Scratch** — **PENDING** (Phase 3 will delete/recreate stale presentation tests around behavior/contracts).
 - **Phase 4: Frontend Rebuild from Scratch** — **PENDING** (NiceGUI rebuild with restrained, clean aesthetic).
 - **Multimodal RAG** — **FUTURE / DEFERRED** (Current system is multi-format text RAG).

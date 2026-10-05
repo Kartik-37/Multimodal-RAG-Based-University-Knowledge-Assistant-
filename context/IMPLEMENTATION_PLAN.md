@@ -10,8 +10,8 @@
    - All user-facing exceptions sanitized via `normalize_error()`.
    - Source viewer converted to same-origin HttpOnly cookie streaming.
    - Student course access confirmed strictly membership-based (`KnowledgeBaseMember`).
-   - Verified via 572 tests passed in the non-real_ollama regression suite (tests marked real_ollama excluded).
-2. **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED**
+   - 572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification.
+2. **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED & VERIFIED**
    - Documented actual current scope: Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV).
    - Documented Genuine Multimodal RAG (vision/OCR) as a future phase.
    - Resolved all conflicting or stale documentation across context files.

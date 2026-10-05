@@ -161,8 +161,11 @@ SELECT id, vector_dims(v) FROM t;
 
 Configure your local `.env` file (which is excluded from git):
 
+> [!NOTE]
+> `APP_NAME="BCA RAG Assistant"` in the configuration example below is an internal/legacy environment identifier preserved for test suite assertions and internal settings compatibility. It is NOT the authoritative academic product title, which is **Multimodal RAG-Based University Knowledge Assistant** (with allowable UI product labels such as "Academic Assistant").
+
 ```env
-# Application Settings
+# Application Settings (APP_NAME is an internal/legacy environment identifier)
 APP_NAME="BCA RAG Assistant"
 APP_ENV="development"
 DEBUG=true
