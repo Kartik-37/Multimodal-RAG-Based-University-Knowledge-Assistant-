@@ -104,7 +104,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                     ui.icon("school", size="15px").classes(
                         "text-blue-700" if is_student else "text-slate-600"
                     )
-                    ui.label("University RAG Assistant").classes(
+                    ui.label("RAG Assistant").classes(
                         "text-xs font-semibold uppercase tracking-wider text-slate-500"
                     )
 
@@ -666,7 +666,7 @@ def register_auth_pages() -> None:
                 with ui.column().classes("w-full gap-0.5 mb-5"):
                     with ui.row().classes("items-center gap-1.5 mb-1"):
                         ui.icon("school", size="15px").classes("text-blue-700")
-                        ui.label("University RAG Assistant").classes(
+                        ui.label("RAG Assistant").classes(
                             "text-xs font-semibold uppercase tracking-wider text-slate-500"
                         )
 

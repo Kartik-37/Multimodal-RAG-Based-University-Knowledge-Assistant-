@@ -237,10 +237,10 @@ def _render_navbar(active_route: str) -> None:
                     ):
                         ui.icon("school", size="20px")
                     with ui.column().classes("gap-0 min-w-0 leading-tight"):
-                        ui.label("RAG Studio").classes(
+                        ui.label("RAG Assistant").classes(
                             "font-bold text-slate-900 text-sm tracking-tight truncate"
                         )
-                        portal_sub = "Admin Workspace" if is_admin else "Academic Assistant"
+                        portal_sub = "Administrator Portal" if is_admin else "Student Portal"
                         ui.label(portal_sub).classes(
                             "text-[10px] font-medium text-slate-500 truncate"
                         )
@@ -320,7 +320,7 @@ def _render_navbar(active_route: str) -> None:
                     .on("click", lambda: ui.navigate.to("/dashboard"))
                 ):
                     ui.icon("school", size="sm").classes("text-blue-600 md:hidden")
-                    ui.label("Academic Assistant").classes(
+                    ui.label("RAG Assistant").classes(
                         "text-sm sm:text-base font-bold tracking-tight text-slate-900"
                     )
                 ui.badge("Grounded RAG", color="blue-1").props("text-color=blue-9").classes(
@@ -375,7 +375,7 @@ def _render_navbar(active_route: str) -> None:
                     "w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white"
                 ):
                     ui.icon("school", size="18px")
-                ui.label("Academic Assistant").classes(
+                ui.label("RAG Assistant").classes(
                     "text-base font-bold tracking-tight text-slate-900"
                 )
 
@@ -613,7 +613,7 @@ def auth_layout(
             .on("click", lambda: ui.navigate.to("/login"))
         ):
             ui.icon("school", size="sm").classes("text-blue-400")
-            ui.label("University RAG Assistant").classes(
+            ui.label("RAG Assistant").classes(
                 "text-base sm:text-lg font-bold tracking-tight text-white"
             )
         with ui.row().classes("items-center"):
@@ -636,4 +636,4 @@ def auth_layout(
         with ui.row().classes(
             "w-full justify-center text-center py-6 px-4 text-xs text-slate-400 border-t border-slate-200 mt-auto box-border"
         ):
-            ui.label("© University RAG Assistant • Institutional Academic Resource")
+            ui.label("© RAG Assistant • Institutional Academic Resource")

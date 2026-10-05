@@ -1,7 +1,7 @@
 """
 Base Reranker Provider Interface.
 
-Defines the abstract contract for reranking providers in the BCA RAG Assistant.
+Defines the abstract contract for reranking providers in RAG Assistant.
 Enforces provider isolation, ensuring the core RAG pipeline does not depend directly
 on concrete inference implementations (e.g. local Hugging Face CrossEncoder or mock).
 """

@@ -1,5 +1,5 @@
 """
-Canonical RBAC Permissions for the University RAG Assistant.
+Canonical RBAC Permissions for RAG Assistant.
 
 Defines the authoritative 16 permissions across Courses, Documents, Chat, and Administration.
 Main Admins inherently hold all permissions; Faculty Admins are evaluated against their assigned subset.

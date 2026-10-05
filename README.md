@@ -1,5 +1,7 @@
 # Multimodal RAG-Based University Knowledge Assistant
 
+**Application / Product Name:** RAG Assistant
+
 A secure, production-grade Retrieval-Augmented Generation (RAG) system designed for university course knowledge and academic assistance.
 
 > **Current Implementation Scope:** Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV).  

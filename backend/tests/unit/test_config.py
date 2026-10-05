@@ -8,7 +8,7 @@ from backend.app.core.config import Settings
 def test_default_settings() -> None:
     """Verify default settings values match expected project specification."""
     cfg = Settings()
-    assert cfg.APP_NAME == "BCA RAG Assistant"
+    assert cfg.APP_NAME == "RAG Assistant"
     assert cfg.API_V1_STR == "/api/v1"
     assert cfg.OLLAMA_LLM_MODEL == "qwen3:4b"
     assert cfg.OLLAMA_EMBED_MODEL == "qwen3-embedding:0.6b"

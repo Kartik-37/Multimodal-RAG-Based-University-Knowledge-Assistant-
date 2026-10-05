@@ -21,10 +21,13 @@ When an old repository instruction conflicts with this section, preserve securit
 
 ## Product
 
-Project title:
+Official academic project title:
 **Multimodal RAG-Based University Knowledge Assistant**
 
-The user-facing product should have one canonical name. Do not invent competing brand names such as "RAG Studio". A shorter user-facing label may be used only as a deliberate abbreviation of the canonical product name.
+Application / Product / UI name:
+**RAG Assistant**
+
+The authoritative product name is **RAG Assistant** (configured via `APP_NAME = "RAG Assistant"`). Competing or obsolete brand names (such as "BCA RAG Assistant", "RAG Studio", "Academic Assistant", or "University RAG Assistant") are strictly prohibited as current application/UI branding. Legitimate academic references to BCA (curriculum, courses, syllabi, students) remain intact.
 
 ## Phase status & verified implementation baseline
 

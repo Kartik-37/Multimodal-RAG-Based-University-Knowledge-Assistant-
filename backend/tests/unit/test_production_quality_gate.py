@@ -381,7 +381,7 @@ def test_env_example_parseable_by_settings() -> None:
     without syntax errors, type coercions failures, or validation exceptions.
     """
     parsed_settings = Settings(_env_file=".env.example")
-    assert parsed_settings.APP_NAME == "BCA RAG Assistant"
+    assert parsed_settings.APP_NAME == "RAG Assistant"
     assert isinstance(parsed_settings.CORS_ORIGINS, list)
     assert len(parsed_settings.CORS_ORIGINS) >= 1
     assert isinstance(parsed_settings.TRUSTED_PROXIES, set)

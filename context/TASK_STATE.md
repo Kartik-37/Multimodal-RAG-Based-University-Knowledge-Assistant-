@@ -28,19 +28,23 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
 ### Phase 2: Scope Control & Project Context Consistency
 - **Status:** **COMPLETED & VERIFIED**
 - **Accomplishments:**
+  - Established authoritative naming policy:
+    * Official academic project title: **Multimodal RAG-Based University Knowledge Assistant**
+    * Application / Product / UI name: **RAG Assistant**
+  - Updated application configuration (`APP_NAME = "RAG Assistant"` in `backend/app/core/config.py` and `.env.example`).
+  - Replaced obsolete product brand names (`BCA RAG Assistant`, `RAG Studio`, `Academic Assistant`, `University RAG Assistant`) across current application code, layout, auth pages, chat page, and docstrings with **RAG Assistant**.
+  - Preserved legitimate academic references to BCA (degree, course codes, syllabi, student enrollment, academic context).
+  - Updated and verified direct tests asserting product name: `test_config.py` and `test_production_quality_gate.py` assert `APP_NAME == "RAG Assistant"`; `test_student_dashboard_fixes.py` asserts `"Ask RAG Assistant"`.
   - Current RAG scope documented truthfully as **Multi-Format Text RAG** (PDF, DOCX, TXT, Markdown, CSV).
   - Genuine Multimodal RAG (vision models, OCR, image embeddings, visual retrieval) explicitly documented as **FUTURE / DEFERRED**.
-  - Official project title **Multimodal RAG-Based University Knowledge Assistant** preserved across all documentation.
-  - Documented `APP_NAME="BCA RAG Assistant"` in `docs/DATABASE_SETUP_WINDOWS.md` per Case B as an internal/legacy environment identifier preserved for test and configuration compatibility, distinct from the authoritative academic title.
   - Standardized regression test passing statements to: "572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification."
-  - Removed all stale instructions regarding `?token=`, `document.cookie` injection, `app.storage.user` token persistence, and `TestClient` production usage, while preserving historical audit records with clear labels.
+  - Preserved historical audit records with clear labels while strictly prohibiting insecure patterns in current instructions.
   - Documented authoritative membership-based student course authorization rule.
   - Documented that Phase 4 will be a complete **frontend rebuild from scratch** in NiceGUI (current UI is superseded; restrained aesthetic, no decorative animations/gradients/glassmorphism).
-  - Documented screenshot reference rule: screenshots in `screenshot/` folder are audit evidence of existing defects/flows, not a design template; all screenshots must be reviewed prior to redesign.
+  - Documented screenshot reference rule: screenshots in `screenshot/` folder are audit evidence of existing defects/flows, not a design template.
   - Documented testing rules: Phase 3 will rewrite tests from scratch to protect behavior/contracts/security without asserting CSS classes, colors, or DOM nesting.
   - Verified physical absence of `frontend/client/Untitled-1.txt` (`Test-Path` returned `False`) and verified no other `Untitled` scratch files exist in the project.
-  - Confirmed zero application code changes and zero test changes during Phase 2.
-  - Verified `ruff check .` passes with 0 errors.
+  - Verified clean working tree and `ruff check .` passes with 0 errors.
 
 ### Phase 3: Frontend Test Suite Rewrite
 - **Status:** **PENDING**

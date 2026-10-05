@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    APP_NAME: str = "BCA RAG Assistant"
+    APP_NAME: str = "RAG Assistant"
     APP_ENV: Literal["development", "testing", "production"] = "development"
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"

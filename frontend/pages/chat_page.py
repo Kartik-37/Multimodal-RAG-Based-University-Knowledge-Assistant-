@@ -98,7 +98,7 @@ def register_chat_page() -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
         can_admin_chat = is_admin or has_admin_permission(user, Permission.ADMIN_CHAT)
-        page_title = "Admin Knowledge Chat" if is_admin else "Ask Academic Assistant"
+        page_title = "Admin Knowledge Chat" if is_admin else "Ask RAG Assistant"
         page_subtitle = (
             "Interactive RAG queries across authorized course materials with verifiable citations and provenance."
             if is_admin
@@ -556,7 +556,7 @@ def register_chat_page() -> None:
                         return
 
                 if state.is_generating:
-                    ui.notify("Academic Assistant is still thinking. Please wait...", type="info")
+                    ui.notify("RAG Assistant is still thinking. Please wait...", type="info")
                     return
 
                 # Append user question to state immediately
@@ -576,7 +576,7 @@ def register_chat_page() -> None:
 
             async def handle_submit() -> None:
                 if state.is_generating:
-                    ui.notify("Academic Assistant is still thinking. Please wait...", type="info")
+                    ui.notify("RAG Assistant is still thinking. Please wait...", type="info")
                     return
                 q = (input_box.value or "").strip()
                 if not q:
@@ -686,7 +686,7 @@ def register_chat_page() -> None:
                                 "w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm mb-3.5"
                             ):
                                 ui.icon("school", size="28px")
-                            ui.label("Academic Assistant").classes(
+                            ui.label("RAG Assistant").classes(
                                 "text-lg font-bold text-slate-900 tracking-tight"
                             )
                             ui.label(
@@ -748,7 +748,7 @@ def register_chat_page() -> None:
                                             "w-full justify-between items-center mb-0.5"
                                         ):
                                             with ui.row().classes("items-center gap-2"):
-                                                ui.label("Academic Assistant").classes(
+                                                ui.label("RAG Assistant").classes(
                                                     "text-xs font-bold text-slate-900"
                                                 )
                                             if msg.total_pipeline_ms:

@@ -1,1 +1,1 @@
-"""BCA RAG Assistant Backend Application Package."""
+"""RAG Assistant Backend Application Package."""

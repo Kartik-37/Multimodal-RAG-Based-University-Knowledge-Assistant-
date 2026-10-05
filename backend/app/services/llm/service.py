@@ -165,7 +165,7 @@ class LLMGenerationService:
         clean_q = request.query.strip().lower().rstrip("!?.")
         if clean_q in GREETING_WORDS:
             greeting_msg = (
-                "Hello! I am your BCA Academic Assistant. I can help you search and understand course materials, "
+                "Hello! I am your RAG Assistant. I can help you search and understand course materials, "
                 "lecture notes, syllabus topics, and university regulations with verified citations. How can I assist you today?"
             )
             return LLMGenerationResponse(

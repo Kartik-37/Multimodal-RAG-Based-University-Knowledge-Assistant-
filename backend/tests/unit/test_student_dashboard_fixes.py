@@ -136,13 +136,14 @@ def test_knowledge_bases_page_persistent_search() -> None:
 
 
 def test_chat_page_academic_assistant_branding_and_no_badges() -> None:
-    """Verify that chat_page uses 'Academic Assistant', hides badges and debug mode for students."""
+    """Verify that chat_page uses 'RAG Assistant', hides badges and debug mode for students."""
     chat_file = Path("frontend/pages/chat_page.py")
     assert chat_file.exists()
     content = chat_file.read_text(encoding="utf-8")
 
-    # Branding: Academic Assistant, not BCA Academic Assistant
-    assert "Ask Academic Assistant" in content
+    # Branding: RAG Assistant, not old branding
+    assert "Ask RAG Assistant" in content
+    assert "Ask Academic Assistant" not in content
     assert "Ask BCA Assistant" not in content
     assert "BCA Academic Assistant" not in content
 
