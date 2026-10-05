@@ -173,5 +173,5 @@ The `.env` values were not reproduced in this report. If a real credential was e
 6. [PENDING - Phase 4] Verify actual source document rendering in a browser.
 7. [FUTURE / DEFERRED] Decide/implement/document persistent history (Conversation/Message models).
 8. [COMPLETED - Phase 2] Current scope documented honestly as Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV); genuine Multimodal RAG deferred to future roadmap phase.
-9. [ONGOING] Run full security + integration + visual QA (572/572 tests passed in Phase 1).
+9. [ONGOING] Run full security + integration + visual QA (572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded).
 10. [ONGOING] Commit and push cleanly through Git/GitHub (committed Phase 1 as cfb824e; push when remote configured).

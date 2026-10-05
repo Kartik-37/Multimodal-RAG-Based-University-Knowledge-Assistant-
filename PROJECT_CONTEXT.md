@@ -29,7 +29,7 @@ The user-facing product should have one canonical name. Do not invent competing 
 ## Phase status & verified implementation baseline
 
 The project is governed by a strict phased plan.
-- **Phase 1: Security Hardening & Backend Correctness** — **COMPLETED & VERIFIED** (All 572 tests passing).
+- **Phase 1: Security Hardening & Backend Correctness** — **COMPLETED & VERIFIED** (572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification).
   - *Resolved:* Query token authentication (`?token=`) removed and rejected with HTTP 401.
   - *Resolved:* Production `TestClient` import and instantiation replaced with `InProcessProductionTransport` in `FrontendAPIClient`.
   - *Resolved:* Raw session token persistence in NiceGUI `app.storage.user["auth_session_token"]` completely deleted.

@@ -12,7 +12,7 @@ A secure, production-grade Retrieval-Augmented Generation (RAG) system designed 
 The **Multimodal RAG-Based University Knowledge Assistant** delivers grounded academic answers with precise source citations across university course materials.
 
 ### Core Architecture
-- **Backend API**: Python 3.14+ with FastAPI, organized around domain services and strict security boundaries.
+- **Backend API**: Python (>= 3.11, tested on Python 3.14) with FastAPI, organized around domain services and strict security boundaries.
 - **Presentation Layer**: NiceGUI (Python-first UI). API and database queries are kept strictly outside UI components.
 - **Database & Vectors**: PostgreSQL 16 with `pgvector` v0.8.6 storing 1024-dimensional embeddings, document metadata, and session hashes.
 - **RAG Pipeline**:
@@ -52,7 +52,7 @@ The **Multimodal RAG-Based University Knowledge Assistant** delivers grounded ac
 
 ## 3. Project Status & Roadmap
 
-- **Phase 1: Security & Backend Correctness Hardening** — **COMPLETED** (572/572 tests passing).
+- **Phase 1: Security & Backend Correctness Hardening** — **COMPLETED** (572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification).
 - **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED**.
 - **Phase 3: Test Suite Rewrite** — **PENDING** (Recreating behavior-focused frontend test contracts).
 - **Phase 4: Frontend Rebuild from Scratch** — **PENDING** (Restrained, beautiful, responsive NiceGUI interface).
@@ -64,7 +64,7 @@ The **Multimodal RAG-Based University Knowledge Assistant** delivers grounded ac
 ## 4. Getting Started
 
 ### Prerequisites
-- Python 3.12+ (3.14 supported)
+- Python >= 3.11 (tested on Python 3.14)
 - PostgreSQL 16 with `pgvector`
 - Local Ollama daemon running with `qwen3:4b` and `qwen3-embedding:0.6b`
 

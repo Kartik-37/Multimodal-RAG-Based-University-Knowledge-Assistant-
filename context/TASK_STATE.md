@@ -23,7 +23,7 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
   - Confirmed authoritative student course access rule: strictly membership-based (`KnowledgeBaseMember`).
   - Cleaned repository (untracked file `frontend/client/Untitled-1.txt` confirmed clean).
   - Expanded Phase 1 regression test suite to 13 tests covering requirements A through N (`backend/tests/security/test_phase1_security_hardening.py` — 13/13 passed).
-  - Verification: 572/572 tests passed (`pytest backend/tests/ -m "not real_ollama"` in 423.96s), 50/50 security tests passed, `ruff check .` passed with 0 errors.
+  - Verification: 572 tests passed in the non-real_ollama regression suite (`pytest backend/tests/ -m "not real_ollama"` in 423.96s; tests marked real_ollama were excluded from this verification), 50/50 security tests passed, `ruff check .` passed with 0 errors.
 
 ### Phase 2: Scope Control & Project Context Consistency
 - **Status:** **COMPLETED**
