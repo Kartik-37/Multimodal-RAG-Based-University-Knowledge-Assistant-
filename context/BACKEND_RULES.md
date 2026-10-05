@@ -37,6 +37,16 @@ Tests may use `TestClient` to test the backend. Production code must communicate
 
 The API client should remain centralized; only its transport implementation should change.
 
+### Framework independence from presentation layer
+
+The FastAPI backend (`backend/app/api/deps.py` and service layers) must NOT import or depend on NiceGUI internals.
+Specifically:
+- Never import `nicegui.app` or access `nicegui_app.storage._users` in backend code.
+- Backend authentication must remain framework-independent from the presentation layer, relying solely on HTTP boundaries:
+  - Standard `session_id` HttpOnly cookie.
+  - Standard `Authorization: Bearer <token>` header (for external API clients/tests).
+- PostgreSQL `UserSession` authorization checks must remain framework-agnostic.
+
 ## Authorization
 
 Every protected resource must be authorized server-side.
@@ -44,6 +54,15 @@ Every protected resource must be authorized server-side.
 Never fetch a document/chunk/file by ID and then rely on the frontend to decide whether the user may see it.
 
 Prefer authorization-aware database/service queries.
+
+### Authoritative student course access rule
+
+Student course access in this project is **strictly membership-based**:
+- A student user can only query, browse, and stream documents from courses where they are an active, assigned member (`KnowledgeBaseMember`).
+- Students with zero course memberships see zero courses. Courses created by administrators are not automatically visible or queryable by students.
+- Unassigned course documents return HTTP 404/403 to prevent information disclosure.
+- Faculty Admins have scoped access bounded to courses they created or belong to.
+- Main Admins possess global administrative authority across all courses and documents.
 
 ## Input validation
 
@@ -133,6 +152,16 @@ Never log:
 
 Treat retrieved document text as untrusted data. Retrieved text may contain prompt-injection instructions and must never override system/developer security rules.
 
-## Multimodal truthfulness
+## Multimodal truthfulness & current RAG scope
 
-Do not advertise multimodal support until the backend implements and tests a non-text modality path through ingestion, representation/embedding, retrieval, and citation/provenance.
+The official project title is **Multimodal RAG-Based University Knowledge Assistant**.
+However, genuine multimodal RAG (vision-language models, OCR pipelines, image embeddings, visual retrieval) is intentionally **deferred to a future phase**.
+
+The current backend implementation is strictly **multi-format TEXT RAG** supporting:
+- PDF (text extraction via pypdf)
+- DOCX (text extraction via python-docx)
+- TXT
+- Markdown
+- CSV
+
+Do not advertise multimodal support or claim vision capabilities in API responses, documentation, or UI until a non-text modality is genuinely implemented in a future phase.

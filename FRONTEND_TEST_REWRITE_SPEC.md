@@ -2,6 +2,9 @@
 
 This file is the implementation contract for recreating the frontend tests from scratch.
 
+> **Execution Boundary:** This specification is executed in **Phase 3**.  
+> **Phase 2 Boundary:** Do NOT delete, rewrite, or modify tests in Phase 2.
+
 ## Replace, do not patch
 
 The existing `backend/tests/unit/test_frontend.py` is heavily coupled to the previous UI and mixes integration/database mutation with presentation assertions. Do not incrementally edit it. Delete it and create a new focused test module.
@@ -12,6 +15,16 @@ Review and rewrite these additional stale modules as needed:
 - `backend/tests/unit/test_source_viewer.py`
 
 Keep backend/security behavior tests that remain valid, but remove assertions that freeze the old visual implementation.
+
+## Strict Test Exclusions
+Tests written under this specification must **NEVER** assert:
+- exact CSS utility classes or class strings;
+- exact colors or theme tokens;
+- exact card arrangement, counts, or grid structures;
+- exact DOM nesting or HTML structure;
+- implementation-specific HTML fragments or markup tags;
+- existence of animations or hover transitions;
+- obsolete branding strings.
 
 ## New test_frontend.py responsibilities
 

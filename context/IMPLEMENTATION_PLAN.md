@@ -1,16 +1,36 @@
-# Implementation Plan
+# Implementation Plan — Multimodal RAG-Based University Knowledge Assistant
 
-## Gate 0 — Repository audit
+## Authoritative Master Phases (2026-10-05 Rebuild)
 
-Deliver:
-- architecture map
-- current feature inventory
-- current test baseline
-- dependency inventory
-- security baseline
-- list of missing pieces
+1. **Phase 1: Security Hardening & Backend Correctness** — **COMPLETED & VERIFIED**
+   - Query-token authentication (`?token=`) removed and rejected with HTTP 401.
+   - Production `TestClient` eliminated in favor of `InProcessProductionTransport`.
+   - Raw session-token persistence in `app.storage.user` deleted.
+   - Backend `deps.py` decoupled from NiceGUI internals (`nicegui.app`, `storage._users`).
+   - All user-facing exceptions sanitized via `normalize_error()`.
+   - Source viewer converted to same-origin HttpOnly cookie streaming.
+   - Student course access confirmed strictly membership-based (`KnowledgeBaseMember`).
+   - Verified via 572/572 tests passing.
+2. **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED**
+   - Documented actual current scope: Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV).
+   - Documented Genuine Multimodal RAG (vision/OCR) as a future phase.
+   - Resolved all conflicting or stale documentation across context files.
+3. **Phase 3: Frontend Test Suite Rewrite** — **PENDING**
+   - Delete and recreate stale presentation tests that freeze the obsolete UI.
+   - Protect behavior, API contracts, auth, security, and workflows.
+   - Strictly prohibit assertions on CSS classes, colors, HTML nesting, or animations.
+4. **Phase 4: Frontend Rebuild from Scratch** — **PENDING**
+   - Rebuild the NiceGUI frontend with simple, restrained, accessible UI.
+   - Inspect all 21+ screenshots in `screenshot/` as audit evidence.
+   - No glassmorphism, no decorative gradients, no unnecessary animations/hover effects.
+   - High priority on grounded answers, readable citations, and responsive design.
+5. **Future Roadmap Phases:**
+   - **Persistent Chat History:** Implement durable Conversation/Message models and cross-user isolation when ready.
+   - **Multimodal RAG:** Implement image extraction, vision-language representations, and visual retrieval pipelines.
 
-Do not rewrite the project during this gate.
+---
+
+## Historical Gate Reference
 
 ## Gate 1 — Project foundation
 

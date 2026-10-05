@@ -1,6 +1,6 @@
 # PostgreSQL 16 + pgvector Setup Guide on Windows
 
-This guide explains how to set up, configure, and maintain the authoritative local **PostgreSQL 16 + pgvector** database environment for the **BCA Project RAG Assistant** on Windows.
+This guide explains how to set up, configure, and maintain the authoritative local **PostgreSQL 16 + pgvector** database environment for the **Multimodal RAG-Based University Knowledge Assistant** on Windows.
 
 ---
 

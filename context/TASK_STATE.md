@@ -8,22 +8,51 @@ This file is maintained by Antigravity.
 
 The previous Step 23 frontend/source-viewer design work is historical. The user explicitly requested a complete frontend redesign and a fresh frontend test suite, so the old design is **superseded** for implementation purposes.
 
-## Current defects / work remaining
+## Master Phase Status (2026-10-05 Rebuild)
 
-### Release-blocking / high priority (COMPLETED & VERIFIED IN PHASE 1)
-- [x] Remove `?token=` authentication from `backend/app/api/deps.py`. Verified via `test_token_in_url_rejected_with_401`.
-- [x] Remove raw session-token URL construction and JavaScript cookie writes from `frontend/components/source_viewer.py`.
-- [x] Decouple backend authorization from NiceGUI internals: removed all `nicegui.app` and `storage._users` dependencies from `backend/app/api/deps.py`. FastAPI backend authenticates strictly via HttpOnly cookie or Authorization Bearer header.
-- [x] Completely remove raw session token persistence in `frontend/client/api_client.py` and `app.storage.user["auth_session_token"]`. Deleted `_get_persistent_token()` and `_set_persistent_token()`. Sessions survive page navigation purely via server-side memory (`_session_clients`) and browser HttpOnly cookies.
-- [x] Redesign `SessionCookieSyncMiddleware` in `frontend/main.py` to synchronize HttpOnly cookies directly from in-memory session clients without touching private NiceGUI user storage.
-- [x] Replace production `fastapi.testclient.TestClient` usage in `frontend/client/api_client.py` with deployment-safe `InProcessProductionTransport`.
-- [x] Complete end-to-end exception sanitization: audited and updated all error paths in `FrontendAPIClient` and 14 call sites across `frontend/pages/` to route through `normalize_error()`. Redacted database errors, SQL, tracebacks, filesystem paths, internal hostnames, ports, tokens, and Python runtime exceptions.
-- [x] Preserved authoritative student course authorization: verified and kept strict membership-based course access model.
-- [x] Cleaned repository: verified absence of untracked file `frontend/client/Untitled-1.txt`.
-- [x] Expanded Phase 1 security regression tests to 13 comprehensive tests in `backend/tests/security/test_phase1_security_hardening.py` covering requirements A through N (13/13 passed).
-- [x] Verified full security test suite: 50/50 passed (`backend/tests/security/`).
-- [x] Verified full non-real-Ollama regression suite: 572/572 passed (`pytest backend/tests/ -m "not real_ollama"` in 423.96s).
-- [x] Verified code quality: `ruff check .` passed with 0 errors.
+### Phase 1: Security Hardening & Backend Correctness
+- **Status:** **COMPLETED & VERIFIED**
+- **Commit:** `cfb824e`
+- **Accomplishments:**
+  - Removed `?token=` query parameter authentication (rejected with HTTP 401).
+  - Replaced production `TestClient` usage with `InProcessProductionTransport` in `FrontendAPIClient`.
+  - Completely deleted raw session token persistence (`_get_persistent_token`, `_set_persistent_token`, and `app.storage.user["auth_session_token"]`).
+  - Decoupled backend `deps.py` completely from NiceGUI (`nicegui.app` and `storage._users` removed; framework-independent auth).
+  - Redesigned `SessionCookieSyncMiddleware` to sync HttpOnly cookies directly from in-memory clients (`_session_clients`).
+  - Centralized safe error normalization via `normalize_error()` across all API client error paths and 14 frontend page call sites.
+  - Confirmed authoritative student course access rule: strictly membership-based (`KnowledgeBaseMember`).
+  - Cleaned repository (untracked file `frontend/client/Untitled-1.txt` confirmed clean).
+  - Expanded Phase 1 regression test suite to 13 tests covering requirements A through N (`backend/tests/security/test_phase1_security_hardening.py` — 13/13 passed).
+  - Verification: 572/572 tests passed (`pytest backend/tests/ -m "not real_ollama"` in 423.96s), 50/50 security tests passed, `ruff check .` passed with 0 errors.
+
+### Phase 2: Scope Control & Project Context Consistency
+- **Status:** **COMPLETED**
+- **Accomplishments:**
+  - Current RAG scope documented truthfully as **Multi-Format Text RAG** (PDF, DOCX, TXT, Markdown, CSV).
+  - Genuine Multimodal RAG (vision models, OCR, image embeddings, visual retrieval) explicitly documented as **FUTURE / DEFERRED**.
+  - Official project title **Multimodal RAG-Based University Knowledge Assistant** preserved across all documentation.
+  - Removed all stale instructions regarding `?token=`, `document.cookie` injection, `app.storage.user` token persistence, and `TestClient` production usage.
+  - Documented authoritative membership-based student course authorization rule.
+  - Documented that Phase 4 will be a complete **frontend rebuild from scratch** in NiceGUI (current UI is superseded; restrained aesthetic, no decorative animations/gradients/glassmorphism).
+  - Documented screenshot reference rule: screenshots in `screenshot/` folder are audit evidence of existing defects/flows, not a design template; all screenshots must be reviewed prior to redesign.
+  - Documented testing rules: Phase 3 will rewrite tests from scratch to protect behavior/contracts/security without asserting CSS classes, colors, or DOM nesting.
+  - Confirmed zero application code changes and zero test changes during Phase 2.
+
+### Phase 3: Frontend Test Suite Rewrite
+- **Status:** **PENDING**
+- **Scope:** Delete and recreate stale presentation tests around behavior/contracts/security. Do not test CSS classes, exact DOM nesting, decorative animations, or card arrangements.
+
+### Phase 4: Frontend Rebuild from Scratch
+- **Status:** **PENDING**
+- **Scope:** Rebuild NiceGUI student and admin experiences with clean typography, restrained palette, generous whitespace, accessible controls, and responsive layout.
+
+### Multimodal RAG
+- **Status:** **FUTURE / DEFERRED**
+- **Scope:** Vision-language models, OCR pipelines, image embeddings, image retrieval, and visual citations will be designed and implemented in a separate roadmap phase after current text RAG is stable.
+
+### Persistent Chat History
+- **Status:** **FUTURE / DEFERRED**
+- **Scope:** Durable Conversation/Message database models, server-side tenant isolation, and history management will be implemented as a controlled feature without destabilizing core RAG.
 
 ### Repository hygiene
 - [x] Remove `frontend/client/Untitled-1.txt` (confirmed clean).

@@ -4,9 +4,10 @@
 
 Tests protect behavior, security, and important contracts — not a temporary visual implementation.
 
-When the frontend is intentionally redesigned, delete/rewrite stale presentation tests rather than weakening the redesign to satisfy them.
-
-Never assert CSS classes, exact DOM nesting, decorative animation, card counts, obsolete labels, or exact HTML snippets unless the item is an explicit product/security contract.
+- **Phase 3 Scope:** Stale presentation tests that encode superseded UI behavior will be deleted and recreated from scratch in Phase 3.
+- **Phase 2 Scope Boundary:** Tests must NOT be modified in Phase 2.
+- **Never assert:** CSS class strings, exact colors, exact DOM nesting, decorative animations, card arrangement/counts, obsolete wording, or implementation-specific HTML fragments.
+- **Always assert:** Role and route access semantics, authentication/session behavior, API client request/response contracts, citation mapping, source-viewer authorization, absence of token leakage, sanitized user-facing error behavior, per-user state isolation, and essential UI route smoke rendering.
 
 ## Unit tests
 
@@ -48,7 +49,12 @@ Must include all of these:
 6. source-viewer code does not copy raw session tokens to JavaScript/browser cookies;
 7. source-viewer URLs contain no raw session credential;
 8. untrusted document names/snippets cannot break out of an HTML attribute or inject script/event handlers;
-9. document paths/filenames cannot traverse storage directories.
+9. document paths/filenames cannot traverse storage directories;
+10. `app.storage.user` is not used to persist raw auth session tokens;
+11. backend `deps.py` contains zero NiceGUI dependencies or storage fallbacks;
+12. production frontend client does not import or instantiate `TestClient`;
+13. registration failure and API error paths never expose raw Python exception details;
+14. student course access strictly enforces membership isolation (`KnowledgeBaseMember`).
 
 ## Frontend API client tests
 

@@ -165,13 +165,13 @@ The `.env` values were not reproduced in this report. If a real credential was e
 
 ## Required next implementation order
 
-1. Secure session/source-viewer transport.
-2. Replace production TestClient transport.
-3. Sanitize all user-facing errors and raw HTML sinks.
-4. Rewrite frontend tests from scratch.
-5. Rebuild the NiceGUI UI from scratch.
-6. Verify actual source document rendering in a browser.
-7. Decide/implement/document persistent history.
-8. Verify true multimodal capability or document the current text/multi-format scope.
-9. Run full security + integration + visual QA.
-10. Commit and push cleanly through Git/GitHub.
+1. [COMPLETED - Phase 1] Secure session/source-viewer transport (HttpOnly cookie, no tokens in URLs, no persistent storage of raw tokens).
+2. [COMPLETED - Phase 1] Replace production TestClient transport with InProcessProductionTransport.
+3. [COMPLETED - Phase 1] Sanitize all user-facing errors via centralized normalize_error().
+4. [PENDING - Phase 3] Rewrite frontend tests from scratch around behavior, security, and contracts.
+5. [PENDING - Phase 4] Rebuild the NiceGUI UI from scratch (simple, restrained, accessible, responsive).
+6. [PENDING - Phase 4] Verify actual source document rendering in a browser.
+7. [FUTURE / DEFERRED] Decide/implement/document persistent history (Conversation/Message models).
+8. [COMPLETED - Phase 2] Current scope documented honestly as Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV); genuine Multimodal RAG deferred to future roadmap phase.
+9. [ONGOING] Run full security + integration + visual QA (572/572 tests passed in Phase 1).
+10. [ONGOING] Commit and push cleanly through Git/GitHub (committed Phase 1 as cfb824e; push when remote configured).

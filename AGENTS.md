@@ -141,11 +141,25 @@ If a check cannot run because the environment lacks PostgreSQL/pgvector/Ollama/b
 
 - Never use `TestClient` as the production frontend HTTP transport.
 - Keep API/database logic out of NiceGUI visual components.
+- Keep backend authorization framework-independent: `backend/app/api/deps.py` must NEVER import `nicegui` or access NiceGUI storage internals (`storage._users`).
 - Enforce authorization in backend service/query layers.
+- Enforce strict student course authorization: student access is **strictly membership-based** (`KnowledgeBaseMember`). Students cannot view or query unassigned courses.
 - Never trust client document IDs, course IDs, file paths, role values, or filters.
 - Use bounded payloads and timeouts.
-- Never leak stack traces or raw provider exceptions to clients.
+- Never leak stack traces, SQL, filesystem paths, hostnames, ports, tokens, or raw provider exceptions to clients. Route all user-facing errors through `normalize_error()`.
 - Never log tokens or private document contents.
+
+## Current RAG scope & multimodal truthfulness
+
+- Official project title: **Multimodal RAG-Based University Knowledge Assistant** (canonical title must be preserved).
+- Current implementation: **Multi-format TEXT RAG** supporting PDF, DOCX, TXT, Markdown, and CSV.
+- Genuine Multimodal RAG (vision-language models, OCR pipelines, image embeddings, visual retrieval) is intentionally **deferred to a future roadmap phase**.
+- Do not claim or advertise multimodal support in UI, API responses, or documentation until non-text modality support is actually implemented in that future phase.
+
+## Screenshot reference rule
+
+- Screenshots in the `screenshot/` folder document the existing implementation and its defects; they are **audit evidence, not a design template**.
+- Future Phase 4 frontend work must inspect **all** supplied screenshots individually before redesigning corresponding areas.
 
 ## Source-viewer rules
 
@@ -169,8 +183,9 @@ After each meaningful completed change:
 2. run relevant tests/checks;
 3. update `context/TASK_STATE.md`;
 4. commit with a small, meaningful commit message;
-5. push to GitHub when the user's normal workflow permits.
+5. push to GitHub when a remote is configured and normal workflow permits.
 
+Do not fabricate a remote or claim a push occurred if no remote is configured.
 Do not commit `.env`, storage corpus data, caches, generated HTML dumps, local databases, or secrets.
 
 ## Documentation

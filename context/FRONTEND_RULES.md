@@ -7,6 +7,17 @@
 - Do not introduce React/Next/Vue/Angular unless the user explicitly changes the decision.
 - Keep API/business logic out of page components.
 
+## Rebuild mode (Phase 4)
+
+- Phase 4 will be a **complete frontend rebuild from scratch** in NiceGUI.
+- The existing frontend layout is **superseded** and must NOT be merely recolored, rebordered, or patched.
+- Do NOT implement this rebuild in Phase 2; Phase 2 is strictly context and documentation consistency.
+
+## Screenshot reference rule
+
+- The screenshots in the `screenshot/` folder document the existing implementation and its defects; they are **audit evidence, not a design template**.
+- Future Phase 4 frontend work must inspect **all** supplied screenshots individually before redesigning corresponding areas to understand the user journey, existing flaws, and functional needs.
+
 ## User experience target
 
 The UI must be:
@@ -127,16 +138,22 @@ The same-origin authenticated session should authorize the document request. No 
 
 Do not render every chunk of a large document at once. Bound, paginate, or show only relevant evidence.
 
-## Error states
+## Authentication and session rules in frontend
+
+- **No raw token persistence:** Raw session tokens must NEVER be stored in `app.storage.user["auth_session_token"]`, browser `localStorage`, or client-side JavaScript.
+- **Session isolation:** The frontend uses an in-memory session client mapping (`_session_clients[session_id]`) keyed by Starlette session ID.
+- **HttpOnly cookie sync:** `SessionCookieSyncMiddleware` synchronizes session cookies to native browser HTTP responses so inline document viewing requests attach credentials automatically.
+- **Student course authorization:** Student course access is strictly membership-based (`KnowledgeBaseMember`). Unassigned courses are not displayed or queryable.
+
+## Error states & centralized normalization
 
 Never display raw Python exceptions, SQL errors, traceback fragments, provider error payloads, file paths, tokens, or secret configuration.
 
-User-facing error messages should say:
-- what failed in plain language;
-- whether the user's data is safe;
-- what action can recover the task.
-
-Technical detail belongs in structured server logs/telemetry.
+All error details reaching the UI must pass through `normalize_error()` in `frontend/client/error_handler.py`:
+- Redacts database errors, SQL queries, filesystem paths, hostnames, ports, tokens, and technical exception names (`OperationalError`, `ValueError:`, etc.).
+- Returns context-appropriate, actionable error messages for `chat`, `auth`, `document`, `course`, and `admin`.
+- Preserves useful safe validation messages (e.g., minimum password length, valid email address).
+- Technical detail belongs in structured server logs/telemetry, never in user-facing alerts.
 
 ## Loading states
 

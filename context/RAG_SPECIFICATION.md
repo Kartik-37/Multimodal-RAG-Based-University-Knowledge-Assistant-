@@ -20,20 +20,25 @@ query validation/normalization
 
 Each stage must preserve authorization context.
 
-## Multimodal requirement
+## Multimodal requirement & current implementation scope
 
-The project title contains **Multimodal**. Multiple textual file extensions are not sufficient.
+The official project title is **Multimodal RAG-Based University Knowledge Assistant**.
+However, genuine multimodal RAG (vision-language models, OCR pipelines, image embeddings, visual retrieval) is intentionally **deferred to a future roadmap phase**.
 
-A genuine multimodal implementation must define and test at least one non-text modality, for example:
-- image/page rendering;
-- image extraction from source documents;
-- vision-language representation/embedding;
-- multimodal retrieval;
-- citation/provenance back to the source page/image/region.
+The current implemented system is **production-grade multi-format TEXT RAG** supporting:
+- PDF (structured text extraction via `pypdf`)
+- DOCX (text and heading extraction via `python-docx`)
+- TXT (plain text with boundary checks)
+- Markdown (header and block extraction)
+- CSV (tabular row normalization)
 
-Do not advertise multimodal retrieval in the UI or documentation unless the full path is actually implemented and tested.
+Do not advertise multimodal retrieval or claim vision capabilities in the UI, API, or documentation until the non-text modality pipeline is genuinely implemented in that future phase.
 
-If multimodal support is deliberately deferred, document the current system honestly as multi-format/text RAG while retaining the official academic project title.
+### Authoritative student course authorization in RAG
+All retrieval (lexical, vector, and hybrid) strictly enforces student membership:
+- Students can only retrieve evidence and query courses where they are an active, assigned member (`KnowledgeBaseMember`).
+- Scoped queries (`ALL_COURSES`, `COURSE`, `DOCUMENT`) apply database-level filtering so foreign course chunks never leak.
+- Unassigned course queries return HTTP 404/403.
 
 ## Ingestion
 

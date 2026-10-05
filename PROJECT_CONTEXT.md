@@ -26,22 +26,27 @@ Project title:
 
 The user-facing product should have one canonical name. Do not invent competing brand names such as "RAG Studio". A shorter user-facing label may be used only as a deliberate abbreviation of the canonical product name.
 
-## Current audit status
+## Phase status & verified implementation baseline
 
-The repository has a substantial FastAPI + NiceGUI implementation and many backend/RAG services. The current frontend is functional-looking but must be considered **superseded** for design purposes because the user explicitly requested a fresh redesign.
+The project is governed by a strict phased plan.
+- **Phase 1: Security Hardening & Backend Correctness** — **COMPLETED & VERIFIED** (All 572 tests passing).
+  - *Resolved:* Query token authentication (`?token=`) removed and rejected with HTTP 401.
+  - *Resolved:* Production `TestClient` import and instantiation replaced with `InProcessProductionTransport` in `FrontendAPIClient`.
+  - *Resolved:* Raw session token persistence in NiceGUI `app.storage.user["auth_session_token"]` completely deleted.
+  - *Resolved:* Backend `deps.py` completely decoupled from NiceGUI internals (`nicegui.app`, `nicegui_app.storage._users`).
+  - *Resolved:* All user-facing exceptions sanitized via centralized `normalize_error()`.
+  - *Resolved:* Source viewer embeds same-origin authenticated document streaming (`GET /api/v1/documents/{id}/file`); no tokens in URLs, no JavaScript `document.cookie` injection.
+  - *Resolved:* Student course access confirmed and verified as **strictly membership-based** (`KnowledgeBaseMember`).
+  - *Resolved:* Untracked scratch files removed; working tree clean.
+- **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED**.
+- **Phase 3: Test Suite Rewrite from Scratch** — **PENDING** (Phase 3 will delete/recreate stale presentation tests around behavior/contracts).
+- **Phase 4: Frontend Rebuild from Scratch** — **PENDING** (NiceGUI rebuild with restrained, clean aesthetic).
+- **Multimodal RAG** — **FUTURE / DEFERRED** (Current system is multi-format text RAG).
+- **Persistent Chat History** — **FUTURE / DEFERRED** (Process-memory `AppState._chat_history` is not persistent).
 
-Important findings from the 2026-10-05 audit:
+## Screenshot reference rule
 
-1. **Source viewer authentication currently leaks raw session credentials.** The backend accepts `?token=` and the frontend copies the raw session token into a browser-accessible cookie and document URL. This is a release-blocking security defect. Raw session tokens must never appear in query strings, HTML, client JavaScript, or browser history.
-2. **Production frontend code imports `fastapi.testclient.TestClient`.** TestClient is test infrastructure and must not be the production transport boundary for a user-facing frontend. Replace it with a real HTTP/API boundary appropriate to the final deployment topology.
-3. **Raw auth tokens are retained in NiceGUI application storage and exposed to frontend code.** Redesign the session flow so browser JavaScript never receives the bearer/session secret.
-4. **Frontend background-generation errors can expose raw exception text.** User-facing errors must be sanitized; technical details belong in secure logs/telemetry.
-5. **Current frontend tests contain implementation-specific assertions** for CSS classes, exact labels, file contents, obsolete wording, and specific HTML. These tests incorrectly freeze the old UI and must be recreated around behavior/security contracts.
-6. **Conversation history is currently in-process `AppState` memory, not persistent Conversation/Message storage.** It is acceptable to defer persistent history until the core rebuild is stable. If implemented, it must use proper backend persistence and authorization isolation.
-7. **The current parser registry is PDF, DOCX, TXT, Markdown, and CSV.** The inspected code does not contain an image/vision/multimodal ingestion or embedding pipeline. Therefore the implementation currently behaves like multi-format/text RAG, not a fully demonstrated multimodal RAG system. Do not falsely claim multimodal capability. Either implement real multimodal ingestion/embedding/retrieval or clearly document the current scope until that work is completed.
-8. **The current source viewer is visually complicated and its captured screenshot shows a blank PDF area.** Do not assume the viewer is fixed because CSS dimensions were added; verify actual document rendering in the browser.
-9. **The current frontend has substantial motion/hover/gradient CSS** despite the restrained-design rule. The new frontend must remove decorative motion and use interaction feedback only where it communicates an actual state change.
-10. **The repository archive contains `.env`, `.git`, storage data, caches, `.nicegui`, and generated metadata.** Keep these out of project-sharing archives. Never commit `.env` or local corpus data. If a real secret was included in a publicly shared archive, rotate it.
+The screenshots in the `screenshot/` folder document the existing implementation and its defects. They are **audit evidence, not a design template**. Future Phase 4 frontend work must inspect **all** supplied screenshots individually before redesigning corresponding areas.
 
 ## Architecture baseline
 
@@ -136,12 +141,14 @@ Do not load an entire large chunk corpus into the browser merely to provide a fa
 
 - Session cookies are HttpOnly, Secure in production, and SameSite appropriate to deployment.
 - Never expose long-lived or raw session tokens to JavaScript.
-- Never accept a raw session token in a document/file URL query parameter.
+- Never accept a raw session token in a document/file URL query parameter (`?token=` is rejected with 401).
+- Never persist raw session tokens in NiceGUI `app.storage.user` or client-side storage.
+- Backend authorization (`deps.py`) is framework-independent from NiceGUI (`nicegui.app` and `storage._users` are prohibited).
+- Student course access is **strictly membership-based** (`KnowledgeBaseMember`); students cannot view or query unassigned courses.
 - Never put secrets/tokens in HTML attributes, log messages, source snippets, analytics events, or browser-local persistent state unnecessarily.
 - Use server-side authorization for every document/file/chunk operation.
 - Source viewer access must enforce the same document authorization as API access.
-- Reject `?token=` authentication for source/document file endpoints after migration and add a regression test.
-- User-facing errors must be safe and actionable; raw exceptions are not UI content.
+- User-facing errors must be safe and actionable through centralized `normalize_error()`; raw exceptions are not UI content.
 - Do not expose detailed environment/infrastructure information from public liveness endpoints.
 
 ## Multimodal truthfulness gate
