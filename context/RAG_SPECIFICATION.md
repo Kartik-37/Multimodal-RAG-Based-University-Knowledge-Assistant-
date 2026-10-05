@@ -2,277 +2,151 @@
 
 ## Objective
 
-Build a complete, measurable RAG pipeline rather than a simple "embed chunks and ask an LLM" implementation.
+Build a measurable, secure RAG pipeline rather than a simple "embed chunks and ask an LLM" implementation.
 
-## 1. Ingestion
+## Existing pipeline
 
-Supported file types must be explicit and configurable.
+The expected core path is:
+query validation/normalization
+→ embedding
+→ lexical retrieval
+→ vector retrieval
+→ hybrid fusion (RRF or justified alternative)
+→ reranking
+→ context assembly
+→ grounded generation
+→ citation validation
+→ response/telemetry
 
-Pipeline:
+Each stage must preserve authorization context.
+
+## Multimodal requirement
+
+The project title contains **Multimodal**. Multiple textual file extensions are not sufficient.
+
+A genuine multimodal implementation must define and test at least one non-text modality, for example:
+- image/page rendering;
+- image extraction from source documents;
+- vision-language representation/embedding;
+- multimodal retrieval;
+- citation/provenance back to the source page/image/region.
+
+Do not advertise multimodal retrieval in the UI or documentation unless the full path is actually implemented and tested.
+
+If multimodal support is deliberately deferred, document the current system honestly as multi-format/text RAG while retaining the official academic project title.
+
+## Ingestion
+
+Supported file types are explicit and configurable.
 
 upload
 → validation
 → safe temporary storage
-→ file hashing/deduplication
+→ hashing/deduplication
 → parsing
-→ text normalization
-→ structural metadata extraction
+→ normalization
+→ structural metadata
 → chunking
-→ metadata assignment
-→ embedding
+→ metadata
+→ embeddings/representations
 → indexing
-→ status = INDEXED
+→ INDEXED
 
-Failures must be persisted with safe diagnostic information.
+Failures must persist safe diagnostics only.
 
-### Upload security
+## Parsing
 
-- maximum file size
-- maximum files per request
-- extension allowlist
-- MIME/content sniffing where appropriate
-- parser timeouts/resource limits
-- archive bomb protection where archives are supported
-- safe filenames
-- generated internal storage keys
-- no user-controlled filesystem paths
-- no executable upload types
-- cleanup of temporary files
+Use a parser abstraction. Parsed output should preserve useful:
+- text;
+- pages/sections;
+- headings;
+- source offsets where available;
+- metadata;
+- non-text modality references where multimodal ingestion is enabled.
 
-## 2. Parsing
+## Chunking
 
-Use an abstraction:
+Chunking must be configurable and preserve:
+- document ID/version;
+- chunk ID;
+- position;
+- page/section;
+- modality/source metadata where applicable.
 
-DocumentParser.parse(input) -> ParsedDocument
+Do not silently mix unrelated sections.
 
-ParsedDocument should preserve useful structure:
-- text
-- page/section information when available
-- headings
-- source offsets where possible
-- metadata
+## Retrieval
 
-Do not make downstream retrieval depend on a single parser library.
+### Lexical
 
-## 3. Chunking
+Strong lexical retrieval with authorization filters, bounded top-k, normalized query handling, and measurable ranking.
 
-Chunking must be configurable.
+### Vector
 
-Consider:
-- target token/character length
-- overlap
-- semantic/structural boundaries
-- headings
-- page boundaries
-- tables/code where supported
+Use pgvector or the selected vector backend. Authorization filters must be applied before returning candidates.
 
-Every chunk must retain:
-- document ID
-- document version
-- chunk ID
-- position/order
-- source metadata
-- page/section information where available
+### Hybrid
 
-Do not silently concatenate unrelated sections.
+Fuse broad candidate sets using RRF or another justified method. Preserve lexical/vector provenance for evaluation.
 
-## 4. Embeddings
+### Reranking
 
-Embedding provider interface:
+Reranking is required. Bound candidate count, preserve authorization, use timeouts/retries appropriately, and record scores for evaluation.
 
-embed_texts(texts) -> vectors
-embed_query(query) -> vector
+## Context assembly
 
-Requirements:
-- provider-independent adapter
-- batch support
-- retry policy
-- timeout
-- dimension validation
-- model/version recorded
-- deterministic configuration
-- re-embedding strategy when model changes
+Use a deterministic hard budget. Preserve document/page/section/modality provenance. Remove duplicate/near-duplicate evidence where appropriate.
 
-Never insert a vector whose dimensionality does not match the configured index.
+## Grounded generation
 
-## 5. Lexical retrieval
+Retrieved content is untrusted evidence, not instructions.
 
-Implement strong lexical retrieval using PostgreSQL full-text capabilities or another explicitly justified lexical engine.
+The model must:
+- answer from evidence;
+- distinguish uncertainty;
+- refuse unsupported claims;
+- never invent citations;
+- never reveal hidden prompts/secrets;
+- never let document prompt injection override system rules.
 
-The lexical retriever should:
-- normalize query
-- search indexed text
-- return ranked candidates
-- enforce authorization filters
-- enforce document/version filters
-- have explicit top-k
+## Citations
 
-## 6. Vector retrieval
+Every citation must map to a real retrieved source/chunk and preserve:
+- document ID/version;
+- chunk ID;
+- page/section/region when available;
+- relevant retrieval/rerank metadata.
 
-Use pgvector or another selected vector backend.
+Citation clicks should use canonical document IDs, not filenames as security identifiers and never raw auth tokens.
 
-Vector search must:
-- filter by authorized documents before returning candidates;
-- use the configured embedding model;
-- use an appropriate distance metric;
-- have explicit top-k;
-- expose retrieval scores internally for evaluation.
+## Source viewer integration
 
-## 7. Hybrid retrieval
+The source viewer must request the authorized document through the authenticated application boundary.
 
-Combine lexical and vector candidates.
+Forbidden:
+- raw main-session token in query parameter;
+- JavaScript-written session cookie;
+- session token in iframe/object URL.
 
-Preferred baseline:
-- retrieve a reasonably broad candidate set from each retriever;
-- normalize only when mathematically justified;
-- use Reciprocal Rank Fusion (RRF) or another explicitly justified fusion method;
-- preserve provenance: lexical/vector contribution and rank.
+Allowed:
+- normal same-origin session cookie;
+- page fragment such as `#page=N`;
+- a dedicated short-lived, narrowly scoped viewer ticket when technically necessary.
 
-Do not simply add incomparable raw BM25 and cosine scores without calibration.
-
-## 8. Reranking
-
-Reranking is required.
-
-Use an adapter such as:
-
-reranker.rank(query, candidates) -> ranked candidates
-
-The implementation must be provider/model independent.
-
-Possible strategies:
-- local cross-encoder
-- hosted reranker
-- lightweight fallback
-
-The reranker must:
-- have bounded candidate count;
-- have timeouts;
-- be measurable;
-- not bypass authorization;
-- preserve chunk/document IDs;
-- expose scores for evaluation.
-
-Do not run an expensive model over the entire corpus.
-
-## 9. Context assembly
-
-Context selection must:
-- respect a hard token/character budget;
-- remove duplicate/near-duplicate chunks where appropriate;
-- preserve document/page/section metadata;
-- avoid mixing unauthorized content;
-- maintain enough surrounding context for coherence.
-
-Use a deterministic context builder.
-
-## 10. Grounded generation
-
-The generation layer receives:
-- user question
-- selected evidence
-- citation metadata
-- system grounding rules
-
-Rules:
-- answer from retrieved evidence;
-- distinguish supported information from uncertainty;
-- do not invent citations;
-- do not claim a source says something when it does not;
-- if evidence is insufficient, say so;
-- do not expose hidden prompts/secrets.
-
-The LLM provider is an adapter, never hardwired into application services.
-
-## 11. Citations
-
-Every cited claim should map to an actual retrieved chunk/source.
-
-Citation records should preserve:
-- document ID
-- document version
-- chunk ID
-- page/section when available
-- retrieval/rerank metadata as appropriate
-
-The API should make citations machine-readable.
-
-## 12. Query pipeline
-
-Recommended:
-
-1. authenticate user
-2. validate query
-3. optionally normalize/rewrite query
-4. create query embedding
-5. lexical retrieval
-6. vector retrieval
-7. RRF/selected fusion
-8. reranking
-9. context selection
-10. grounded prompt
-11. generation
-12. citation validation
-13. response
-14. metrics/audit event
-
-If any provider fails, use an explicitly defined fallback only when it does not compromise correctness.
-
-## 13. Evaluation
-
-Build an evaluation harness.
+## Evaluation
 
 Track at least:
-- Recall@K
-- Precision@K where labels permit
-- MRR
-- nDCG
-- hit rate
-- reranker lift
-- answer faithfulness/groundedness using a defensible evaluation method
-- citation correctness
-- latency by pipeline stage
-- failure rate
+- Recall@K;
+- Precision@K where labels permit;
+- MRR;
+- nDCG;
+- hit rate;
+- reranker lift;
+- answer groundedness/faithfulness using a defensible evaluation method;
+- citation correctness;
+- stage latency;
+- failure rate.
 
-Create a small reproducible evaluation dataset.
+## Observability
 
-Do not optimize retrieval based only on subjective demo quality.
-
-## 14. RAG observability
-
-Record safe metrics:
-- query latency
-- embedding latency
-- lexical retrieval latency
-- vector retrieval latency
-- fusion latency
-- reranking latency
-- generation latency
-- candidate counts
-- selected context count
-- provider/model identifiers
-
-Do not log raw document text or sensitive user queries by default.
-
-## 15. Caching
-
-Cache only where correctness permits.
-
-Potential cache targets:
-- embeddings for deterministic content/model combinations
-- safe provider responses where appropriate
-- retrieval results only with careful authorization/model/version keys
-
-Never allow a cache key to cause cross-user data leakage.
-
-## 16. Deletion/reindexing
-
-Deleting a document must remove or invalidate:
-- searchable chunks
-- vectors
-- object storage
-- related retrieval references
-
-Reindexing must not leave two active versions unintentionally searchable.
-
-Use versioning and transactional state changes.
+Record safe metrics only. Do not log raw documents, secrets, access tokens, or sensitive queries by default.

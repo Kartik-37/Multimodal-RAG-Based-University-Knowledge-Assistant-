@@ -175,12 +175,16 @@ def test_app_state_background_generation_state() -> None:
 
 
 def test_source_viewer_uses_object_and_full_height() -> None:
-    """Verify source_viewer has object embed and full height styling for PDF viewing."""
+    """Verify source_viewer embeds inline viewer with full height and no token/cookie leakage."""
     sv_file = Path("frontend/components/source_viewer.py")
     assert sv_file.exists()
     content = sv_file.read_text(encoding="utf-8")
 
-    assert '<object data="{iframe_url}" type="application/pdf"' in content
-    assert "calc(100vh - 170px)" in content
+    # Embeds native browser viewer with robust minimum height
+    assert "<iframe" in content or "<object" in content
     assert "min-height: 520px" in content
+
+    # Security: No raw token parameter in streaming URL and no document.cookie script
+    assert "params.append(f\"token=" not in content
+    assert "document.cookie" not in content
 

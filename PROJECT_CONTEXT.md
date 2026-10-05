@@ -1,121 +1,170 @@
-# Project Context — BCA Project RAG
+# Project Context — Multimodal RAG-Based University Knowledge Assistant
 
-## Product goal
+## User priority order
 
-Build a complete Retrieval-Augmented Generation application that can ingest user documents, securely process and index them, retrieve relevant evidence using strong retrieval techniques, rerank that evidence, and generate grounded answers with source citations.
-
-The system is intended to be a serious end-to-end RAG project, not a toy chatbot.
+The latest explicit user requirements are authoritative for this review/rebuild. Do not silently reinterpret them.
 
 The user wants:
-- strong backend correctness and security first;
-- complete implementation of the planned RAG system;
-- provider-independent LLM support;
-- user accounts and protected user data;
-- Git/GitHub throughout development;
-- a necessary but minimal frontend early so the backend can be exercised;
-- a refined, elegant, human-designed frontend only after backend verification;
-- no "AI-generated dashboard" appearance.
+- a thorough audit before changes;
+- small and large defects fixed, not only visible UI problems;
+- context/instruction files corrected so the same mistakes do not return in later Antigravity work;
+- the NiceGUI frontend rebuilt from scratch, not merely recolored;
+- a simple, understandable, beautiful interface that does not feel boring or generic;
+- no unnecessary animation, hover effects, gradients, decorative elements, or feature clutter;
+- functionality preserved unless a change is required for correctness/security or explicitly requested;
+- stale UI/presentation tests deleted and recreated from scratch when they encode the wrong design/behavior;
+- precise prompts for Antigravity, with no instruction taking higher priority than the user's explicit requirements;
+- Git/GitHub used after meaningful completed work;
+- conversation history similar to ChatGPT only when it can be implemented cleanly and persistently without compromising the core system.
 
-## Current project status
+When an old repository instruction conflicts with this section, preserve security/correctness and use this section for the frontend/review/rebuild decisions.
 
-The user's learning/build roadmap has reached Part 95 and the last part is complete. The next objective is to build the complete application described by the roadmap/specification.
+## Product
 
-Important historical decision:
-- Hybrid search is part of the retrieval architecture.
-- Reranking was not previously implemented and must now be included in the final build.
-- Do not interpret the earlier stopping point as the final architecture.
+Project title:
+**Multimodal RAG-Based University Knowledge Assistant**
 
-Because the exact text of all earlier roadmap parts may not be present in the repository, the agent MUST inspect the repository and existing project documentation before implementation. Do not invent missing project-specific behavior.
+The user-facing product should have one canonical name. Do not invent competing brand names such as "RAG Studio". A shorter user-facing label may be used only as a deliberate abbreviation of the canonical product name.
 
-## Recommended technology baseline
+## Current audit status
 
-### Backend
-- Python
-- FastAPI
-- Pydantic
-- SQLAlchemy 2.x
-- Alembic
-- PostgreSQL
-- pgvector
-- Redis for cache/queue coordination where useful
-- Celery or another mature background-job mechanism when asynchronous processing is required
+The repository has a substantial FastAPI + NiceGUI implementation and many backend/RAG services. The current frontend is functional-looking but must be considered **superseded** for design purposes because the user explicitly requested a fresh redesign.
 
-### Frontend
-Recommended default:
-- NiceGUI
-- Python-first UI
-- reusable UI components
-- carefully organized frontend modules
+Important findings from the 2026-10-05 audit:
 
-The user does not want React because they are not familiar with React and do not want a large JavaScript/TypeScript file structure. NiceGUI is therefore the preferred frontend framework for this project.
+1. **Source viewer authentication currently leaks raw session credentials.** The backend accepts `?token=` and the frontend copies the raw session token into a browser-accessible cookie and document URL. This is a release-blocking security defect. Raw session tokens must never appear in query strings, HTML, client JavaScript, or browser history.
+2. **Production frontend code imports `fastapi.testclient.TestClient`.** TestClient is test infrastructure and must not be the production transport boundary for a user-facing frontend. Replace it with a real HTTP/API boundary appropriate to the final deployment topology.
+3. **Raw auth tokens are retained in NiceGUI application storage and exposed to frontend code.** Redesign the session flow so browser JavaScript never receives the bearer/session secret.
+4. **Frontend background-generation errors can expose raw exception text.** User-facing errors must be sanitized; technical details belong in secure logs/telemetry.
+5. **Current frontend tests contain implementation-specific assertions** for CSS classes, exact labels, file contents, obsolete wording, and specific HTML. These tests incorrectly freeze the old UI and must be recreated around behavior/security contracts.
+6. **Conversation history is currently in-process `AppState` memory, not persistent Conversation/Message storage.** It is acceptable to defer persistent history until the core rebuild is stable. If implemented, it must use proper backend persistence and authorization isolation.
+7. **The current parser registry is PDF, DOCX, TXT, Markdown, and CSV.** The inspected code does not contain an image/vision/multimodal ingestion or embedding pipeline. Therefore the implementation currently behaves like multi-format/text RAG, not a fully demonstrated multimodal RAG system. Do not falsely claim multimodal capability. Either implement real multimodal ingestion/embedding/retrieval or clearly document the current scope until that work is completed.
+8. **The current source viewer is visually complicated and its captured screenshot shows a blank PDF area.** Do not assume the viewer is fixed because CSS dimensions were added; verify actual document rendering in the browser.
+9. **The current frontend has substantial motion/hover/gradient CSS** despite the restrained-design rule. The new frontend must remove decorative motion and use interaction feedback only where it communicates an actual state change.
+10. **The repository archive contains `.env`, `.git`, storage data, caches, `.nicegui`, and generated metadata.** Keep these out of project-sharing archives. Never commit `.env` or local corpus data. If a real secret was included in a publicly shared archive, rotate it.
 
-Use NiceGUI for the user-facing application while keeping the backend architecture clean and service-oriented.
+## Architecture baseline
 
-Do NOT add Django merely to provide frontend functionality. Django and FastAPI together would duplicate responsibilities and make the project harder to understand and maintain. Use FastAPI + NiceGUI unless the existing repository contains a strong architectural reason to preserve another framework.
+Keep the existing clean separation:
 
-### Storage
-PostgreSQL is the authoritative application database.
-pgvector is the default vector store so relational permissions, metadata and vector retrieval can share a consistent transactional system.
+NiceGUI presentation
+→ FastAPI API/service boundary
+→ authentication/authorization
+→ application/domain services
+→ PostgreSQL/pgvector
 
-Object storage should be abstracted behind a storage interface. Local filesystem storage may be used for development; production deployment should be able to switch to S3-compatible storage without rewriting application logic.
+RAG flow:
+query validation/normalization
+→ lexical retrieval + vector retrieval
+→ fusion (RRF or justified alternative)
+→ reranking
+→ context assembly
+→ grounded generation
+→ citation validation
+→ safe response/telemetry
 
-### Model providers
-LLM and embedding providers must be abstracted.
+Do not move database/business logic into visual components.
 
-The application must be able to support, through adapters/configuration:
-- OpenAI
-- Gemini
-- compatible hosted providers
-- local/self-hosted models such as Llama-family models
-- other compatible providers
+## Frontend rebuild contract
 
-No business logic should depend directly on one provider's SDK.
+The frontend is allowed to be rewritten substantially or completely.
 
-If an LLM is unavailable, the backend must fail clearly and safely rather than fabricate an answer.
+Preserve:
+- backend API contracts unless a security/correctness fix requires a controlled change;
+- RBAC and data isolation;
+- document/citation provenance;
+- authentication behavior;
+- loading/error/retry behavior;
+- required admin functions;
+- Git history and meaningful implementation history.
 
-## Product principles
+Do not preserve:
+- current card layout;
+- current navigation labels merely because tests assert them;
+- current hover/animation classes;
+- current visual hierarchy;
+- current source-viewer layout;
+- implementation-specific HTML/CSS tests.
 
-1. Grounded answers over confident answers.
-2. Source evidence must be traceable.
-3. User data isolation is mandatory.
-4. Backend correctness before visual polish.
-5. Retrieval quality must be measurable.
-6. External providers are unreliable dependencies.
-7. Every important failure needs an explicit recovery path.
-8. Keep architecture understandable; do not over-engineer.
-9. Human-centered UI over generic AI-dashboard aesthetics.
-10. Accessibility and responsive behavior are part of quality, not optional extras.
+## Frontend product model
 
-## Security baseline
+### Student
+Primary navigation should be compact and obvious:
+- Home
+- Ask Assistant
+- Courses
+- Profile
 
-The application is multi-user.
+Add **History** only if persistent conversation history is implemented correctly. Do not create a fake history page backed only by in-memory state.
 
-Every protected resource must be authorized for the authenticated user/tenant.
+### Administrator
+Use grouped navigation rather than a long undifferentiated rail. Suggested groups:
+- Overview
+- Knowledge
+- Chat/Diagnostics
+- Administration
+- System
+- Profile
 
-Use:
-- secure password hashing such as Argon2id;
-- short-lived authentication/session credentials where applicable;
-- HttpOnly/Secure/SameSite cookies when cookie authentication is used;
-- CSRF protection for cookie-authenticated state-changing requests;
-- server-side authorization;
-- strict upload validation;
-- file size/count limits;
-- safe temporary-file handling;
-- path traversal protection;
-- content-type and extension validation;
-- safe document parser configuration;
-- SSRF protection for any URL ingestion feature;
-- rate limiting;
-- security headers;
-- structured audit events;
-- secret management through environment/configuration;
-- dependency pinning/lock files;
-- safe error responses.
+Exact labels may be changed during redesign, but the information architecture must remain simple and understandable.
 
-Do not claim that parsing a document is safe merely because its extension is PDF/DOCX/etc. Treat uploaded content as hostile input.
+### Chat
+The student chat is the primary product experience.
 
-## Quality target
+Default hierarchy:
+1. course/scope selection;
+2. question composer;
+3. answer;
+4. citations and source evidence;
+5. optional follow-up actions.
 
-The word "perfect" means the agent must use a strict engineering quality gate, not that software can be mathematically guaranteed defect-free.
+Technical retrieval diagnostics are administrator-only and should never dominate normal student chat.
 
-No known critical/high defect may remain at release.
+### Source viewer
+Prefer one simple evidence view:
+- document name + course;
+- cited page when available;
+- PDF/document view;
+- compact evidence excerpt;
+- close/open-in-new-tab only when useful.
+
+Do not require a raw auth token in the URL. Prefer the authenticated browser session on the same origin. If an iframe/browser constraint genuinely prevents that, implement a short-lived, single-purpose, server-issued viewer ticket scoped to the exact document and viewer request. Never reuse the main session token as a viewer token.
+
+Do not load an entire large chunk corpus into the browser merely to provide a fallback viewer. Show the cited chunk(s), or paginate/bound the text when necessary.
+
+## Security decisions
+
+- Session cookies are HttpOnly, Secure in production, and SameSite appropriate to deployment.
+- Never expose long-lived or raw session tokens to JavaScript.
+- Never accept a raw session token in a document/file URL query parameter.
+- Never put secrets/tokens in HTML attributes, log messages, source snippets, analytics events, or browser-local persistent state unnecessarily.
+- Use server-side authorization for every document/file/chunk operation.
+- Source viewer access must enforce the same document authorization as API access.
+- Reject `?token=` authentication for source/document file endpoints after migration and add a regression test.
+- User-facing errors must be safe and actionable; raw exceptions are not UI content.
+- Do not expose detailed environment/infrastructure information from public liveness endpoints.
+
+## Multimodal truthfulness gate
+
+The project title says multimodal. Before calling the project "multimodal" in the UI or final documentation, verify that the repository actually has:
+- a supported non-text modality (for example images or rendered document pages);
+- extraction/ingestion of that modality;
+- a model/embedding path that represents it;
+- retrieval/indexing behavior for it;
+- citations/provenance back to the source modality.
+
+Multiple file extensions alone do not make a system multimodal.
+
+If true multimodality is not implemented in this work, use honest wording such as "multi-format RAG" in UI/help text while retaining the academic project title in official project documentation.
+
+## Quality gate
+
+"Perfect" means no known release-blocking defect after a whole-system audit. The agent must provide evidence:
+- tests executed and results;
+- lint/format/type checks when configured;
+- migration check;
+- security regression checks;
+- source viewer browser verification;
+- visual verification of every major route;
+- no secret leakage;
+- no stale test assertions that force superseded UI.

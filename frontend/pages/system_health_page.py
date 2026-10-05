@@ -54,7 +54,9 @@ def register_system_health_page() -> None:
                     try:
                         health = api_client.get_system_health()
                     except Exception as err:
-                        render_alert(f"Unable to reach system telemetry service: {err}", level="negative")
+                        render_alert(
+                            f"Unable to reach system telemetry service: {err}", level="negative"
+                        )
                         return
 
                     # 1. Overall Status Hero Banner
@@ -81,27 +83,41 @@ def register_system_health_page() -> None:
                                 ui.icon(status_icon, size="md").classes(f"text-{status_color}")
                                 with ui.column().classes("gap-0.5"):
                                     with ui.row().classes("items-center gap-2"):
-                                        ui.label("System Operational Status:").classes("text-sm font-bold text-slate-900")
-                                        ui.badge(status_upper, color=status_color).classes("text-xs font-bold px-2 py-0.5")
-                                    ui.label(status_msg).classes("text-xs text-slate-700 leading-relaxed")
+                                        ui.label("System Operational Status:").classes(
+                                            "text-sm font-bold text-slate-900"
+                                        )
+                                        ui.badge(status_upper, color=status_color).classes(
+                                            "text-xs font-bold px-2 py-0.5"
+                                        )
+                                    ui.label(status_msg).classes(
+                                        "text-xs text-slate-700 leading-relaxed"
+                                    )
 
                             with ui.row().classes("items-center gap-2"):
                                 ui.button(
                                     "Refresh Checks",
                                     icon="refresh",
                                     on_click=refresh_health,
-                                ).props("outline dense no-caps color=slate-7").classes("text-xs px-3 py-1 font-semibold")
+                                ).props("outline dense no-caps color=slate-7").classes(
+                                    "text-xs px-3 py-1 font-semibold"
+                                )
 
                     # 2. Subsystem Diagnostics Grid
-                    with ui.card().classes("w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs gap-3"):
-                        with ui.row().classes("w-full justify-between items-center pb-2 border-b border-slate-100"):
+                    with ui.card().classes(
+                        "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs gap-3"
+                    ):
+                        with ui.row().classes(
+                            "w-full justify-between items-center pb-2 border-b border-slate-100"
+                        ):
                             with ui.row().classes("items-center gap-2"):
                                 ui.icon("dns", size="sm").classes("text-slate-600")
-                                ui.label("Core Infrastructure Components").classes("text-sm font-bold text-slate-800")
-                            if health.checked_at:
-                                ui.label(f"Checked at: {health.checked_at[:19].replace('T', ' ')} UTC").classes(
-                                    "text-xs text-slate-400 font-mono"
+                                ui.label("Core Infrastructure Components").classes(
+                                    "text-sm font-bold text-slate-800"
                                 )
+                            if health.checked_at:
+                                ui.label(
+                                    f"Checked at: {health.checked_at[:19].replace('T', ' ')} UTC"
+                                ).classes("text-xs text-slate-400 font-mono")
 
                         with ui.column().classes("w-full gap-3 mt-1"):
                             for comp in health.components:
@@ -122,16 +138,23 @@ def register_system_health_page() -> None:
                                     icon_color = "text-rose-600"
                                     border_cls = "border-rose-200 bg-rose-50/20"
 
-                                with ui.card().classes(f"w-full p-4 bg-white border {border_cls} rounded-lg shadow-xs gap-2"):
+                                with ui.card().classes(
+                                    f"w-full p-4 bg-white border {border_cls} rounded-lg shadow-xs gap-2"
+                                ):
                                     with ui.row().classes("w-full items-center justify-between"):
                                         with ui.row().classes("items-center gap-2.5"):
                                             ui.icon(comp_icon, size="sm").classes(icon_color)
-                                            ui.label(comp.name).classes("text-sm font-bold text-slate-900")
-                                        ui.badge(comp.status.upper(), color=badge_color).classes("text-[10px] font-bold px-2 py-0.5")
+                                            ui.label(comp.name).classes(
+                                                "text-sm font-bold text-slate-900"
+                                            )
+                                        ui.badge(comp.status.upper(), color=badge_color).classes(
+                                            "text-[10px] font-bold px-2 py-0.5"
+                                        )
 
-                                    ui.label(comp.message or "Component responded within nominal operating thresholds.").classes(
-                                        "text-xs text-slate-600 pl-8 leading-relaxed"
-                                    )
+                                    ui.label(
+                                        comp.message
+                                        or "Component responded within nominal operating thresholds."
+                                    ).classes("text-xs text-slate-600 pl-8 leading-relaxed")
 
                     # 3. Operational Quick Navigation
                     with ui.row().classes("w-full justify-end gap-3 mt-2"):
@@ -139,11 +162,15 @@ def register_system_health_page() -> None:
                             "Open Indexing Center",
                             icon="precision_manufacturing",
                             on_click=lambda: ui.navigate.to("/indexing"),
-                        ).props("outline color=indigo no-caps dense").classes("text-xs font-semibold px-4 py-2")
+                        ).props("outline color=indigo no-caps dense").classes(
+                            "text-xs font-semibold px-4 py-2"
+                        )
                         ui.button(
                             "Return to Dashboard",
                             icon="dashboard",
                             on_click=lambda: ui.navigate.to("/dashboard"),
-                        ).props("flat color=slate-7 no-caps dense").classes("text-xs font-semibold px-3 py-2")
+                        ).props("flat color=slate-7 no-caps dense").classes(
+                            "text-xs font-semibold px-3 py-2"
+                        )
 
             refresh_health()

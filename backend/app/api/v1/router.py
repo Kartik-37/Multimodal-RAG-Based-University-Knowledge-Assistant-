@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from backend.app.api.v1.endpoints.auth import router as auth_router
 from backend.app.api.v1.endpoints.chat import router as chat_router
+from backend.app.api.v1.endpoints.documents import router as documents_router
 from backend.app.api.v1.endpoints.hybrid_retrieval import router as hybrid_retrieval_router
 from backend.app.api.v1.endpoints.knowledge_bases import router as kb_router
 from backend.app.api.v1.endpoints.lexical_retrieval import router as lexical_retrieval_router
@@ -23,6 +24,7 @@ api_router = APIRouter()
 
 api_router.include_router(auth_router)
 api_router.include_router(kb_router)
+api_router.include_router(documents_router)
 api_router.include_router(query_router)
 api_router.include_router(retrieval_router)
 api_router.include_router(lexical_retrieval_router)

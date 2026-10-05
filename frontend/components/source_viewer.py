@@ -10,12 +10,13 @@ Provides in-app reading of original PDF and course document files:
   verified text content even if browser plugins block inline PDFs.
 """
 
+import html
 import urllib.parse
 from typing import Any
 
 from nicegui import app, ui
 
-from frontend.client.api_client import _get_persistent_token, api_client
+from frontend.client.api_client import api_client
 
 
 def open_source_viewer(
@@ -29,6 +30,9 @@ def open_source_viewer(
     """
     Open the modern Source Viewer side drawer with an embedded PDF viewer.
 
+    Authentication is handled strictly via same-origin HttpOnly session cookies.
+    No session tokens are passed in query strings or accessible to client-side scripts.
+
     Args:
         document_id: UUID string of the document if known.
         document_name: Original filename of the document (e.g. 'KSU-Act-English.pdf').
@@ -37,46 +41,16 @@ def open_source_viewer(
         course_name: Name of the course for context display.
         snippet: Grounded text snippet from citation for side-by-side verification.
     """
-    # 1. Resolve authentication token for iframe request
-    token = api_client.get_session_token()
-    if not token:
-        token = _get_persistent_token()
-    if not token:
-        try:
-            if hasattr(app, "storage") and hasattr(app.storage, "user"):
-                token = app.storage.user.get("auth_session_token")
-        except Exception:
-            pass
-
-    # Ensure browser cookie is in sync for native iframe / embed requests
-    if token:
-        try:
-            ui.run_javascript(
-                f'document.cookie = "session_id={token}; path=/; max-age=86400; SameSite=Lax"'
-            )
-        except Exception:
-            pass
-
-    # 2. Build document file streaming URL
+    # 1. Build canonical document streaming URL without token leakage
     if document_id:
-        base_url = f"/api/v1/documents/{document_id}/file"
+        file_url = f"/api/v1/documents/{document_id}/file"
     else:
         encoded_name = urllib.parse.quote(document_name)
-        base_url = f"/api/v1/documents/by-name?name={encoded_name}"
+        file_url = f"/api/v1/documents/by-name?name={encoded_name}"
         if kb_id:
-            base_url += f"&kb_id={kb_id}"
+            file_url += f"&kb_id={kb_id}"
 
-    # Append auth token as query parameter
-    params: list[str] = []
-    if token:
-        params.append(f"token={urllib.parse.quote(token)}")
-
-    file_url = base_url
-    if params:
-        sep = "&" if "?" in file_url else "?"
-        file_url += f"{sep}{'&'.join(params)}"
-
-    # Append PDF open parameter fragment for direct page jump
+    # Append PDF open parameter fragment for direct page jump (fragments are not sent to server)
     iframe_url = file_url
     if page_number and page_number > 0:
         iframe_url += f"#page={page_number}&view=FitH"
@@ -191,13 +165,18 @@ def open_source_viewer(
                 # TAB 1: Native PDF Viewer
                 with ui.tab_panel(tab_pdf).classes("w-full h-full p-0 m-0 flex flex-col bg-slate-100 overflow-hidden flex-1"):
                     with ui.element("div").classes("w-full h-full flex-1 bg-white flex flex-col overflow-hidden relative"):
+                        safe_title = html.escape(document_name, quote=True)
+                        safe_url = html.escape(iframe_url, quote=True)
                         ui.html(
-                            f'<object data="{iframe_url}" type="application/pdf" class="w-full flex-1" style="width: 100%; height: calc(100vh - 170px); min-height: 520px; border: none; display: block;">'
-                            f'<iframe src="{iframe_url}" class="w-full flex-1" style="width: 100%; height: calc(100vh - 170px); min-height: 520px; border: none; display: block;" allow="fullscreen" title="{document_name}">'
-                            f'<div class="p-6 text-center text-xs text-slate-500"><p>Unable to load inline PDF preview.</p>'
-                            f'<a href="{iframe_url}" target="_blank" class="text-blue-600 underline font-semibold mt-2 inline-block">Open {document_name} in new browser tab ↗</a></div>'
+                            f'<iframe src="{safe_url}" class="w-full flex-1" '
+                            f'style="width: 100%; height: calc(100vh - 170px); min-height: 520px; border: none; display: block;" '
+                            f'allow="fullscreen" title="{safe_title}">'
+                            f'<div class="p-6 text-center text-xs text-slate-500">'
+                            f'<p>Inline preview not supported by browser.</p>'
+                            f'<a href="{safe_url}" target="_blank" class="text-blue-600 underline font-semibold mt-2 inline-block">'
+                            f'Open {safe_title} in new browser tab ↗</a>'
+                            f'</div>'
                             f'</iframe>'
-                            f'</object>'
                         ).classes("w-full flex-1 flex flex-col")
 
                 # TAB 2: Extracted Text & Chunks (Guaranteed Readable in All Browsers)

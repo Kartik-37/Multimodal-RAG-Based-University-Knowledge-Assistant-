@@ -229,8 +229,11 @@ def register_auth_pages() -> None:
         # ----------------------------------------------------------------------
         # Modal: Explore Public Knowledge Base Materials
         # ----------------------------------------------------------------------
-        with ui.dialog() as materials_dialog, ui.card().classes(
-            "w-full max-w-2xl p-6 sm:p-8 bg-white border border-slate-200 rounded-2xl shadow-xl box-border"
+        with (
+            ui.dialog() as materials_dialog,
+            ui.card().classes(
+                "w-full max-w-2xl p-6 sm:p-8 bg-white border border-slate-200 rounded-2xl shadow-xl box-border"
+            ),
         ):
             with ui.row().classes("w-full justify-between items-start mb-4"):
                 with ui.row().classes("items-center gap-2.5"):
@@ -242,23 +245,29 @@ def register_auth_pages() -> None:
                         ui.label("University Course & Knowledge Catalog").classes(
                             "text-lg font-bold text-slate-900 tracking-tight"
                         )
-                        ui.label("Public overview of indexed academic curricula and resources").classes(
-                            "text-xs text-slate-500"
-                        )
-                ui.button(icon="close", on_click=materials_dialog.close).props("flat round dense").classes(
-                    "text-slate-400 hover:text-slate-700"
-                )
+                        ui.label(
+                            "Public overview of indexed academic curricula and resources"
+                        ).classes("text-xs text-slate-500")
+                ui.button(icon="close", on_click=materials_dialog.close).props(
+                    "flat round dense"
+                ).classes("text-slate-400 hover:text-slate-700")
 
             with ui.column().classes("w-full gap-4 my-2"):
                 # Course 1
-                with ui.card().classes("w-full p-4 bg-slate-50/80 border border-slate-200 rounded-xl"):
+                with ui.card().classes(
+                    "w-full p-4 bg-slate-50/80 border border-slate-200 rounded-xl"
+                ):
                     with ui.row().classes("w-full justify-between items-center mb-1"):
-                        ui.label("BCA-301: Computer Architecture").classes("text-sm font-bold text-slate-800")
+                        ui.label("BCA-301: Computer Architecture").classes(
+                            "text-sm font-bold text-slate-800"
+                        )
                         ui.badge("1024-d Vectors", color="blue-8").classes("text-[10px] px-2")
                     ui.label(
                         "Processor micro-architecture, memory hierarchy, cache coherence, pipelining, and assembly interfaces."
                     ).classes("text-xs text-slate-600 leading-relaxed mb-2")
-                    with ui.row().classes("items-center gap-3 text-[11px] text-slate-500 font-medium"):
+                    with ui.row().classes(
+                        "items-center gap-3 text-[11px] text-slate-500 font-medium"
+                    ):
                         with ui.row().classes("items-center gap-1"):
                             ui.icon("description", size="13px").classes("text-slate-400")
                             ui.label("KSU-Act-English.pdf (33 Chunks)")
@@ -267,14 +276,20 @@ def register_auth_pages() -> None:
                             ui.label("Status: Active & Verified")
 
                 # Course 2
-                with ui.card().classes("w-full p-4 bg-slate-50/80 border border-slate-200 rounded-xl"):
+                with ui.card().classes(
+                    "w-full p-4 bg-slate-50/80 border border-slate-200 rounded-xl"
+                ):
                     with ui.row().classes("w-full justify-between items-center mb-1"):
-                        ui.label("Official University Regulations & Statutes").classes("text-sm font-bold text-slate-800")
+                        ui.label("Official University Regulations & Statutes").classes(
+                            "text-sm font-bold text-slate-800"
+                        )
                         ui.badge("Syllabus & Policy", color="slate-7").classes("text-[10px] px-2")
                     ui.label(
                         "Institutional academic statutes, degree ordinances, examination criteria, and university grading policies."
                     ).classes("text-xs text-slate-600 leading-relaxed mb-2")
-                    with ui.row().classes("items-center gap-3 text-[11px] text-slate-500 font-medium"):
+                    with ui.row().classes(
+                        "items-center gap-3 text-[11px] text-slate-500 font-medium"
+                    ):
                         with ui.row().classes("items-center gap-1"):
                             ui.icon("verified", size="13px").classes("text-blue-600")
                             ui.label("Institutional Authority")
@@ -283,26 +298,34 @@ def register_auth_pages() -> None:
                             ui.label("Status: Active & Verified")
 
                 # Course 3
-                with ui.card().classes("w-full p-4 bg-slate-50/80 border border-slate-200 rounded-xl"):
+                with ui.card().classes(
+                    "w-full p-4 bg-slate-50/80 border border-slate-200 rounded-xl"
+                ):
                     with ui.row().classes("w-full justify-between items-center mb-1"):
-                        ui.label("BCA Curriculum & Foundations").classes("text-sm font-bold text-slate-800")
+                        ui.label("BCA Curriculum & Foundations").classes(
+                            "text-sm font-bold text-slate-800"
+                        )
                         ui.badge("Undergraduate", color="indigo-8").classes("text-[10px] px-2")
                     ui.label(
                         "Semester course blueprints, syllabus modules, lab practical manuals, and reading references."
                     ).classes("text-xs text-slate-600 leading-relaxed mb-2")
-                    with ui.row().classes("items-center gap-3 text-[11px] text-slate-500 font-medium"):
+                    with ui.row().classes(
+                        "items-center gap-3 text-[11px] text-slate-500 font-medium"
+                    ):
                         with ui.row().classes("items-center gap-1"):
                             ui.icon("library_books", size="13px").classes("text-indigo-500")
                             ui.label("Semester Syllabus Modules")
 
-            with ui.row().classes("w-full justify-between items-center pt-4 border-t border-slate-100 mt-2"):
-                ui.label("Sign in with student credentials to ask questions across these materials.").classes(
-                    "text-xs text-slate-500"
-                )
+            with ui.row().classes(
+                "w-full justify-between items-center pt-4 border-t border-slate-100 mt-2"
+            ):
+                ui.label(
+                    "Sign in with student credentials to ask questions across these materials."
+                ).classes("text-xs text-slate-500")
                 with ui.row().classes("gap-2"):
-                    ui.button("Close", on_click=materials_dialog.close).props("flat no-caps").classes(
-                        "text-xs text-slate-600"
-                    )
+                    ui.button("Close", on_click=materials_dialog.close).props(
+                        "flat no-caps"
+                    ).classes("text-xs text-slate-600")
                     ui.button(
                         "Student Sign In",
                         icon="login",
@@ -313,7 +336,6 @@ def register_auth_pages() -> None:
 
         with auth_layout(max_width_class="max-w-6xl"):
             with ui.column().classes("w-full max-w-full items-center"):
-
                 # --------------------------------------------------------------
                 # TOP HERO SECTION: Academic Knowledge Assistant
                 # --------------------------------------------------------------
@@ -334,7 +356,9 @@ def register_auth_pages() -> None:
                     ui.label(
                         "Semantic inquiry across verified university course materials, lecture notes, and official regulations. "
                         "Ask natural questions and receive precise, evidence-backed answers with strict source citation verification."
-                    ).classes("text-sm sm:text-base text-slate-600 max-w-2xl leading-relaxed mt-3.5 mb-6")
+                    ).classes(
+                        "text-sm sm:text-base text-slate-600 max-w-2xl leading-relaxed mt-3.5 mb-6"
+                    )
 
                     # Primary Hero Quick-Action Row
                     with ui.row().classes("items-center justify-center gap-3 flex-wrap mb-4"):
@@ -391,7 +415,9 @@ def register_auth_pages() -> None:
                                 "w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-700"
                             ):
                                 ui.icon("fact_check", size="18px")
-                            ui.label("Grounded Citations").classes("text-sm font-bold text-slate-800")
+                            ui.label("Grounded Citations").classes(
+                                "text-sm font-bold text-slate-800"
+                            )
                         ui.label(
                             "Direct page, paragraph, and section references. No hallucinations: unverifiable assertions are refused."
                         ).classes("text-xs text-slate-500 leading-relaxed")
@@ -405,7 +431,9 @@ def register_auth_pages() -> None:
                                 "w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700"
                             ):
                                 ui.icon("verified_user", size="18px")
-                            ui.label("Institutional Security").classes("text-sm font-bold text-slate-800")
+                            ui.label("Institutional Security").classes(
+                                "text-sm font-bold text-slate-800"
+                            )
                         ui.label(
                             "Argon2id authentication, strict course enrollment isolation, and server-side RBAC permissions."
                         ).classes("text-xs text-slate-500 leading-relaxed")
@@ -445,8 +473,12 @@ def register_auth_pages() -> None:
                                     "Precise page, paragraph, and section source citations",
                                     "Interactive evidence panel for source validation",
                                 ]:
-                                    with ui.row().classes("items-center gap-2 text-xs text-slate-700"):
-                                        ui.icon("check_circle", size="14px").classes("text-blue-600 flex-shrink-0")
+                                    with ui.row().classes(
+                                        "items-center gap-2 text-xs text-slate-700"
+                                    ):
+                                        ui.icon("check_circle", size="14px").classes(
+                                            "text-blue-600 flex-shrink-0"
+                                        )
                                         ui.label(feature)
 
                         with ui.column().classes("w-full mt-6 gap-2"):
@@ -457,7 +489,9 @@ def register_auth_pages() -> None:
                             ).props("no-caps").classes(
                                 "w-full py-2.5 font-medium text-sm rounded-lg !bg-blue-700 hover:!bg-blue-800 !text-white shadow-xs transition-colors"
                             )
-                            with ui.row().classes("w-full justify-center text-xs text-slate-500 gap-1 mt-1"):
+                            with ui.row().classes(
+                                "w-full justify-center text-xs text-slate-500 gap-1 mt-1"
+                            ):
                                 ui.label("Need an account?")
                                 ui.link("Register as Student", "/register").classes(
                                     "text-blue-700 font-semibold hover:underline no-underline"
@@ -492,8 +526,12 @@ def register_auth_pages() -> None:
                                     "Vector indexing lifecycle with cardinality verification",
                                     "Administrative diagnostic chat & CrossEncoder inspection",
                                 ]:
-                                    with ui.row().classes("items-center gap-2 text-xs text-slate-700"):
-                                        ui.icon("check_circle", size="14px").classes("text-slate-600 flex-shrink-0")
+                                    with ui.row().classes(
+                                        "items-center gap-2 text-xs text-slate-700"
+                                    ):
+                                        ui.icon("check_circle", size="14px").classes(
+                                            "text-slate-600 flex-shrink-0"
+                                        )
                                         ui.label(feature)
 
                         with ui.column().classes("w-full mt-6 gap-2"):
@@ -504,9 +542,9 @@ def register_auth_pages() -> None:
                             ).props("no-caps").classes(
                                 "w-full py-2.5 font-medium text-sm rounded-lg !bg-slate-800 hover:!bg-slate-900 !text-white shadow-xs transition-colors"
                             )
-                            ui.label("Administrator accounts are provisioned internally by IT.").classes(
-                                "text-xs text-slate-400 text-center mt-1"
-                            )
+                            ui.label(
+                                "Administrator accounts are provisioned internally by IT."
+                            ).classes("text-xs text-slate-400 text-center mt-1")
 
                 # --------------------------------------------------------------
                 # "HOW IT WORKS" ACADEMIC RAG ARCHITECTURE SECTION
@@ -526,7 +564,9 @@ def register_auth_pages() -> None:
                             "A deterministic, four-stage RAG pipeline engineered for precision and source attribution"
                         ).classes("text-xs sm:text-sm text-slate-500 max-w-xl")
 
-                    with ui.element("div").classes("w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"):
+                    with ui.element("div").classes(
+                        "w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+                    ):
                         stages = [
                             (
                                 "1",
@@ -565,7 +605,9 @@ def register_auth_pages() -> None:
                                             ui.label(step_num)
                                         ui.icon(icon_name, size="18px").classes("text-slate-400")
                                     ui.label(title).classes("text-sm font-bold text-slate-800")
-                                    ui.label(desc).classes("text-[11px] text-slate-500 leading-relaxed")
+                                    ui.label(desc).classes(
+                                        "text-[11px] text-slate-500 leading-relaxed"
+                                    )
 
                 # --------------------------------------------------------------
                 # STUDENT REGISTRATION BANNER / CALL TO ACTION

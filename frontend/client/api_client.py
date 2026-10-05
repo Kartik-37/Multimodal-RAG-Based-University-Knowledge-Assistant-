@@ -12,12 +12,18 @@ and PostgreSQL database:
 - Validates that unauthorized student actions are rejected by the backend.
 """
 
+import io
+import os
 import uuid
 from datetime import datetime
 from typing import Any
+from urllib.parse import unquote
 
-from fastapi.testclient import TestClient
+import anyio
+from anyio.from_thread import start_blocking_portal
+import httpx
 
+from backend.app.core.config import settings
 from backend.app.core.security import SESSION_COOKIE_NAME
 from backend.app.main import app
 from frontend.client.error_handler import normalize_error
@@ -42,15 +48,123 @@ from frontend.client.models import (
 )
 
 
+class InProcessProductionTransport(httpx.BaseTransport):
+    """
+    Production-safe in-process ASGI transport.
+
+    Dispatches synchronous HTTP client requests directly through the FastAPI ASGI
+    pipeline using AnyIO's thread-safe blocking portal, without importing testing
+    machinery (TestClient), without raising unhandled internal exceptions into caller code,
+    and cleanly managing HTTP headers and cookies.
+    """
+
+    def __init__(self, asgi_app: Any) -> None:
+        self.asgi_app = asgi_app
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        scheme = request.url.scheme
+        path = unquote(request.url.path)
+        raw_path = request.url.raw_path
+        query = request.url.query.decode("ascii")
+        host = request.url.netloc.decode("ascii") or "127.0.0.1"
+
+        headers = [
+            (k.lower().encode("latin-1"), v.encode("latin-1"))
+            for k, v in request.headers.multi_items()
+        ]
+
+        scope: dict[str, Any] = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": request.method,
+            "path": path,
+            "raw_path": raw_path.split(b"?")[0],
+            "root_path": "",
+            "scheme": scheme,
+            "query_string": query.encode("latin-1"),
+            "headers": headers,
+            "client": ("127.0.0.1", 8080),
+            "server": (host, 8080),
+        }
+
+        body_bytes = request.read()
+        request_complete = False
+        response_started = False
+        response_status = 500
+        response_headers: list[tuple[str, str]] = []
+        response_body = io.BytesIO()
+        response_complete: anyio.Event | None = None
+
+        async def receive() -> dict[str, Any]:
+            nonlocal request_complete
+            if request_complete:
+                if response_complete is not None and not response_complete.is_set():
+                    await response_complete.wait()
+                return {"type": "http.disconnect"}
+            request_complete = True
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+        async def send(message: dict[str, Any]) -> None:
+            nonlocal response_started, response_status, response_headers
+            if message["type"] == "http.response.start":
+                response_status = message["status"]
+                response_headers = [
+                    (k.decode("latin-1"), v.decode("latin-1"))
+                    for k, v in message.get("headers", [])
+                ]
+                response_started = True
+            elif message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                more_body = message.get("more_body", False)
+                if request.method != "HEAD":
+                    response_body.write(body)
+                if not more_body:
+                    response_body.seek(0)
+                    if response_complete is not None:
+                        response_complete.set()
+
+        try:
+            with start_blocking_portal() as portal:
+                response_complete = portal.call(anyio.Event)
+                portal.call(self.asgi_app, scope, receive, send)
+        except Exception:
+            if not response_started:
+                return httpx.Response(
+                    status_code=500,
+                    json={"detail": "A server processing error occurred. Please try again later."},
+                    request=request,
+                )
+
+        return httpx.Response(
+            status_code=response_status,
+            headers=response_headers,
+            content=response_body.read(),
+            request=request,
+        )
+
+
 class FrontendAPIClient:
     """API Client mediating presentation requests to the backend service boundary."""
 
-    def __init__(self, base_url: str = "http://testserver/api/v1") -> None:
+    def __init__(self, base_url: str = "http://127.0.0.1:8080/api/v1") -> None:
         self.base_url = base_url
         self._current_user: UserDTO | None = None
         self._session_token: str | None = None
-        # TestClient handles real FastAPI middleware, cookies, dependencies, and DB sessions
-        self._http = TestClient(app, base_url=base_url)
+
+        external_url = os.environ.get("BACKEND_API_URL")
+        if external_url:
+            self._http = httpx.Client(
+                base_url=external_url,
+                headers={"user-agent": "AcademicAssistantFrontend/1.0"},
+                timeout=60.0,
+            )
+        else:
+            self._http = httpx.Client(
+                transport=InProcessProductionTransport(app),
+                base_url=base_url,
+                headers={"user-agent": "AcademicAssistantFrontend/1.0"},
+                timeout=60.0,
+            )
 
         # In-memory document status storage for Step 4 presentation
         self._documents: dict[str, list[DocumentDTO]] = {}
@@ -551,6 +665,14 @@ class FrontendAPIClient:
             )
             for item in items
         ]
+
+    def get_document_chunks(self, kb_id: str, document_id: str) -> list[dict[str, Any]]:
+        """Fetch extracted text chunks with page numbers and sections for a document."""
+        resp = self._http.get(f"/knowledge-bases/{kb_id}/documents/{document_id}/chunks")
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return data if isinstance(data, list) else []
 
     def get_system_health(self) -> SystemHealthDTO:
         """
@@ -1290,6 +1412,15 @@ class _SessionAPIClientProxy:
         _set_persistent_token(None)
         if session_id and session_id in _session_clients:
             _session_clients.pop(session_id, None)
+
+    def get_session_token(self) -> str | None:
+        client = self._get_client()
+        token = client.get_session_token()
+        if not token:
+            token = _get_persistent_token()
+            if token:
+                client.set_session_token(token)
+        return token
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._get_client(), name)

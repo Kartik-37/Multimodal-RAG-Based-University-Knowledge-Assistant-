@@ -17,14 +17,15 @@ def render_evidence_panel(
     citations: list[CitationDTO],
     selected_citation: CitationDTO | None = None,
     on_select: Callable[[CitationDTO], None] | None = None,
+    on_open_viewer: Callable[[CitationDTO], None] | None = None,
     is_admin: bool = False,
 ) -> None:
     """
     Render the evidence inspection panel with source snippets and provenance metadata.
     """
-    with ui.card().classes("w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs"):
+    with ui.column().classes("w-full h-full flex-1 flex flex-col"):
         with ui.row().classes(
-            "w-full items-center justify-between border-b border-slate-100 pb-2.5 mb-3"
+            "w-full items-center justify-between border-b border-slate-100 pb-2.5 mb-3 shrink-0"
         ):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("find_in_page", size="sm").classes("text-blue-600")
@@ -32,7 +33,7 @@ def render_evidence_panel(
             ui.label(f"{len(citations)} source(s)").classes("text-xs text-slate-500 font-mono")
 
         if not citations:
-            with ui.column().classes("w-full py-8 items-center justify-center text-center"):
+            with ui.column().classes("w-full py-12 items-center justify-center text-center my-auto"):
                 ui.icon("menu_book", size="md").classes("text-slate-300 mb-1.5")
                 ui.label("Sources will appear here after you ask a question.").classes(
                     "text-xs font-semibold text-slate-600"
@@ -42,12 +43,12 @@ def render_evidence_panel(
                 ).classes("text-[11px] text-slate-400 max-w-xs mt-0.5 leading-normal")
             return
 
-        with ui.column().classes("w-full gap-3 max-h-[520px] overflow-y-auto pr-1"):
+        with ui.column().classes("w-full gap-3 flex-1 overflow-y-auto pr-1 pb-4"):
             for idx, cit in enumerate(citations, start=1):
                 is_selected = (
                     selected_citation is not None and selected_citation.chunk_id == cit.chunk_id
                 )
-                card_classes = "w-full p-3.5 bg-white border rounded-lg shadow-xs transition-all cursor-pointer "
+                card_classes = "w-full p-3.5 bg-white border rounded-xl shadow-2xs transition-all cursor-pointer "
                 if is_selected:
                     card_classes += "border-blue-500 ring-2 ring-blue-100 bg-blue-50/20"
                 else:
@@ -55,7 +56,7 @@ def render_evidence_panel(
 
                 card = ui.card().classes(card_classes)
                 if on_select:
-                    card.on("click", lambda _, c=cit: on_select(c))
+                    card.on("click", lambda e=None, c=cit: on_select(c))
 
                 with card:
                     with ui.row().classes("w-full justify-between items-center gap-1 mb-1.5"):
@@ -86,6 +87,17 @@ def render_evidence_panel(
 
                     # Source text snippet
                     with ui.element("div").classes(
-                        "w-full text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded-md border border-slate-200/80"
+                        "w-full text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200/80"
                     ):
                         ui.label(cit.snippet).classes("italic text-slate-700 select-text")
+
+                    # Direct action to open in Source Viewer
+                    if on_open_viewer:
+                        page_str = f"Page {cit.page_number}" if cit.page_number else "Document"
+                        ui.button(
+                            f"Read in PDF ({page_str})",
+                            icon="picture_as_pdf",
+                            on_click=lambda e=None, c=cit: on_open_viewer(c),
+                        ).props("no-caps dense outline").classes(
+                            "w-full mt-2 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-lg py-1.5 justify-center transition-colors"
+                        )

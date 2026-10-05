@@ -112,6 +112,7 @@ def test_setup_data(db_session: Session):
 # 1. NAVIGATION & RBAC SHELL
 # ==============================================================================
 
+
 def test_admin_nav_groups_main_admin(test_setup_data):
     """Main Admin sees all admin navigation sections: Overview, Knowledge, Communication, Administration, System."""
     data = test_setup_data
@@ -178,6 +179,7 @@ def test_admin_nav_groups_student_empty():
 # 2. ADMINISTRATOR HIERARCHY & SAFETY GUARDS
 # ==============================================================================
 
+
 def test_final_main_admin_protection(test_setup_data, db_session: Session):
     """The system must strictly prevent deleting or deactivating the final active Main Admin."""
     data = test_setup_data
@@ -232,6 +234,7 @@ def test_faculty_admin_course_assignment_and_permissions(test_setup_data):
 # ==============================================================================
 # 3. PERSISTENT INDEXING & CHUNK PROGRESS
 # ==============================================================================
+
 
 def test_truthful_indexing_progress_tracking(test_setup_data, db_session: Session):
     """Persistent indexing progress tracks 0/N, partial, and completed chunks truthfully."""
@@ -331,6 +334,7 @@ def test_indexing_retry_workflow(test_setup_data, db_session: Session):
 # 4. ADMIN KNOWLEDGE CHAT & SCOPED RETRIEVAL
 # ==============================================================================
 
+
 def test_admin_chat_scoped_to_authorized_courses(test_setup_data, db_session: Session):
     """Faculty admin can only select and query courses within their assigned scope."""
     data = test_setup_data
@@ -361,6 +365,7 @@ def test_main_admin_chat_unrestricted_scope(test_setup_data):
 # ==============================================================================
 # 5. SYSTEM HEALTH & AUDIT ACTIVITY TELEMETRY
 # ==============================================================================
+
 
 def test_system_health_telemetry(test_setup_data):
     """System health endpoint returns component diagnostic statuses without stack traces."""

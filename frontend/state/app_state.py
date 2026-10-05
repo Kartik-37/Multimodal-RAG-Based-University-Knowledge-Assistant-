@@ -10,6 +10,7 @@ Maintains UI state across page views:
 from typing import Any
 
 from frontend.client.api_client import _get_browser_session_id, api_client
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
     ChatMessageDTO,
     CitationDTO,
@@ -75,11 +76,12 @@ class AppState:
                 if resp.citations:
                     self._selected_citation = resp.citations[0]
             except Exception as e:
-                self._generation_error = str(e)
+                clean_err = normalize_error(e, context="chat")
+                self._generation_error = clean_err
                 err_msg = ChatMessageDTO(
                     id=f"msg-err-{len(self._chat_history) + 1}",
                     role="assistant",
-                    content=f"Unable to complete query synthesis: {e}",
+                    content=clean_err,
                     citations=[],
                 )
                 self._chat_history.append(err_msg)

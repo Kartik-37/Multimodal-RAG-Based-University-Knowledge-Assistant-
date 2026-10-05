@@ -2,87 +2,74 @@
 
 This file is maintained by Antigravity.
 
-## Current phase
+## Current authoritative phase — 2026-10-05
 
-STEP 23 — ACADEMIC ASSISTANT CHAT OPTIMIZATIONS & SOURCE VIEWER REPAIRS
-- Branding: Renamed "BCA Academic Assistant" -> "Academic Assistant" and "Ask BCA Assistant" -> "Ask Academic Assistant" across all student-facing headers, tooltips, and layouts.
-- Background Cross-Page Execution: Added decoupled `start_background_generation` in AppState with reactive `ui.timer` status checking. Synthesis continues in the background if student navigates to courses or profile, restoring thinking/answer state immediately upon return.
-- Single-Line Gemini Thinking State: Replaced bulky 2-line box with sleek, minimalist single-line `Thinking...` indicator with pulse animation. Removed duplicate `loading_row` to eliminate double loading screen.
-- Grounding Badge Cleanup: Removed `UNVERIFIABLE`, `PARTIALLY GROUNDED`, and `FULLY GROUNDED` badges from assistant message headers for clean, distraction-free reading.
-- Empty Box & Debug Mode Elimination: Fixed layout nesting in `chat_page.py` that created an empty white box below scope controls; restricted `Debug Mode` diagnostics strictly to administrator accounts.
-- Source Viewer PDF Fix: Updated Quasar slide drawer and CSS with explicit `calc(100vh - 170px)` and `min-height: 520px` rules on `<object>` and `<iframe>`, preventing empty collapsed preview boxes.
-- Test Suite: 10/10 student dashboard tests, 3/3 source viewer tests, and 46/46 frontend client tests passing (100%).
+**FINAL AUDIT — SECURITY HARDENING + FRONTEND REBUILD**
 
-## Rules
+The previous Step 23 frontend/source-viewer design work is historical. The user explicitly requested a complete frontend redesign and a fresh frontend test suite, so the old design is **superseded** for implementation purposes.
 
-After every meaningful implementation change:
-1. update this file;
-2. record what changed;
-3. record tests run;
-4. record failures and their status;
-Antigravity must follow all instructions in `AGENTS.md`.
-Non-negotiable requirements:
-- Inspect before coding.
-- Minimal frontend shell first.
-- Complete backend and RAG pipeline before frontend redesign.
-- Complete backend quality gate before frontend redesign.
-- Small, composable modules.
-- Server-side authorization on every document/user/tenant operation.
-- No secrets committed.
-- Test every component thoroughly (unit, integration, security).
-- Never claim "works on my machine" as an acceptance criterion.
-- Add concise, explanatory comments so the user can understand how the code works.
+## Current defects / work remaining
 
-## Status vocabulary
+### Release-blocking / high priority (COMPLETED IN PHASE 1)
+- [x] Remove `?token=` authentication from `backend/app/api/deps.py`. Verified via `test_token_in_url_rejected_with_401`.
+- [x] Remove raw session-token URL construction and JavaScript cookie writes from `frontend/components/source_viewer.py`.
+- [x] Redesign source viewer around normal authenticated same-origin session via `SessionCookieSyncMiddleware` and server-side session resolution.
+- [x] Replace production `fastapi.testclient.TestClient` usage in `frontend/client/api_client.py` with deployment-safe `InProcessProductionTransport`.
+- [x] Stop unnecessarily exposing/persisting raw session token in frontend state/storage or client-side JavaScript.
+- [x] Sanitize background-generation and all user-facing exceptions (global FastAPI handler + regex-based redaction in `error_handler.py`).
+- [x] Add source-viewer token-leak regression tests (`backend/tests/security/test_phase1_security_hardening.py` - 6 tests passing).
+- [x] Fix source viewer PDF rendering container and verify document streaming across roles (43/43 security tests passing).
 
-- NOT_STARTED
-- IN_PROGRESS
-- BLOCKED
-- COMPLETE
-- NEEDS_REVIEW
 
-## Current checklist
+### Frontend redesign
+- [ ] Delete/recreate stale presentation tests from scratch around behavior/security contracts.
+- [ ] Rebuild NiceGUI frontend from scratch; do not merely recolor/reclass existing pages.
+- [ ] Simplify student navigation to the core academic workflow.
+- [ ] Group administrator tools instead of presenting a long operational wall of links.
+- [ ] Remove unnecessary animations, hover transforms, decorative gradients, excessive badges/pills, and redundant cards.
+- [ ] Establish one canonical product name and remove competing invented branding.
+- [ ] Make chat answer/citations the visual priority.
+- [ ] Simplify the source viewer.
+- [ ] Verify desktop, tablet, mobile, empty, loading, error, long-content, and keyboard states.
 
-- [x] Repository audit (COMPLETE)
-- [x] Existing tests baseline (COMPLETE — starts from zero)
-- [x] Existing architecture reconciliation (COMPLETE)
-- [x] Foundation verified (COMPLETE)
-- [x] Database setup (PostgreSQL + pgvector) (COMPLETE)
-- [x] Authentication (COMPLETE — Step 4 Real Server-Side Argon2id & Session Hashing)
-- [x] Authorization/isolation (COMPLETE — Step 4 Knowledge-Base Authorization & 404 Isolation)
-- [x] Document lifecycle (COMPLETE — Step 5 Real Ingestion, Parsing, Chunking & Status Tracking)
-- [x] Secure uploads (COMPLETE — Step 5 Magic-Byte Validation, Traversal Prevention & Size Limits)
-- [x] Parsing (COMPLETE — Step 5 Real PDF, DOCX, TXT, MD, CSV Parsers with Page & Section Metadata)
-- [x] Chunking (COMPLETE — Step 5 Deterministic Token Estimator & Overlap Chunker)
-- [x] Embeddings (COMPLETE — Step 6 Provider Abstraction, Ollama qwen3-embedding:0.6b, 1024-dim Vector Storage in pgvector)
-- [x] Vector retrieval (COMPLETE — Step 7 Exact pgvector Cosine Distance Search, Authorization & Provenance)
-- [x] Lexical retrieval (COMPLETE — Step 8 PostgreSQL-Native tsvector + GIN Index + ts_rank_cd Full-Text Search)
-- [x] Hybrid retrieval (COMPLETE — Step 9 Dense Vector + PostgreSQL FTS fused with Reciprocal Rank Fusion)
-- [x] Reranking (COMPLETE — Step 10 Local Hugging Face CrossEncoder ms-marco-MiniLM-L-6-v2)
-- [x] Query processing / understanding (COMPLETE — Step 11 Deterministic Normalization, Raw/Processed Query Preservation, NFKC, Control-Char Stripping & Technical Token Preservation)
-- [x] Context assembly (COMPLETE — Step 12 Deterministic Token-Budgeted Selection, Deduplication & Strict Evidence Integrity)
-- [x] Grounded generation (COMPLETE — Step 13 Provider-Independent Ollama qwen3:4b, Adversarial-Resistant Prompt Architecture, Deterministic Empty-Context Fast-Path & Citation Handoff)
-- [x] Citations (COMPLETE — Step 14 Deterministic Citation Syntax & Provenance Validation, Conservative Heuristic Claim Grounding, Conflict Detection & Machine-Readable Evaluation Metrics)
-- [x] Evaluation and Benchmarking (COMPLETE — Step 15 Deterministic Chunk Relevance, 4-Stage Ablation Harness, Exclusive Latency Instrumentation, Refusal Separation & JSON Benchmark Reporting)
-- [x] End-to-end RAG orchestration & chat pipeline (COMPLETE — Step 16 Single Application Orchestrator, Canonical & Legacy Endpoints, Exclusive Latencies, 7-State Grounding Rule, NiceGUI Presentation Wiring)
-- [ ] Query/conversation persistence if required
-- [x] Background jobs (COMPLETE — Step 5 FastAPI BackgroundTasks Ingestion & Fault-Tolerant Transitions)
-- [x] Observability (COMPLETE — Step 17 Structured JSON Logging, Correlation IDs, CorrelationIdMiddleware, TelemetryManager, InMemoryTelemetryExporter, 7-Stage RAGOrchestrator Instrumentation, Multi-Layer Redaction, Security Sanitization, Concurrent Request Isolation)
-- [x] Rate limiting (COMPLETE — Step 18 PostgreSQL-Backed Atomic Rate Limiting, Anti-Spoofing Client IP Resolution, User Isolation, 429 Retry-After, Fail-Closed Auth & Fail-Open RAG, Step 17 Telemetry Integration)
-- [x] Backend security audit (COMPLETE — Step 19 Comprehensive Backend Security Hardening & Zero-Secret Verification)
-- [x] Backend quality gate (COMPLETE — Step 20 Production Lifespan DB Lifecycle, Model-Migration Parity, Provider Resilience, Pydantic .env Parity, 14 Quality Dimensions Verified)
-- [x] Functional frontend (COMPLETE — Step 3 Shell + Step 4 RBAC + Step 5 Upload/Delete + Step 6 Indexing UI + Step 7 Vector UI + Step 8 Lexical UI + Step 9 Hybrid UI + Step 10 Rerank UI + Step 11 Query DTO)
-- [x] Frontend design pass (COMPLETE — Step 21 Restrained Academic Theme, Responsive Shell, Accessible Multi-Modal Status, Zero N+1 Queries, Safe Markdown, Role Tailored Views)
-- [x] Accessibility QA (COMPLETE — Step 21 WCAG 2.1 AA Engineering Design Target, Visible Focus Rings, Keyboard Navigation, Semantic Multi-Modal Badges)
-- [x] Responsive QA (COMPLETE — Step 21 Unified Navigation Definition, Mobile Left Drawer, Responsive Table Wrappers)
-- [x] Product UX & Workflow Correction (COMPLETE — Step 21B Distinct Student vs Admin Experiences, Global Student Search Across All Enrolled Courses, Document Activation Lifecycle, Privacy-Preserving Admin Management)
-- [x] Functional Integrity (COMPLETE — Step 21D Real Vector Indexing Jobs, Scoped Admin Chat, Hierarchical RBAC, Publication Gate)
-- [ ] End-to-end QA
-- [ ] Deployment verification
-- [ ] Final security audit
-- [ ] Final RAG evaluation
-- [ ] Documentation
-- [ ] Git/GitHub final review
+### Conditional history feature
+- [ ] Implement persistent Conversation/Message history only when backed by a real authorized persistent model/store.
+- [ ] Do not call process-memory `AppState._chat_history` persistent history.
+- [ ] Add cross-user history isolation tests if history is implemented.
+
+### Multimodal truthfulness
+- [ ] Verify genuine multimodal support. Current inspected parser registry is PDF/DOCX/TXT/Markdown/CSV and the audit did not find a clear image/vision embedding/retrieval path.
+- [ ] Implement a real non-text modality path or document current capability honestly as multi-format/text RAG. Never use "multimodal" as a false UI claim.
+
+### Repository hygiene
+- [ ] Remove `frontend/client/Untitled-1.txt`.
+- [ ] Keep `.env`, `.git`, `storage/`, caches, `.nicegui/`, bytecode, and generated dumps out of source-sharing archives.
+- [ ] Check Git history/diff for secrets before every push.
+
+## Required acceptance criteria
+
+This phase is complete only when:
+1. no main session token is accepted in a source/file query string;
+2. no raw main session token is sent to browser JavaScript;
+3. production frontend does not import/use FastAPI `TestClient`;
+4. source viewer is server-authorized and renders an actual document in the browser;
+5. user-facing errors never expose raw exceptions;
+6. frontend tests are behavior/security focused and survive visual redesign;
+7. student/admin pages are rebuilt from scratch in NiceGUI;
+8. the UI is simple, restrained, readable, and responsive;
+9. unnecessary animation/hover/decorative effects are removed;
+10. project documentation matches real multimodal capability;
+11. Git/GitHub contains meaningful commits and no secrets.
+
+## Verification honesty
+
+Historical test counts below are historical records only. They are not current proof.
+
+After the final changes, rerun the actual supported environment. If PostgreSQL, pgvector, Ollama, or browser tooling is unavailable, record that limitation instead of claiming the check passed.
+
+## Historical task record
+
+The original task history is preserved below. Its completed design decisions are historical evidence, not instructions to restore the superseded frontend.
 
 ## Step 21D Execution Record (Functional Integrity)
 

@@ -87,6 +87,17 @@ def create_application() -> FastAPI:
 
     app.add_middleware(SecurityHeadersMiddleware)
 
+    # Global unhandled exception handler: suppresses stack traces, SQL, and internal server paths
+    from starlette.requests import Request
+
+    @app.exception_handler(Exception)
+    async def global_unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled server exception: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "A server processing error occurred. Please try again later."},
+        )
+
     # Register API routes
     app.include_router(api_router, prefix=settings.API_V1_STR)
 

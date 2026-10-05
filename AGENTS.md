@@ -2,12 +2,13 @@
 
 ## Mission
 
-Build the complete BCA Project RAG application as a production-quality, secure, maintainable RAG system.
+Build and maintain the **Multimodal RAG-Based University Knowledge Assistant** as a secure, understandable, maintainable FastAPI + NiceGUI application.
 
-The existing project specification/roadmap is the source of truth. The user has completed Part 95 of the learning/build roadmap and wants the complete system implemented, including every required RAG stage and reranking. Do not stop at hybrid search.
+The user's latest explicit requirements are authoritative for the frontend rebuild and test reset. Never change the requested goal into a more convenient interpretation.
 
-Read these files before making architectural or implementation decisions:
+## Read before coding
 
+Read, in order:
 1. `PROJECT_CONTEXT.md`
 2. `context/ARCHITECTURE.md`
 3. `context/RAG_SPECIFICATION.md`
@@ -17,206 +18,161 @@ Read these files before making architectural or implementation decisions:
 7. `context/IMPLEMENTATION_PLAN.md`
 8. `context/TASK_STATE.md`
 
-Also inspect the actual repository before changing anything. Existing working code is evidence, not permission to blindly preserve defects.
+Then inspect the actual repository and the screenshot folder.
 
-## Non-negotiable workflow
+## Current rebuild mode
 
-### Phase 0 — Inspect before coding
+This is a **repair + frontend-rebuild phase**, not a normal incremental UI polish.
 
-- Inspect the complete repository.
-- Locate existing backend, frontend, database, tests, configuration, Docker files and documentation.
-- Identify what already exists versus what is missing.
-- Run the existing test suite before modifying code.
-- Run static checks/lint/type checks that already exist.
-- Produce an internal implementation map.
-- Never delete or rewrite working functionality merely to make the project look cleaner.
+The existing frontend may be replaced from scratch. The instruction "do not rewrite working functionality merely for cleanliness" means do not break working business/security behavior; it does NOT forbid a complete visual/UI rewrite explicitly requested by the user.
 
-### Phase 1 — Minimal frontend shell
+Do not preserve obsolete tests merely because they currently pass.
 
-Create only the NiceGUI frontend structure necessary to exercise and verify backend APIs:
-- app shell
-- authentication screens
-- document/upload area
-- search/query screen
-- basic result rendering
-- error/loading states
+## Mandatory order for this task
 
-Do NOT spend time on visual polish yet.
+### Phase A — audit
 
-### Phase 2 — Backend first
+Before modifying implementation:
+- inspect backend, frontend, tests, context files, migrations, configuration, dependency files, screenshots;
+- identify real defects and architecture inconsistencies;
+- run the existing checks that are available;
+- separate real behavior/security defects from design differences;
+- record findings in `context/TASK_STATE.md`.
 
-Implement the complete backend and RAG pipeline before substantial frontend redesign.
+### Phase B — security/correctness repair
 
-Backend includes:
-- configuration/secrets
-- authentication and authorization
-- users and tenant isolation
-- document ingestion
-- parsing
-- normalization
-- chunking
-- metadata
-- embeddings
-- vector storage
-- lexical/BM25-style retrieval
-- hybrid retrieval
-- fusion
-- reranking
-- context assembly
-- provider-independent LLM generation
-- citations/source attribution
-- conversation/query persistence where specified
-- background jobs
-- observability
-- rate limiting
-- audit logging
-- health/readiness endpoints
-- error handling
-- migrations
-- API contracts
+Fix release-blocking defects first, including:
+1. raw session token in source/document URL query parameters;
+2. browser-JavaScript access to raw session tokens;
+3. production use of `fastapi.testclient.TestClient`;
+4. raw exception text shown in user-facing UI;
+5. any authorization regression introduced while repairing the source viewer.
 
-### Phase 3 — Backend quality gate
+Do not accept a cosmetic workaround for a security problem.
 
-Do not proceed to frontend polish until:
+### Phase C — tests from scratch
 
-- unit tests pass
-- integration tests pass
-- security tests pass
-- migration tests pass
-- authorization/isolation tests pass
-- ingestion failure/retry tests pass
-- retrieval tests pass
-- reranking tests pass
-- citation tests pass
-- API contract tests pass
-- lint/type checks pass
-- no known critical/high defect remains
-- secrets are not committed
-- dependency/security checks have been run where available
-- production configuration has been reviewed
+Delete/rewrite only the stale frontend/presentation tests that encode superseded UI behavior.
 
-"Works on my machine" is not an acceptance criterion.
+Create new tests around behavior and security. Tests must NOT assert:
+- exact CSS class strings;
+- exact wording unless wording is a true product requirement;
+- exact card arrangement;
+- exact DOM nesting;
+- implementation-specific HTML fragments;
+- the existence of a particular animation;
+- stale branding.
 
-### Phase 4 — Frontend completion
+Tests SHOULD assert:
+- role and route access semantics;
+- authentication/session behavior;
+- API client request/response contracts;
+- citation mapping;
+- source-viewer authorization;
+- absence of token leakage;
+- sanitized user-facing error behavior;
+- per-user state isolation;
+- essential UI route smoke rendering.
 
-Only after the backend gate passes:
-- implement the complete UI
-- establish the design system
-- refine information architecture
-- improve responsiveness
-- improve accessibility
-- add thoughtful empty/loading/error states
-- remove visual rough edges
-- perform visual QA against real backend data
+Never add a fake test just to increase the pass count.
 
-### Phase 5 — Final audit
+### Phase D — frontend rebuild from scratch
 
-Perform a whole-system audit:
-- security
-- correctness
-- performance
-- accessibility
-- API consistency
-- database integrity
-- RAG quality
-- failure handling
-- UX
-- documentation
-- deployment reproducibility
+Use the current screenshots only as audit evidence, not as a design template.
 
-Fix findings before declaring completion.
+Rebuild the NiceGUI frontend with:
+- simple information architecture;
+- clear typography hierarchy;
+- restrained palette;
+- generous whitespace;
+- few purposeful surfaces;
+- one obvious primary action per screen;
+- strong readable chat layout;
+- citations that are easy to see and click;
+- source viewer that actually renders a document in-browser;
+- mobile/tablet behavior intentionally designed;
+- accessible keyboard focus and labels.
 
-## Coding behavior
+Do NOT merely change colors, fonts, or a few classes.
 
-- Prefer small, composable modules.
-- Keep business logic out of route handlers.
-- Validate all external input.
-- Treat every client value as untrusted.
-- Never trust a document ID, user ID, tenant ID, file path, role or filter supplied by a client.
-- Enforce authorization server-side.
-- Use transactions for multi-step state changes.
-- Use idempotency for retryable ingestion/job operations.
-- Never expose stack traces or secrets through API responses.
-- Never log passwords, tokens, API keys, raw authorization headers or sensitive document contents.
-- Use parameterized queries/ORM expressions.
-- Avoid N+1 database access.
-- Avoid unbounded queries and unbounded request bodies.
-- Use explicit timeouts on external calls.
-- Handle provider failures without corrupting database state.
-- Make retries bounded and observable.
-- Prefer deterministic behavior where possible.
-- Do not add dependencies without justification.
-- Do not invent APIs from libraries; check the installed version/documentation.
+Do NOT add:
+- decorative gradients;
+- glassmorphism;
+- animated background effects;
+- card lift/scale hover effects;
+- unnecessary tooltips;
+- fake metrics;
+- excessive badges;
+- extra dashboard cards;
+- auto-playing/looping animation.
+
+Hover/transition feedback is allowed only for an actual interactive control and should be restrained. Processing states may use a minimal status indicator; do not use pulse/spin purely for decoration.
+
+### Phase E — persistent conversation history (conditional)
+
+Conversation history is a feature request, not a reason to destabilize the core RAG system.
+
+Implement it only when:
+- there is a real backend Conversation/Message model or equivalent persistent store;
+- each conversation belongs to an authorized user/tenant;
+- history queries are permission-filtered server-side;
+- old conversations survive application restart;
+- deleting/renaming/starting a conversation has clear backend semantics;
+- tests prove cross-user isolation.
+
+Do not present in-memory `AppState._chat_history` as durable history.
+
+### Phase F — verification
+
+Run:
+- unit tests;
+- integration tests;
+- security tests;
+- migration tests/checks;
+- lint/format/type checks already configured;
+- source viewer regression tests;
+- browser/manual visual QA for every screenshot route;
+- responsive checks;
+- long-document/long-answer/citation/error scenarios.
+
+If a check cannot run because the environment lacks PostgreSQL/pgvector/Ollama/browser tooling, say so explicitly. Do not fabricate a pass.
+
+## Backend rules
+
+- Never use `TestClient` as the production frontend HTTP transport.
+- Keep API/database logic out of NiceGUI visual components.
+- Enforce authorization in backend service/query layers.
+- Never trust client document IDs, course IDs, file paths, role values, or filters.
+- Use bounded payloads and timeouts.
+- Never leak stack traces or raw provider exceptions to clients.
+- Never log tokens or private document contents.
+
+## Source-viewer rules
+
+The source viewer is security-sensitive.
+
+Required:
+- canonical document UUID route;
+- server-side authorization before file streaming;
+- normal authenticated same-origin browser request whenever possible;
+- no raw token query authentication;
+- no `document.cookie = ...` JavaScript for the session secret;
+- no token embedded into iframe/object URLs;
+- no unescaped untrusted HTML attributes/content in raw `ui.html` sinks;
+- page fragments such as `#page=N` may be used because fragments are not sent as HTTP credentials;
+- verification that the PDF actually renders in the browser, not only that the container has height.
 
 ## Git/GitHub
 
-Git and GitHub are mandatory parts of the workflow.
+After each meaningful completed change:
+1. inspect `git diff`;
+2. run relevant tests/checks;
+3. update `context/TASK_STATE.md`;
+4. commit with a small, meaningful commit message;
+5. push to GitHub when the user's normal workflow permits.
 
-Before meaningful implementation:
-- initialize/use Git correctly
-- create a sensible `.gitignore`
-- make a clean baseline commit
+Do not commit `.env`, storage corpus data, caches, generated HTML dumps, local databases, or secrets.
 
-Use small, meaningful commits such as:
-- `feat: add document ingestion pipeline`
-- `fix: prevent cross-user document access`
-- `test: add hybrid retrieval integration tests`
+## Documentation
 
-Never commit:
-- `.env`
-- API keys
-- passwords
-- private certificates
-- local databases containing sensitive data
-- generated secrets
-- huge build artifacts
-
-Keep branches/commits understandable. Before merging a feature, run the relevant tests. If GitHub Actions is configured, keep CI green.
-
-## Decision discipline
-
-When requirements are ambiguous:
-1. inspect the repository and existing specification;
-2. prefer the least surprising architecture;
-3. preserve compatibility when practical;
-4. document the decision;
-5. do not silently invent product behavior.
-
-Do not ask the user questions for decisions that can be safely resolved from these instructions. Ask only when a decision materially changes scope, data model, security, or product behavior.
-
-## Definition of done
-
-A feature is not done because code was written.
-
-A feature is done only when:
-- implementation exists,
-- tests exist,
-- tests pass,
-- security implications are addressed,
-- errors/failures are handled,
-- documentation is updated,
-- Git state is clean enough to review,
-- and the feature works through the real integration path.
-
-
-## Framework decision
-
-Use:
-- FastAPI for the backend/API.
-- NiceGUI for the frontend.
-
-Do NOT use Django as a second backend framework by default. Django + FastAPI would duplicate routing, authentication, ORM/application responsibilities and make the project harder to understand. Add Django only if an existing repository requirement proves it is necessary.
-
-## Code comments
-
-The user wants appropriate comments so they can understand what code does and how it affects the project.
-
-Therefore:
-- add concise explanatory comments around non-obvious logic;
-- explain security-sensitive decisions;
-- explain important RAG-stage interactions;
-- explain tricky concurrency, retry, transaction and provider behavior;
-- add docstrings to important public interfaces;
-- avoid noisy comments that restate obvious code.
-
-Comments must remain accurate as code changes. Remove or update stale comments during refactors.
+Update context files whenever a design/security/architecture decision changes so a future agent cannot reintroduce the defect.

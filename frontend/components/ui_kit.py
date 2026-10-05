@@ -95,14 +95,21 @@ def render_stat_card(
     icon_color: str = "blue-600",
 ) -> None:
     """
-    Render a factual summary metric card (avoids fabricated or misleading data).
+    Render a factual summary metric card with Modern Academic Tech styling.
     """
     with ui.card().classes(
-        "flex-1 min-w-[200px] p-4 bg-white border border-slate-200 rounded-lg shadow-xs hover:border-slate-300 transition-colors"
+        "academic-card flex-1 min-w-[200px] p-5 bg-white border border-slate-200/80 rounded-2xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
     ):
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label(title).classes("text-xs font-semibold tracking-wider text-slate-500 uppercase")
-            ui.icon(icon, size="sm").classes(f"text-{icon_color}")
-        ui.label(str(value)).classes("text-2xl font-bold tracking-tight text-slate-900 mt-2")
+            ui.label(title).classes(
+                "text-xs font-semibold tracking-wider text-slate-400 uppercase font-mono"
+            )
+            with ui.element("div").classes(
+                "w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center"
+            ):
+                ui.icon(icon, size="18px").classes(f"text-{icon_color}")
+        ui.label(str(value)).classes(
+            "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-2 font-mono"
+        )
         if subtitle:
-            ui.label(subtitle).classes("text-xs text-slate-500 mt-0.5")
+            ui.label(subtitle).classes("text-xs text-slate-500 mt-1 font-sans")

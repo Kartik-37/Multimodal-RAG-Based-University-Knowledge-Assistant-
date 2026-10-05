@@ -58,6 +58,20 @@ def get_current_user_optional(
         if auth_header and auth_header.startswith("Bearer "):
             raw_token = auth_header[7:].strip()
 
+    # Fallback to NiceGUI user storage if request is within an active NiceGUI session
+    if not raw_token and "session" in request.scope:
+        nicegui_session_id = request.scope["session"].get("id")
+        if nicegui_session_id:
+            try:
+                from nicegui import app as nicegui_app
+
+                if hasattr(nicegui_app, "storage") and hasattr(nicegui_app.storage, "_users"):
+                    user_storage = nicegui_app.storage._users.get(nicegui_session_id)
+                    if user_storage:
+                        raw_token = user_storage.get("auth_session_token")
+            except Exception:
+                pass
+
     if not raw_token:
         return None
 
@@ -239,13 +253,16 @@ def get_authorized_knowledge_bases(
     role_str = str(role_val).upper() if role_val is not None else ""
 
     if role_str == "STUDENT" or role_val == UserRole.STUDENT:
-        # All students have default access to all published / active courses without membership restrictions
-        stmt = select(KnowledgeBase)
-        if "is_active" in KnowledgeBase.__table__.columns:
-            stmt = stmt.where(KnowledgeBase.is_active.is_(True))
-        elif "is_published" in KnowledgeBase.__table__.columns:
-            stmt = stmt.where(KnowledgeBase.is_published.is_(True))
-        stmt = stmt.order_by(KnowledgeBase.created_at.desc())
+        # Student visibility is strictly membership-based via KnowledgeBaseMember
+        stmt = (
+            select(KnowledgeBase)
+            .join(
+                KnowledgeBaseMember,
+                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+            )
+            .where(KnowledgeBaseMember.user_id == user_id_val)
+            .order_by(KnowledgeBase.created_at.desc())
+        )
         return list(db.execute(stmt).scalars().all())
 
     if role_str == "ADMIN" or role_val == UserRole.ADMIN:
@@ -351,12 +368,20 @@ def get_authorized_knowledge_base(
     role_str = str(role_val).upper() if role_val is not None else ""
 
     if role_str == "STUDENT" or role_val == UserRole.STUDENT:
-        # Student access: All students have default access to all published/active courses as long as the course exists
-        stmt = select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
-        if "is_active" in KnowledgeBase.__table__.columns:
-            stmt = stmt.where(KnowledgeBase.is_active.is_(True))
-        elif "is_published" in KnowledgeBase.__table__.columns:
-            stmt = stmt.where(KnowledgeBase.is_published.is_(True))
+        # Student access: strictly requires membership in KnowledgeBaseMember
+        stmt = (
+            select(KnowledgeBase)
+            .join(
+                KnowledgeBaseMember,
+                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+            )
+            .where(
+                and_(
+                    KnowledgeBase.id == kb_id,
+                    KnowledgeBaseMember.user_id == current_user.id,
+                )
+            )
+        )
         kb = db.execute(stmt).scalar_one_or_none()
     elif role_str == "ADMIN" or role_val == UserRole.ADMIN:
         if is_main_admin(current_user):

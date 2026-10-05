@@ -505,7 +505,6 @@ def update_admin_permissions(
     return _build_admin_response(target, db)
 
 
-
 @router.patch(
     "/admins/{admin_id}/deactivate",
     response_model=AdminUserResponse,

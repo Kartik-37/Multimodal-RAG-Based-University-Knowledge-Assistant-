@@ -1,157 +1,196 @@
-# Frontend Rules
+# Frontend Rules — NiceGUI
 
-## Framework
+## Technology
 
-Use NiceGUI.
+- NiceGUI only.
+- Python-first implementation.
+- Do not introduce React/Next/Vue/Angular unless the user explicitly changes the decision.
+- Keep API/business logic out of page components.
 
-Do not introduce React, Next.js, Vue, Angular, or another frontend framework unless the user explicitly changes the technology decision.
+## User experience target
 
-The frontend should remain understandable to a Python developer who is still learning frontend development.
+The UI must be:
+- simple to understand;
+- beautiful without being decorative;
+- calm and trustworthy;
+- readable for long sessions;
+- responsive on desktop/tablet/mobile;
+- visually distinct enough to feel designed, not generated from a generic SaaS template.
 
-## Strategy
+The user's explicit design preference is stronger than the current screenshot styling.
 
-The first frontend is deliberately functional and minimal.
+## Do not do
 
-After backend quality gates pass, the frontend becomes a full product experience.
+Do not add visual elements merely because a dashboard template contains them.
 
-## Design direction
+Avoid:
+- excessive cards;
+- gradient backgrounds;
+- glassmorphism;
+- giant hero copy;
+- decorative illustrations that do not aid the task;
+- glowing effects;
+- repeated badges/pills;
+- card lift/scale on hover;
+- large motion effects;
+- pulsing/spinning decorative icons;
+- unnecessary tooltips;
+- duplicate navigation;
+- fake analytics;
+- dense operational data on student pages.
 
-The target is:
-- elegant
-- calm
-- modern
-- intelligent without looking "AI generated"
-- spacious
-- deliberate
-- trustworthy
-- readable
-- visually restrained
+## Motion
 
-Do NOT make:
-- a generic SaaS dashboard
-- excessive cards
-- glowing gradients everywhere
-- huge "AI" labels
-- unnecessary glassmorphism
-- random rounded rectangles
-- excessive animations
-- noisy sidebars
-- fake analytics panels
-- decorative UI with no purpose
+Default to no animation.
 
-## Design principle
+Use a transition only when it makes an interaction easier to understand. Keep it short and subtle.
 
-The interface should feel designed by a thoughtful product designer, not assembled from component-library defaults.
+Use a progress indicator only when there is a real asynchronous process. A static status label is preferred when it communicates the state clearly.
 
-Use:
-- strong typography hierarchy
-- consistent spacing
-- restrained color palette
-- subtle borders/shadows
-- clear content grouping
-- meaningful whitespace
-- purposeful motion
-- excellent empty states
-- excellent loading states
-- excellent error states
+Honor reduced-motion preferences where the browser/UI framework supports it.
 
-## Information architecture
+## Visual hierarchy
 
-The primary experience should make the user's core actions obvious:
-- upload/manage knowledge
-- search
-- ask a question
-- inspect evidence
-- review conversations/results
-- manage account/settings
+Every primary page should make these obvious:
+1. where the user is;
+2. what they can do now;
+3. what the primary action is;
+4. what happened after the action;
+5. how to recover from failure.
 
-Do not bury the source evidence behind unnecessary interactions.
+Use spacing and typography before adding more containers.
 
-## RAG result UX
+## Student information architecture
 
-A good answer should clearly show:
-- answer
-- citations
-- source document
-- page/section when available
-- enough context to verify the claim
+Default primary navigation:
+- Home
+- Ask Assistant
+- Courses
+- Profile
+- History only after persistent history exists.
 
-Avoid turning citations into tiny unreadable footnotes.
+Keep student pages free of retrieval internals and administrator diagnostics.
+
+## Administrator information architecture
+
+Group administration into a small number of understandable sections:
+- Overview
+- Knowledge
+- Chat/Diagnostics
+- Administration
+- System
+- Profile
+
+Do not expose every technical operation as a top-level navigation item.
+
+## Chat UX
+
+The chat page is the main product experience.
+
+Preferred structure:
+- concise page header;
+- course/scope selector;
+- conversation area;
+- readable assistant answer;
+- visible citation references;
+- source/evidence access near the citation;
+- composer fixed or naturally positioned at the bottom;
+- clear loading/error state.
+
+Do not fill the chat screen with implementation details such as RRF scores, vector scores, reranker internals, or debugging data for students.
+
+Admin diagnostics may be reachable through a deliberate secondary control.
+
+## Citation UX
+
+Citations should be legible in the answer.
+
+Clicking a citation should open the specific authorized evidence source, ideally at the cited page.
+
+Do not rely on raw HTML/JavaScript hacks when a normal NiceGUI interaction can perform the same action safely.
+
+Citation data is untrusted input. Escape/validate content and do not inject arbitrary document names/snippets into raw HTML.
+
+## Source viewer UX
+
+Keep it focused:
+- document name;
+- course/context;
+- page number;
+- source document view;
+- cited evidence excerpt when available;
+- close action.
+
+Do not require the user to understand authentication tokens, URL parameters, object/embed fallbacks, or internal retrieval metadata.
+
+The same-origin authenticated session should authorize the document request. No main session token may be placed in the URL or read by browser JavaScript.
+
+Do not render every chunk of a large document at once. Bound, paginate, or show only relevant evidence.
+
+## Error states
+
+Never display raw Python exceptions, SQL errors, traceback fragments, provider error payloads, file paths, tokens, or secret configuration.
+
+User-facing error messages should say:
+- what failed in plain language;
+- whether the user's data is safe;
+- what action can recover the task.
+
+Technical detail belongs in structured server logs/telemetry.
+
+## Loading states
+
+Prefer meaningful progress/status:
+- Uploading
+- Processing
+- Indexing
+- Ready
+- Failed — Retry
+
+A simple text/icon status is enough unless the user benefits from actual progress.
 
 ## Accessibility
 
-Must include:
-- keyboard navigation
-- visible focus
-- semantic HTML
-- labels for controls
-- appropriate contrast
-- reduced-motion support
-- accessible errors
-- screen-reader-friendly loading states
+Required:
+- keyboard navigation;
+- visible focus;
+- semantic labels;
+- readable contrast;
+- accessible validation/error messages;
+- logical tab order;
+- usable controls on touch screens;
+- reduced motion support.
 
-## Responsive behavior
+## Responsive rules
 
-Design deliberately for:
-- desktop
-- tablet
-- mobile
+Desktop is not the only layout.
 
-Do not simply shrink the desktop layout.
+Mobile must have an intentionally designed navigation pattern and usable chat composer. Do not merely compress a multi-column desktop dashboard.
 
 ## Component discipline
 
-Create reusable components for repeated patterns.
+Create components for repeated meaningful interaction patterns.
 
-Do not create a component abstraction for every `<div>`.
+Do not wrap every small element in an abstraction.
 
-Keep state ownership understandable.
+Keep state ownership easy to understand.
 
-## Error handling
+## Visual QA checklist
 
-Errors should explain:
-- what happened
-- what the user can do next
+Check every major route in:
+- empty state;
+- normal state;
+- long-content state;
+- error state;
+- narrow/mobile viewport;
+- keyboard navigation.
 
-Never show raw backend exceptions.
-
-## Loading
-
-Use skeletons/progress indicators only where useful.
-
-Avoid spinner-only interfaces for long ingestion tasks. Show meaningful progress/status.
-
-## Visual QA
-
-After implementation:
-- inspect every major route
-- test empty states
-- test long document names
-- test long answers
-- test many citations
-- test errors
-- test mobile layout
-- test keyboard navigation
-
-Only then consider the frontend complete.
-
-
-## NiceGUI implementation rules
-
-- Keep UI event handlers thin.
-- Call backend/application services rather than duplicating business logic in page code.
-- Do not put database access directly into visual components.
-- Centralize API/client communication.
-- Reuse components when the same interaction appears multiple times.
-- Keep state ownership obvious.
-- Use meaningful Python names rather than framework-specific cleverness.
-
-## Frontend comments
-
-Comments should explain:
-- why a UI state exists;
-- how a component communicates with the backend;
-- why a loading/error state is necessary;
-- any accessibility or responsive-design decision that is not obvious.
-
-Do not add comments to every UI element.
+For chat specifically verify:
+- long question;
+- long answer;
+- many citations;
+- zero citations;
+- citation opens source;
+- source viewer loads actual document;
+- unauthorized document access is denied;
+- generation failure does not expose exception text.

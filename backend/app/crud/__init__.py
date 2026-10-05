@@ -1,6 +1,7 @@
 """
 CRUD package for database entities.
 """
+
 from backend.app.crud.crud_knowledge_base import (
     get_all_knowledge_bases,
     get_courses_for_ui,

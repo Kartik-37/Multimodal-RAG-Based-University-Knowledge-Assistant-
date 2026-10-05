@@ -101,7 +101,6 @@ class AdminUserResponse(BaseModel):
     is_active: bool = True
     created_at: datetime
 
-
     @field_validator("admin_role", mode="before")
     @classmethod
     def default_admin_role(cls, v: Any) -> Any:

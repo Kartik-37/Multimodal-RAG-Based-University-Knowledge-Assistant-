@@ -17,6 +17,7 @@ from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
 from frontend.client.models import DocumentDTO, IndexingJobDTO
 from frontend.components.layout import has_admin_permission, page_layout
+from frontend.components.source_viewer import open_source_viewer
 from frontend.components.status_badge import render_indexing_status_badge, render_status_badge
 from frontend.components.ui_kit import render_alert, render_empty_state
 from frontend.state.app_state import state
@@ -92,9 +93,17 @@ def register_documents_page() -> None:
         )
 
         crumbs = (
-            [("Dashboard", "/dashboard"), ("Courses", "/knowledge-bases"), (f"{selected_course.name} Documents", None)]
+            [
+                ("Dashboard", "/dashboard"),
+                ("Courses", "/knowledge-bases"),
+                (f"{selected_course.name} Documents", None),
+            ]
             if selected_course
-            else [("Dashboard", "/dashboard"), ("Courses", "/knowledge-bases"), ("Course Documents", None)]
+            else [
+                ("Dashboard", "/dashboard"),
+                ("Courses", "/knowledge-bases"),
+                ("Course Documents", None),
+            ]
         )
         b_route = "/knowledge-bases" if selected_course else "/dashboard"
         b_label = "Courses" if selected_course else "Dashboard"
@@ -167,21 +176,27 @@ def register_documents_page() -> None:
             # ------------------------------------------------------------------
             # COURSE CONTEXT BAR & SWITCHER
             # ------------------------------------------------------------------
+            # ------------------------------------------------------------------
+            # COURSE CONTEXT BAR & SWITCHER
+            # ------------------------------------------------------------------
             with ui.card().classes(
-                "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs"
+                "academic-card w-full p-5 bg-white border border-slate-200/80 rounded-2xl shadow-xs"
             ):
                 with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap"):
-                    with ui.row().classes("items-center gap-2.5"):
+                    with ui.row().classes("items-center gap-3"):
                         with ui.element("div").classes(
-                            "w-8 h-8 rounded-lg bg-blue-600/20 text-blue-700 flex items-center justify-center"
+                            "w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold"
                         ):
-                            ui.icon("school", size="xs")
-                        with ui.column().classes("gap-0"):
+                            ui.icon("school", size="20px")
+                        with ui.column().classes("gap-0.5"):
                             with ui.row().classes("items-center gap-2"):
                                 ui.label(selected_course.name).classes(
-                                    "text-base font-bold text-slate-900"
+                                    "text-base font-bold text-slate-900 font-sans"
                                 )
-                                ui.badge("Active Context", color="blue-700").classes("text-[10px] font-bold")
+                                with ui.element("div").classes(
+                                    "px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-mono font-medium"
+                                ):
+                                    ui.label("Selected Course")
                             if selected_course.description:
                                 ui.label(selected_course.description).classes(
                                     "text-xs text-slate-500 line-clamp-1"
@@ -192,12 +207,16 @@ def register_documents_page() -> None:
                             "Switch Course",
                             icon="swap_horiz",
                             on_click=lambda: ui.navigate.to("/documents"),
-                        ).props("outline dense no-caps color=primary").classes("text-xs")
+                        ).props("outline dense no-caps").classes(
+                            "text-xs border-slate-300 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-xl font-medium transition-colors"
+                        )
                         ui.button(
                             "Open Chat",
                             icon="chat",
                             on_click=lambda: ui.navigate.to(f"/chat?kb_id={selected_course.id}"),
-                        ).props("flat dense no-caps").classes("text-xs text-blue-600")
+                        ).props("flat dense no-caps").classes(
+                            "text-xs text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-lg"
+                        )
 
             # ------------------------------------------------------------------
             # UPLOAD COURSE MATERIAL PANEL
@@ -207,15 +226,22 @@ def register_documents_page() -> None:
                 max_mb = max_upload_bytes // (1024 * 1024)
 
                 with ui.card().classes(
-                    "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs gap-3"
+                    "academic-card w-full p-6 bg-white border border-slate-200/80 rounded-2xl shadow-xs gap-3"
                 ):
-                    with ui.row().classes("w-full justify-between items-center pb-2 border-b border-slate-100"):
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("upload_file", size="sm").classes("text-blue-600")
+                    with ui.row().classes(
+                        "w-full justify-between items-center pb-3 border-b border-slate-100"
+                    ):
+                        with ui.row().classes("items-center gap-2.5"):
+                            with ui.element("div").classes(
+                                "w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold"
+                            ):
+                                ui.icon("upload_file", size="18px")
                             ui.label("Upload Course Material").classes(
-                                "text-sm font-bold text-slate-900"
+                                "text-sm font-bold text-slate-900 font-sans"
                             )
-                        with ui.row().classes("items-center gap-2 text-xs text-slate-500 font-mono"):
+                        with ui.row().classes(
+                            "items-center gap-2 text-xs text-slate-500 font-mono"
+                        ):
                             ui.label("Supported: PDF, DOCX, TXT, MD, CSV")
                             ui.label("•")
                             ui.label(f"Max: {max_mb} MB")
@@ -304,17 +330,29 @@ def register_documents_page() -> None:
                             pass
 
                         # Dialog Header
-                        with ui.row().classes("w-full justify-between items-start pb-3 border-b border-slate-100"):
+                        with ui.row().classes(
+                            "w-full justify-between items-start pb-3 border-b border-slate-100"
+                        ):
                             with ui.column().classes("gap-0.5"):
                                 with ui.row().classes("items-center gap-2"):
                                     ui.icon("description", size="sm").classes("text-blue-600")
-                                    ui.label(doc.filename).classes("text-lg font-bold text-slate-900")
-                                ui.label(f"Course: {selected_course.name} • Format: {doc.file_type.upper()} • Size: {format_bytes(doc.file_size_bytes)}").classes("text-xs text-slate-500 font-mono")
-                            ui.button(icon="close", on_click=detail_dialog.close).props("flat round dense text-color=grey-7")
+                                    ui.label(doc.filename).classes(
+                                        "text-lg font-bold text-slate-900"
+                                    )
+                                ui.label(
+                                    f"Course: {selected_course.name} • Format: {doc.file_type.upper()} • Size: {format_bytes(doc.file_size_bytes)}"
+                                ).classes("text-xs text-slate-500 font-mono")
+                            ui.button(icon="close", on_click=detail_dialog.close).props(
+                                "flat round dense text-color=grey-7"
+                            )
 
                         # Lifecycle Pipeline Visualization
-                        ui.label("PROCESSING & RETRIEVAL PIPELINE").classes("text-[10px] font-bold text-slate-400 tracking-wider")
-                        with ui.row().classes("w-full items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs"):
+                        ui.label("PROCESSING & RETRIEVAL PIPELINE").classes(
+                            "text-[10px] font-bold text-slate-400 tracking-wider"
+                        )
+                        with ui.row().classes(
+                            "w-full items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                        ):
                             # Steps: Uploaded -> Parsed -> Chunked -> Embedded -> Vectors -> Ready
                             steps = [
                                 ("Uploaded", True),
@@ -326,50 +364,103 @@ def register_documents_page() -> None:
                             ]
                             for label, is_done in steps:
                                 with ui.column().classes("items-center gap-1"):
-                                    icon_name = "check_circle" if is_done else "radio_button_unchecked"
+                                    icon_name = (
+                                        "check_circle" if is_done else "radio_button_unchecked"
+                                    )
                                     icon_color = "text-emerald-600" if is_done else "text-slate-300"
                                     ui.icon(icon_name, size="xs").classes(icon_color)
-                                    ui.label(label).classes(f"text-[10px] font-semibold {'text-slate-800' if is_done else 'text-slate-400'}")
+                                    ui.label(label).classes(
+                                        f"text-[10px] font-semibold {'text-slate-800' if is_done else 'text-slate-400'}"
+                                    )
 
                         # Metrics Grid
                         with ui.row().classes("w-full grid grid-cols-2 sm:grid-cols-4 gap-3"):
-                            with ui.card().classes("p-3 bg-slate-50 border border-slate-200 rounded"):
-                                ui.label("TOTAL CHUNKS").classes("text-[10px] font-bold text-slate-400")
-                                ui.label(str(doc.chunk_count)).classes("text-xl font-bold font-mono text-slate-800")
-                            with ui.card().classes("p-3 bg-slate-50 border border-slate-200 rounded"):
-                                ui.label("VECTORS CREATED").classes("text-[10px] font-bold text-slate-400")
-                                v_count = doc.chunk_count if doc.indexing_status == "COMPLETED" else (job.indexed_chunks if job else 0)
-                                ui.label(f"{v_count} / {doc.chunk_count}").classes("text-xl font-bold font-mono text-blue-700")
-                            with ui.card().classes("p-3 bg-slate-50 border border-slate-200 rounded"):
-                                ui.label("INDEXING STATUS").classes("text-[10px] font-bold text-slate-400")
+                            with ui.card().classes(
+                                "p-3 bg-slate-50 border border-slate-200 rounded"
+                            ):
+                                ui.label("TOTAL CHUNKS").classes(
+                                    "text-[10px] font-bold text-slate-400"
+                                )
+                                ui.label(str(doc.chunk_count)).classes(
+                                    "text-xl font-bold font-mono text-slate-800"
+                                )
+                            with ui.card().classes(
+                                "p-3 bg-slate-50 border border-slate-200 rounded"
+                            ):
+                                ui.label("VECTORS CREATED").classes(
+                                    "text-[10px] font-bold text-slate-400"
+                                )
+                                v_count = (
+                                    doc.chunk_count
+                                    if doc.indexing_status == "COMPLETED"
+                                    else (job.indexed_chunks if job else 0)
+                                )
+                                ui.label(f"{v_count} / {doc.chunk_count}").classes(
+                                    "text-xl font-bold font-mono text-blue-700"
+                                )
+                            with ui.card().classes(
+                                "p-3 bg-slate-50 border border-slate-200 rounded"
+                            ):
+                                ui.label("INDEXING STATUS").classes(
+                                    "text-[10px] font-bold text-slate-400"
+                                )
                                 render_indexing_status_badge(doc.indexing_status)
-                            with ui.card().classes("p-3 bg-slate-50 border border-slate-200 rounded"):
-                                ui.label("RETRIEVAL ELIGIBLE").classes("text-[10px] font-bold text-slate-400")
+                            with ui.card().classes(
+                                "p-3 bg-slate-50 border border-slate-200 rounded"
+                            ):
+                                ui.label("RETRIEVAL ELIGIBLE").classes(
+                                    "text-[10px] font-bold text-slate-400"
+                                )
                                 ret_ready = doc.indexing_status == "COMPLETED" and doc.is_active
-                                ui.badge("READY" if ret_ready else "NOT READY", color="emerald-700" if ret_ready else "amber-700").classes("text-[10px] font-bold")
+                                ui.badge(
+                                    "READY" if ret_ready else "NOT READY",
+                                    color="emerald-700" if ret_ready else "amber-700",
+                                ).classes("text-[10px] font-bold")
 
                         # Progress Details if active or failed
                         if job and job.status in ("PROCESSING", "QUEUED"):
-                            with ui.card().classes("w-full p-3 bg-blue-50 border border-blue-200 rounded"):
-                                with ui.row().classes("w-full justify-between items-center text-xs mb-1"):
-                                    ui.label(f"Stage: {job.stage}").classes("font-semibold text-blue-800")
-                                    ui.label(f"{job.progress_percent:.0f}%").classes("font-mono font-bold text-blue-700")
-                                ui.linear_progress(job.progress_percent / 100.0, show_value=False).props("rounded color=primary")
+                            with ui.card().classes(
+                                "w-full p-3 bg-blue-50 border border-blue-200 rounded"
+                            ):
+                                with ui.row().classes(
+                                    "w-full justify-between items-center text-xs mb-1"
+                                ):
+                                    ui.label(f"Stage: {job.stage}").classes(
+                                        "font-semibold text-blue-800"
+                                    )
+                                    ui.label(f"{job.progress_percent:.0f}%").classes(
+                                        "font-mono font-bold text-blue-700"
+                                    )
+                                ui.linear_progress(
+                                    job.progress_percent / 100.0, show_value=False
+                                ).props("rounded color=primary")
 
                         if doc.indexing_error or (job and job.error_message):
-                            err_msg = doc.indexing_error or (job.error_message if job else "Indexing failed")
-                            with ui.card().classes("w-full p-3 bg-rose-50 border border-rose-200 rounded"):
-                                ui.label(f"Error Diagnostic: {err_msg}").classes("text-xs font-semibold text-rose-800")
+                            err_msg = doc.indexing_error or (
+                                job.error_message if job else "Indexing failed"
+                            )
+                            with ui.card().classes(
+                                "w-full p-3 bg-rose-50 border border-rose-200 rounded"
+                            ):
+                                ui.label(f"Error Diagnostic: {err_msg}").classes(
+                                    "text-xs font-semibold text-rose-800"
+                                )
 
                         # Timeline details
-                        with ui.column().classes("w-full gap-1 text-[11px] text-slate-500 font-mono"):
+                        with ui.column().classes(
+                            "w-full gap-1 text-[11px] text-slate-500 font-mono"
+                        ):
                             ui.label(f"Uploaded: {doc.created_at}")
                             if doc.indexed_at:
                                 ui.label(f"Indexed: {doc.indexed_at}")
 
                         # Dialog Actions
-                        with ui.row().classes("w-full justify-end items-center gap-2 pt-3 border-t border-slate-100"):
-                            ui.button("Close", on_click=detail_dialog.close).props("flat dense no-caps")
+                        with ui.row().classes(
+                            "w-full justify-end items-center gap-2 pt-3 border-t border-slate-100"
+                        ):
+                            ui.button("Close", on_click=detail_dialog.close).props(
+                                "flat dense no-caps"
+                            )
 
                 detail_dialog.open()
 
@@ -393,15 +484,23 @@ def register_documents_page() -> None:
                     with confirm_card:
                         ui.label(title).classes("text-base font-bold text-slate-900")
                         ui.label(message).classes("text-xs text-slate-600 leading-relaxed")
-                        with ui.row().classes("w-full justify-end gap-2 pt-2 border-t border-slate-100"):
-                            ui.button("Cancel", on_click=confirm_dialog.close).props("flat dense no-caps")
+                        with ui.row().classes(
+                            "w-full justify-end gap-2 pt-2 border-t border-slate-100"
+                        ):
+                            ui.button("Cancel", on_click=confirm_dialog.close).props(
+                                "flat dense no-caps"
+                            )
+
                             def _do_action() -> None:
                                 confirm_dialog.close()
                                 on_confirm()
+
                             ui.button(
                                 action_label,
                                 on_click=_do_action,
-                            ).props(f"color={action_color} dense no-caps").classes("px-3 py-1 font-semibold")
+                            ).props(f"color={action_color} dense no-caps").classes(
+                                "px-3 py-1 font-semibold"
+                            )
                 confirm_dialog.open()
 
             # ------------------------------------------------------------------
@@ -454,26 +553,46 @@ def register_documents_page() -> None:
                 if q:
                     filtered_docs = [d for d in filtered_docs if q in d.filename.lower()]
                 if cat == "ACTIVE":
-                    filtered_docs = [d for d in filtered_docs if d.is_active and d.indexing_status == "COMPLETED"]
+                    filtered_docs = [
+                        d for d in filtered_docs if d.is_active and d.indexing_status == "COMPLETED"
+                    ]
                 elif cat == "INDEXING":
-                    filtered_docs = [d for d in filtered_docs if d.indexing_status in ("QUEUED", "PROCESSING")]
+                    filtered_docs = [
+                        d for d in filtered_docs if d.indexing_status in ("QUEUED", "PROCESSING")
+                    ]
                 elif cat == "FAILED":
-                    filtered_docs = [d for d in filtered_docs if d.indexing_status == "FAILED" or d.status == "FAILED"]
+                    filtered_docs = [
+                        d
+                        for d in filtered_docs
+                        if d.indexing_status == "FAILED" or d.status == "FAILED"
+                    ]
                 elif cat == "INACTIVE":
-                    filtered_docs = [d for d in filtered_docs if not d.is_active or d.indexing_status != "COMPLETED"]
+                    filtered_docs = [
+                        d
+                        for d in filtered_docs
+                        if not d.is_active or d.indexing_status != "COMPLETED"
+                    ]
 
-                with ui.card().classes("w-full p-5 bg-white border border-slate-200 rounded-lg shadow-xs gap-4"):
+                with ui.card().classes(
+                    "academic-card w-full p-6 bg-white border border-slate-200/80 rounded-2xl shadow-xs gap-4"
+                ):
                     # Top Filter & Search Controls
-                    with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap pb-3 border-b border-slate-100"):
+                    with ui.row().classes(
+                        "w-full justify-between items-center gap-3 flex-wrap pb-3.5 border-b border-slate-100"
+                    ):
                         with ui.row().classes("items-center gap-2 flex-1 max-w-md"):
-                            s_input = ui.input(
-                                placeholder="Search documents by filename...",
-                                value=search_state["query"],
-                            ).props("outlined dense clearable").classes("w-full text-xs")
+                            s_input = (
+                                ui.input(
+                                    placeholder="Search documents by filename...",
+                                    value=search_state["query"],
+                                )
+                                .props("outlined dense clearable")
+                                .classes("w-full text-xs minimalist-input")
+                            )
                             s_input.on("input", lambda e: on_search_input(e.value))
 
-                        with ui.row().classes("items-center gap-2"):
-                            ui.label("Filter:").classes("text-xs font-semibold text-slate-500")
+                        with ui.row().classes("items-center gap-2 flex-wrap"):
+                            ui.label("Filter:").classes("text-xs font-medium text-slate-400 mr-1")
                             filters = [
                                 ("ALL", f"All ({len(docs)})"),
                                 ("ACTIVE", "Active"),
@@ -482,11 +601,11 @@ def register_documents_page() -> None:
                             ]
                             for f_key, f_label in filters:
                                 is_sel = search_state["filter"] == f_key
-                                btn_cls = "text-xs px-2.5 py-1 rounded "
+                                btn_cls = "text-xs px-3 py-1 rounded-full transition-all "
                                 if is_sel:
-                                    btn_cls += "bg-blue-600 text-white font-semibold"
+                                    btn_cls += "!bg-slate-900 !text-white font-semibold shadow-xs"
                                 else:
-                                    btn_cls += "text-slate-600 hover:bg-slate-100"
+                                    btn_cls += "!text-slate-600 !bg-slate-100/90 hover:!bg-slate-200/90 hover:!text-slate-900"
                                 ui.button(
                                     f_label,
                                     on_click=lambda k=f_key: on_filter_change(k),
@@ -495,7 +614,9 @@ def register_documents_page() -> None:
                             ui.button(
                                 icon="refresh",
                                 on_click=refresh_doc_list,
-                            ).props("flat round dense").classes("text-slate-500 hover:text-slate-800").tooltip("Refresh List")
+                            ).props("flat round dense").classes(
+                                "text-slate-500 hover:text-slate-800"
+                            ).tooltip("Refresh List")
 
                     if not filtered_docs:
                         if search_state["query"] or search_state["filter"] != "ALL":
@@ -516,8 +637,12 @@ def register_documents_page() -> None:
 
                     # Redesigned Document Table (Section 5)
                     with ui.element("div").classes("w-full overflow-x-auto"):
-                        with ui.element("table").classes("w-full text-left text-xs border-collapse"):
-                            with ui.element("thead").classes("bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"):
+                        with ui.element("table").classes(
+                            "w-full text-left text-xs border-collapse"
+                        ):
+                            with ui.element("thead").classes(
+                                "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
+                            ):
                                 with ui.element("tr"):
                                     with ui.element("th").classes("py-2.5 px-3"):
                                         ui.label("Document")
@@ -540,24 +665,55 @@ def register_documents_page() -> None:
                                     with ui.element("th").classes("py-2.5 px-3 text-right"):
                                         ui.label("Actions")
 
-                            with ui.element("tbody").classes("divide-y divide-slate-100 text-slate-800"):
+                            with ui.element("tbody").classes(
+                                "divide-y divide-slate-100 text-slate-800"
+                            ):
                                 for doc in filtered_docs:
-                                    with ui.element("tr").classes("hover:bg-slate-50/70 transition-colors"):
+                                    with ui.element("tr").classes(
+                                        "hover:bg-slate-50/70 transition-colors"
+                                    ):
                                         # 1. Document Title
                                         with ui.element("td").classes("py-2.5 px-3 font-medium"):
+                                            is_pdf = doc.filename.lower().endswith(".pdf")
+                                            doc_icon = "picture_as_pdf" if is_pdf else "description"
+                                            doc_icon_color = (
+                                                "text-rose-500" if is_pdf else "text-slate-400"
+                                            )
                                             with ui.row().classes("items-center gap-2"):
-                                                ui.icon("description", size="xs").classes("text-slate-400")
+                                                ui.icon(doc_icon, size="16px").classes(
+                                                    doc_icon_color
+                                                )
                                                 with ui.column().classes("gap-0"):
-                                                    ui.label(doc.filename).classes("truncate max-w-[200px] font-semibold text-slate-900")
+                                                    ui.label(doc.filename).classes(
+                                                        "truncate max-w-[200px] font-semibold text-slate-900 cursor-pointer hover:text-blue-600 transition-colors"
+                                                    ).tooltip(
+                                                        f"Click to read '{doc.filename}' in Source Viewer"
+                                                    ).on(
+                                                        "click",
+                                                        lambda d=doc: open_source_viewer(
+                                                            document_id=str(d.id),
+                                                            document_name=d.filename,
+                                                            kb_id=str(selected_course.id),
+                                                            course_name=selected_course.name,
+                                                        ),
+                                                    )
                                                     if doc.error_message and doc.status == "FAILED":
-                                                        ui.label(f"Error: {doc.error_message}").classes("text-[10px] text-rose-600 truncate max-w-[180px]")
+                                                        ui.label(
+                                                            f"Error: {doc.error_message}"
+                                                        ).classes(
+                                                            "text-[10px] text-rose-600 truncate max-w-[180px]"
+                                                        )
 
                                         # 2. Format
                                         with ui.element("td").classes("py-2.5 px-3 font-mono"):
-                                            ui.badge(doc.file_type.upper(), color="slate-600").classes("text-[10px]")
+                                            ui.badge(
+                                                doc.file_type.upper(), color="slate-600"
+                                            ).classes("text-[10px]")
 
                                         # 3. Size
-                                        with ui.element("td").classes("py-2.5 px-3 font-mono text-slate-600"):
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 font-mono text-slate-600"
+                                        ):
                                             ui.label(format_bytes(doc.file_size_bytes))
 
                                         # 4. Processing
@@ -568,11 +724,23 @@ def register_documents_page() -> None:
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             if doc.indexing_status in ("QUEUED", "PROCESSING"):
                                                 with ui.column().classes("gap-0.5 min-w-[120px]"):
-                                                    render_indexing_status_badge(doc.indexing_status)
+                                                    render_indexing_status_badge(
+                                                        doc.indexing_status
+                                                    )
                                                     try:
-                                                        j = api_client.get_document_index_status(selected_course.id, doc.id)
-                                                        ui.label(f"{j.processed_chunks} / {j.total_chunks} chunks ({j.progress_percent:.0f}%)").classes("text-[10px] font-mono text-blue-700 font-semibold")
-                                                        ui.linear_progress(j.progress_percent / 100.0, show_value=False, size="4px").props("rounded color=primary")
+                                                        j = api_client.get_document_index_status(
+                                                            selected_course.id, doc.id
+                                                        )
+                                                        ui.label(
+                                                            f"{j.processed_chunks} / {j.total_chunks} chunks ({j.progress_percent:.0f}%)"
+                                                        ).classes(
+                                                            "text-[10px] font-mono text-blue-700 font-semibold"
+                                                        )
+                                                        ui.linear_progress(
+                                                            j.progress_percent / 100.0,
+                                                            show_value=False,
+                                                            size="4px",
+                                                        ).props("rounded color=primary")
                                                     except Exception:
                                                         pass
                                             elif doc.indexing_status == "COMPLETED":
@@ -580,22 +748,32 @@ def register_documents_page() -> None:
                                             elif doc.indexing_status == "FAILED":
                                                 render_indexing_status_badge("FAILED")
                                                 err_txt = doc.indexing_error or "Indexing failed"
-                                                ui.label(err_txt).classes("text-[10px] text-rose-600 truncate max-w-[140px]").tooltip(err_txt)
+                                                ui.label(err_txt).classes(
+                                                    "text-[10px] text-rose-600 truncate max-w-[140px]"
+                                                ).tooltip(err_txt)
                                             else:
                                                 render_indexing_status_badge(doc.indexing_status)
 
                                         # 6. Chunks
-                                        with ui.element("td").classes("py-2.5 px-3 font-mono text-slate-600"):
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 font-mono text-slate-600"
+                                        ):
                                             ui.label(str(doc.chunk_count))
 
                                         # 7. Vectors
                                         with ui.element("td").classes("py-2.5 px-3 font-mono"):
                                             if doc.indexing_status == "COMPLETED":
-                                                ui.label(f"{doc.chunk_count} / {doc.chunk_count}").classes("text-emerald-700 font-semibold")
+                                                ui.label(
+                                                    f"{doc.chunk_count} / {doc.chunk_count}"
+                                                ).classes("text-emerald-700 font-semibold")
                                             elif doc.indexing_status in ("QUEUED", "PROCESSING"):
                                                 try:
-                                                    j = api_client.get_document_index_status(selected_course.id, doc.id)
-                                                    ui.label(f"{j.indexed_chunks} / {j.total_chunks}").classes("text-blue-700 font-semibold")
+                                                    j = api_client.get_document_index_status(
+                                                        selected_course.id, doc.id
+                                                    )
+                                                    ui.label(
+                                                        f"{j.indexed_chunks} / {j.total_chunks}"
+                                                    ).classes("text-blue-700 font-semibold")
                                                 except Exception:
                                                     ui.label("0 / —").classes("text-slate-400")
                                             else:
@@ -604,35 +782,65 @@ def register_documents_page() -> None:
                                         # 8. Retrieval Status
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             if doc.indexing_status != "COMPLETED":
-                                                ui.badge("NOT READY", color="amber-700").classes("text-[9px] font-bold").tooltip("Vector indexing has not completed.")
+                                                ui.badge("NOT READY", color="amber-700").classes(
+                                                    "text-[9px] font-bold"
+                                                ).tooltip("Vector indexing has not completed.")
                                             elif doc.is_active:
-                                                ui.badge("READY", color="emerald-700").classes("text-[9px] font-bold").tooltip("Active: Included in student queries.")
+                                                ui.badge("READY", color="emerald-700").classes(
+                                                    "text-[9px] font-bold"
+                                                ).tooltip("Active: Included in student queries.")
                                             else:
-                                                ui.badge("INACTIVE", color="slate-400").classes("text-[9px] font-bold").tooltip("Inactive: Excluded from retrieval.")
+                                                ui.badge("INACTIVE", color="slate-400").classes(
+                                                    "text-[9px] font-bold"
+                                                ).tooltip("Inactive: Excluded from retrieval.")
 
                                         # 9. Updated
-                                        with ui.element("td").classes("py-2.5 px-3 font-mono text-slate-500"):
+                                        with ui.element("td").classes(
+                                            "py-2.5 px-3 font-mono text-slate-500"
+                                        ):
                                             ui.label(doc.created_at[:10])
 
                                         # 10. Actions
                                         with ui.element("td").classes("py-2.5 px-3 text-right"):
                                             with ui.row().classes("items-center justify-end gap-1"):
+                                                # Read in Source Viewer
+                                                ui.button(
+                                                    icon="menu_book",
+                                                    on_click=lambda d=doc: open_source_viewer(
+                                                        document_id=str(d.id),
+                                                        document_name=d.filename,
+                                                        kb_id=str(selected_course.id),
+                                                        course_name=selected_course.name,
+                                                    ),
+                                                ).props("flat round dense").classes(
+                                                    "text-slate-500 hover:text-blue-600"
+                                                ).tooltip("Read in Source Viewer")
+
                                                 # View Details
                                                 ui.button(
-                                                    icon="visibility",
+                                                    icon="info_outline",
                                                     on_click=lambda d=doc: open_document_detail(d),
-                                                ).props("flat round dense").classes("text-slate-500 hover:text-blue-600").tooltip("View Document Details")
+                                                ).props("flat round dense").classes(
+                                                    "text-slate-500 hover:text-blue-600"
+                                                ).tooltip("View Document Details")
 
                                                 # Index trigger
                                                 if (
                                                     can_index_documents
                                                     and doc.status == "COMPLETED"
-                                                    and doc.indexing_status not in ("COMPLETED", "PROCESSING", "QUEUED")
+                                                    and doc.indexing_status
+                                                    not in ("COMPLETED", "PROCESSING", "QUEUED")
                                                 ):
+
                                                     def do_index(d_id=doc.id, name=doc.filename):
                                                         try:
-                                                            api_client.index_document(selected_course.id, d_id)
-                                                            ui.notify(f"Indexing started for '{name}'.", type="positive")
+                                                            api_client.index_document(
+                                                                selected_course.id, d_id
+                                                            )
+                                                            ui.notify(
+                                                                f"Indexing started for '{name}'.",
+                                                                type="positive",
+                                                            )
                                                             refresh_doc_list()
                                                             poll_timer.activate()
                                                         except ValueError as err:
@@ -642,14 +850,25 @@ def register_documents_page() -> None:
                                                         "Index",
                                                         icon="storage",
                                                         on_click=do_index,
-                                                    ).props("outline dense no-caps color=primary").classes("text-[11px] px-2 py-0.5")
+                                                    ).props(
+                                                        "outline dense no-caps color=primary"
+                                                    ).classes("text-[11px] px-2 py-0.5")
 
                                                 # Retry Indexing
-                                                elif can_retry_indexing and doc.indexing_status == "FAILED":
+                                                elif (
+                                                    can_retry_indexing
+                                                    and doc.indexing_status == "FAILED"
+                                                ):
+
                                                     def do_retry(d_id=doc.id, name=doc.filename):
                                                         try:
-                                                            api_client.retry_indexing(selected_course.id, d_id)
-                                                            ui.notify(f"Indexing retry started for '{name}'.", type="positive")
+                                                            api_client.retry_indexing(
+                                                                selected_course.id, d_id
+                                                            )
+                                                            ui.notify(
+                                                                f"Indexing retry started for '{name}'.",
+                                                                type="positive",
+                                                            )
                                                             refresh_doc_list()
                                                             poll_timer.activate()
                                                         except ValueError as err:
@@ -659,15 +878,25 @@ def register_documents_page() -> None:
                                                         "Retry",
                                                         icon="refresh",
                                                         on_click=do_retry,
-                                                    ).props("outline dense no-caps color=amber-9").classes("text-[11px] px-2 py-0.5")
+                                                    ).props(
+                                                        "outline dense no-caps color=amber-9"
+                                                    ).classes("text-[11px] px-2 py-0.5")
 
                                                 # Deactivate action with confirmation (Section 21)
                                                 if can_publish_documents and doc.is_active:
-                                                    def request_deactivate(d_id=doc.id, name=doc.filename):
+
+                                                    def request_deactivate(
+                                                        d_id=doc.id, name=doc.filename
+                                                    ):
                                                         def execute_deactivate():
                                                             try:
-                                                                api_client.deactivate_document(selected_course.id, d_id)
-                                                                ui.notify(f"Deactivated '{name}'. Excluded from retrieval.", type="info")
+                                                                api_client.deactivate_document(
+                                                                    selected_course.id, d_id
+                                                                )
+                                                                ui.notify(
+                                                                    f"Deactivated '{name}'. Excluded from retrieval.",
+                                                                    type="info",
+                                                                )
                                                                 refresh_doc_list()
                                                             except ValueError as err:
                                                                 ui.notify(str(err), type="negative")
@@ -683,14 +912,26 @@ def register_documents_page() -> None:
                                                     ui.button(
                                                         icon="pause_circle",
                                                         on_click=request_deactivate,
-                                                    ).props("flat round dense").classes("text-slate-400 hover:text-amber-600").tooltip("Deactivate Document")
+                                                    ).props("flat round dense").classes(
+                                                        "text-slate-400 hover:text-amber-600"
+                                                    ).tooltip("Deactivate Document")
 
                                                 # Activate action
-                                                elif can_publish_documents and doc.indexing_status == "COMPLETED" and not doc.is_active:
+                                                elif (
+                                                    can_publish_documents
+                                                    and doc.indexing_status == "COMPLETED"
+                                                    and not doc.is_active
+                                                ):
+
                                                     def do_activate(d_id=doc.id, name=doc.filename):
                                                         try:
-                                                            api_client.activate_document(selected_course.id, d_id)
-                                                            ui.notify(f"Activated '{name}'. Now available for retrieval.", type="positive")
+                                                            api_client.activate_document(
+                                                                selected_course.id, d_id
+                                                            )
+                                                            ui.notify(
+                                                                f"Activated '{name}'. Now available for retrieval.",
+                                                                type="positive",
+                                                            )
                                                             refresh_doc_list()
                                                         except ValueError as err:
                                                             ui.notify(str(err), type="negative")
@@ -698,15 +939,25 @@ def register_documents_page() -> None:
                                                     ui.button(
                                                         icon="check_circle",
                                                         on_click=do_activate,
-                                                    ).props("flat round dense").classes("text-slate-400 hover:text-emerald-600").tooltip("Activate for Retrieval")
+                                                    ).props("flat round dense").classes(
+                                                        "text-slate-400 hover:text-emerald-600"
+                                                    ).tooltip("Activate for Retrieval")
 
                                                 # Delete action with confirmation (Section 21)
                                                 if can_delete_documents:
-                                                    def request_delete(d_id=doc.id, name=doc.filename):
+
+                                                    def request_delete(
+                                                        d_id=doc.id, name=doc.filename
+                                                    ):
                                                         def execute_delete():
                                                             try:
-                                                                api_client.delete_document(selected_course.id, d_id)
-                                                                ui.notify(f"Deleted '{name}'.", type="info")
+                                                                api_client.delete_document(
+                                                                    selected_course.id, d_id
+                                                                )
+                                                                ui.notify(
+                                                                    f"Deleted '{name}'.",
+                                                                    type="info",
+                                                                )
                                                                 refresh_doc_list()
                                                             except ValueError as err:
                                                                 ui.notify(str(err), type="negative")
@@ -722,7 +973,9 @@ def register_documents_page() -> None:
                                                     ui.button(
                                                         icon="delete_outline",
                                                         on_click=request_delete,
-                                                    ).props("flat round dense").classes("text-slate-400 hover:text-rose-600").tooltip("Delete Document")
+                                                    ).props("flat round dense").classes(
+                                                        "text-slate-400 hover:text-rose-600"
+                                                    ).tooltip("Delete Document")
 
             def on_search_input(val: str | None) -> None:
                 search_state["query"] = val or ""

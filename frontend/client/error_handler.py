@@ -193,15 +193,48 @@ def _normalize_detail(
             return "Administrator privileges are required for this action."
         return "You do not have permission to perform this action."
 
-    # Suppress raw SQL or tracebacks
-    if any(
-        leak in lower
-        for leak in ("select ", "insert ", "update ", "traceback", "uuid", "syntax error")
-    ):
+    # Suppress raw SQL, tracebacks, connection strings, hostnames, ports, and internal paths
+    system_leak_patterns = (
+        "select ",
+        "insert ",
+        "update ",
+        "delete from",
+        "traceback",
+        "syntax error",
+        "psycopg",
+        "sqlalchemy",
+        "connection refused",
+        "connecterror",
+        "httpx.",
+        "localhost",
+        "127.0.0.1",
+        ":11434",
+        ":5432",
+        ":8080",
+        "http://",
+        "https://",
+        "token=",
+        "session_id=",
+        "bearer ",
+        ".py:",
+        'file "',
+        "c:\\",
+        "d:\\",
+        "/home/",
+        "/tmp/",
+        "/storage/",
+    )
+    if any(leak in lower for leak in system_leak_patterns):
+        if context == "chat":
+            return "Unable to complete query synthesis at this time. Please try again."
         return "A server processing error occurred. Please try again later."
 
     # If a status code is available, fallback to status code normalization
     if status_code and status_code >= 400:
         return _normalize_status_code(status_code, context=context)
+
+    # In chat context, never output raw technical exceptions
+    if context == "chat" and any(marker in lower for marker in ("error", "exception", "failed", "timeout")):
+        return "Unable to complete query synthesis at this time. Please try again."
 
     return detail_str

@@ -21,6 +21,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy import and_, func, select, text
 
 from backend.app.api.deps import (
@@ -496,21 +497,18 @@ def get_activity_log(
 
     # 1. Indexing Jobs
     if auth_kb_ids:
-        job_rows = (
-            db.execute(
-                select(
-                    IndexingJob,
-                    Document.original_filename,
-                    KnowledgeBase.name,
-                )
-                .join(Document, IndexingJob.document_id == Document.id)
-                .join(KnowledgeBase, IndexingJob.knowledge_base_id == KnowledgeBase.id)
-                .where(IndexingJob.knowledge_base_id.in_(auth_kb_ids))
-                .order_by(IndexingJob.created_at.desc())
-                .limit(20)
+        job_rows = db.execute(
+            select(
+                IndexingJob,
+                Document.original_filename,
+                KnowledgeBase.name,
             )
-            .all()
-        )
+            .join(Document, IndexingJob.document_id == Document.id)
+            .join(KnowledgeBase, IndexingJob.knowledge_base_id == KnowledgeBase.id)
+            .where(IndexingJob.knowledge_base_id.in_(auth_kb_ids))
+            .order_by(IndexingJob.created_at.desc())
+            .limit(20)
+        ).all()
         for job, doc_name, kb_name in job_rows:
             st = (
                 "SUCCESS"
@@ -534,16 +532,13 @@ def get_activity_log(
 
     # 2. Documents
     if auth_kb_ids:
-        doc_rows = (
-            db.execute(
-                select(Document, KnowledgeBase.name)
-                .join(KnowledgeBase, Document.knowledge_base_id == KnowledgeBase.id)
-                .where(Document.knowledge_base_id.in_(auth_kb_ids))
-                .order_by(Document.created_at.desc())
-                .limit(20)
-            )
-            .all()
-        )
+        doc_rows = db.execute(
+            select(Document, KnowledgeBase.name)
+            .join(KnowledgeBase, Document.knowledge_base_id == KnowledgeBase.id)
+            .where(Document.knowledge_base_id.in_(auth_kb_ids))
+            .order_by(Document.created_at.desc())
+            .limit(20)
+        ).all()
         for doc, kb_name in doc_rows:
             events.append(
                 ActivityEventResponse(
@@ -592,9 +587,7 @@ def get_activity_log(
             .all()
         )
         for u in user_rows:
-            role_label = (
-                u.admin_role.value if hasattr(u.admin_role, "value") else str(u.admin_role)
-            )
+            role_label = u.admin_role.value if hasattr(u.admin_role, "value") else str(u.admin_role)
             events.append(
                 ActivityEventResponse(
                     id=f"user-{u.id}",
@@ -1324,3 +1317,61 @@ def delete_document(
         "document_id": str(document_id),
         "message": "Document deleted successfully.",
     }
+
+
+@router.get(
+    "/{kb_id}/documents/{document_id}/file",
+    status_code=status.HTTP_200_OK,
+    summary="Stream raw document file for inline viewing or download",
+)
+def get_document_file(
+    kb: AuthorizedKB,
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+    current_user: AuthenticatedUser,
+) -> FileResponse:
+    """
+    Stream raw document file (PDF, TXT, MD, CSV) with inline content disposition.
+    Enforces authorization:
+    - User must have access to the parent knowledge base.
+    - Students may only view active (published) documents.
+    - Path traversal is strictly prevented via storage_service.
+    """
+    doc = get_authorized_document(
+        document_id=document_id,
+        current_user=current_user,
+        db=db,
+        knowledge_base_id=kb.id,
+    )
+
+    try:
+        abs_path = storage_service.get_absolute_path(doc.storage_key)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid storage path.",
+        ) from exc
+
+    if not abs_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document file not found on disk.",
+        )
+
+    # Determine media type for browser viewing
+    media_type = doc.mime_type or "application/pdf"
+    if doc.file_type == "pdf":
+        media_type = "application/pdf"
+    elif doc.file_type in ("txt", "text"):
+        media_type = "text/plain; charset=utf-8"
+    elif doc.file_type in ("md", "markdown"):
+        media_type = "text/markdown; charset=utf-8"
+    elif doc.file_type == "csv":
+        media_type = "text/csv; charset=utf-8"
+
+    return FileResponse(
+        path=str(abs_path),
+        media_type=media_type,
+        filename=doc.original_filename,
+        content_disposition_type="inline",
+    )

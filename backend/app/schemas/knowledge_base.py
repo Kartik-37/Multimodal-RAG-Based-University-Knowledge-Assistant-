@@ -92,7 +92,6 @@ class IndexingJobResponse(BaseModel):
     document_name: str | None = None
     course_name: str | None = None
 
-
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
@@ -127,4 +126,3 @@ class ActivityEventResponse(BaseModel):
     resource_name: str
     status: str  # "SUCCESS" | "FAILED" | "IN_PROGRESS"
     details: str = ""
-

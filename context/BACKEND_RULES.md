@@ -1,198 +1,138 @@
 # Backend Rules
 
-## Security
+## Authentication and session security
 
-### Authentication
-- Hash passwords with Argon2id or an equally strong password KDF.
+- Hash passwords with Argon2id or an equally strong KDF.
 - Never store plaintext passwords.
-- Never place long-lived secrets in browser-accessible storage.
-- Rotate/revoke sessions/tokens.
-- Apply login rate limits.
-- Use generic authentication failure messages.
+- Use short-lived/revocable session credentials.
+- Cookie sessions must use HttpOnly and Secure in production, with an intentional SameSite policy.
+- CSRF protection is required for cookie-authenticated state-changing requests where the deployment topology needs it.
+- Never expose raw session credentials to browser JavaScript.
+- Never persist raw auth/session tokens in client-accessible local/session storage.
+- Never accept raw session tokens through URL query parameters.
 
-### Authorization
-Authorization is checked on every protected resource.
+### Source/document viewing
 
-Never do:
-`Document.objects.get(id=document_id)`
+A source-viewer endpoint is not a special security exception. It must use the same server-side authorization rules as the normal document API.
 
-without an ownership/authorization constraint.
+Forbidden pattern:
+`/documents/{id}/file?token=<raw-session-token>`
 
-Prefer the equivalent of:
-`get authorized document for current user`
+Also forbidden:
+- copying the session token into `document.cookie` with `ui.run_javascript`;
+- embedding the session token in `<iframe>`, `<object>`, or `<embed>` URLs;
+- writing the token to logs, telemetry, HTML, browser history, or referrer-visible URLs.
 
-Ownership must be enforced in the database query/service layer, not merely in the UI.
+Preferred pattern:
+1. same-origin authenticated browser request using the normal HttpOnly session;
+2. if browser embedding technically prevents this, a short-lived server-issued viewer ticket scoped to one document/request, with a dedicated validation path and no reuse of the main session token.
 
-### Multi-user isolation
+Page numbers may be sent as URL fragments (`#page=N`) because the fragment is not transmitted as an HTTP credential.
 
-Test explicitly that:
-- User A cannot read User B's document.
-- User A cannot retrieve User B's chunks through search.
-- User A cannot infer private document metadata through counts/errors.
-- User A cannot mutate User B's data by changing IDs.
-- background jobs retain ownership context safely.
+## Production/test boundary
 
-### Input validation
+Do not import or instantiate `fastapi.testclient.TestClient` from production frontend/application code.
+
+Tests may use `TestClient` to test the backend. Production code must communicate over the actual service boundary using a real HTTP client or another explicitly documented deployment-safe transport.
+
+The API client should remain centralized; only its transport implementation should change.
+
+## Authorization
+
+Every protected resource must be authorized server-side.
+
+Never fetch a document/chunk/file by ID and then rely on the frontend to decide whether the user may see it.
+
+Prefer authorization-aware database/service queries.
+
+## Input validation
 
 Validate:
-- query length
-- pagination
-- sort/filter values
-- UUIDs/IDs
-- upload sizes
-- filenames
-- metadata
-- provider configuration
+- UUIDs/IDs;
+- query length;
+- pagination and sorting;
+- upload size/count;
+- filenames;
+- content type;
+- metadata;
+- provider configuration.
 
-Reject malformed input early.
+Never use client filenames as storage paths.
 
-### SSRF
+## Error safety
 
-If URL ingestion exists:
-- allow only explicitly supported URL schemes;
-- reject localhost/private/link-local/reserved addresses;
-- resolve DNS safely;
-- re-check redirects;
-- limit response size;
-- use strict timeouts;
-- prevent access to cloud metadata endpoints.
+API responses must expose safe, stable error contracts.
 
-If URL ingestion is not required, do not add it.
+Never return:
+- stack traces;
+- SQL/database URLs;
+- absolute filesystem paths;
+- access tokens;
+- provider credentials;
+- raw exception reprs.
 
-### File safety
+Map internal exceptions to safe user-facing categories while retaining technical details only in protected telemetry/logging.
 
-Never use an uploaded filename as a filesystem path.
+## File safety
 
-Use generated IDs and controlled storage directories.
+Treat uploaded files as hostile input.
 
-### SQL/data safety
+Required protections include:
+- allowlist and content validation;
+- file size/count limits;
+- safe temporary storage;
+- path traversal protection;
+- parser resource limits/timeouts;
+- cleanup;
+- controlled storage keys;
+- no executable upload types.
 
-- parameterized queries/ORM;
-- no raw SQL string interpolation;
-- transactions for stateful workflows;
-- constraints for invariants.
+## Data isolation
 
-### API safety
+Prove through tests that User A cannot:
+- read User B's document;
+- retrieve User B's chunks;
+- stream User B's source file;
+- mutate User B's data;
+- infer sensitive metadata through error messages or counts.
 
-- explicit request/response schemas;
-- bounded payloads;
-- consistent error responses;
-- no debug mode in production;
-- no stack traces to clients.
+## External dependencies
 
-## Reliability
+Every external provider gets:
+- explicit timeout;
+- bounded retry where safe;
+- failure state handling;
+- structured logging;
+- clear fallback semantics where correctness permits.
 
-Every external dependency gets:
-- timeout
-- bounded retry
-- clear failure state
-- structured logging
-- circuit/fallback strategy when appropriate
+## Health endpoints
 
-Retries must not duplicate writes.
+Keep liveness minimal. Do not expose application environment, dependency topology, credentials, paths, or detailed infrastructure diagnostics from a public liveness endpoint.
 
-## Transactions
+Readiness may expose a minimal dependency status appropriate to the deployment, but must not reveal internal exception details.
 
-Use transactions for workflows such as:
-- create document + ingestion job
-- state transition + related records
-- deletion
-- reindex activation
+## CORS/CSRF
 
-Use row locks where concurrent workers could produce conflicting state.
+Production origins must be explicit and environment-specific.
 
-## Background jobs
+Do not combine permissive `allow_headers=["*"]` / credentialed CORS with arbitrary origins.
 
-Jobs must be:
-- idempotent
-- retry-safe
-- observable
-- bounded
-- cancellable where practical
-
-Never trust client-side job completion claims.
-
-## Performance
-
-Watch for:
-- N+1 queries
-- missing indexes
-- loading all chunks
-- oversized context
-- sequential embedding requests
-- unbounded file parsing
-- expensive reranking candidate counts
-
-Use profiling/measurement before premature optimization.
-
-## Dependency management
-
-Pin/lock dependencies.
-
-Review security advisories.
-
-Do not install packages merely because an AI model suggested them.
+Review CSRF controls whenever cookies authenticate API requests.
 
 ## Logging
 
-Use structured logs.
-
 Never log:
-- passwords
-- auth headers
-- API keys
-- access tokens
-- private document contents
-- full sensitive queries by default
+- passwords;
+- authorization headers;
+- raw session tokens;
+- API keys;
+- private document contents;
+- sensitive user queries by default.
 
-## Health
+## RAG security
 
-Provide separate:
-- liveness
-- readiness
+Treat retrieved document text as untrusted data. Retrieved text may contain prompt-injection instructions and must never override system/developer security rules.
 
-Readiness should reflect required dependencies.
+## Multimodal truthfulness
 
-Do not expose detailed infrastructure diagnostics publicly.
-
-## API documentation
-
-Document:
-- authentication
-- request/response schemas
-- errors
-- pagination
-- upload behavior
-- search behavior
-- citations
-- rate limits where relevant
-
-
-## Code comments and documentation
-
-The user is learning the project and wants comments that explain code without creating noise.
-
-Add comments when they explain:
-- why a security decision exists;
-- why a non-obvious algorithm is used;
-- how a RAG stage affects downstream retrieval/generation;
-- why a transaction/lock/retry is necessary;
-- why a workaround exists;
-- what a configuration setting changes;
-- any non-obvious provider/library behavior.
-
-Prefer comments that explain WHY and important project impact, not comments that merely repeat WHAT the code says.
-
-Use short docstrings for public services, classes, important functions, and interfaces.
-
-Do not comment every obvious line. Avoid comments such as:
-`# increment counter`
-when the code already makes that obvious.
-
-Where a module implements a major RAG stage, include a brief module-level explanation of:
-- what the stage does;
-- what enters it;
-- what it produces;
-- how it affects later stages.
-
-When security-sensitive behavior is intentionally strict, explain the reason in a concise comment.
+Do not advertise multimodal support until the backend implements and tests a non-text modality path through ingestion, representation/embedding, retrieval, and citation/provenance.
