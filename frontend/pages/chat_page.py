@@ -8,6 +8,7 @@ Includes citation pill buttons linked to the evidence inspection panel.
 Supports explicit search scopes: All Courses, Selected Course, and Selected Document.
 """
 
+import html
 import re
 from typing import Any
 
@@ -50,7 +51,7 @@ def format_citation_links(text: str, citations: list[CitationDTO]) -> str:
         if key in cit_lookup:
             idx, cit = cit_lookup[key]
             page_info = f" • Page {cit.page_number}" if cit.page_number else ""
-            title_text = f"Click to view {cit.document_name}{page_info} in Source Viewer"
+            title_text = html.escape(f"Click to view {cit.document_name}{page_info} in Source Viewer", quote=True)
             return (
                 f'<a href="javascript:void(0)" data-citation-index="{idx}" '
                 f'title="{title_text}" '

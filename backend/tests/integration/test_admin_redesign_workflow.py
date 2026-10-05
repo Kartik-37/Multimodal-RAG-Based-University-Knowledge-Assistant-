@@ -125,22 +125,23 @@ def test_admin_nav_groups_main_admin(test_setup_data):
         permissions=[],
     )
     groups = get_admin_nav_groups(u)
-    group_titles = [g["title"] for g in groups]
+    assert len(groups) >= 4
 
-    assert "Overview" in group_titles
-    assert "Knowledge" in group_titles
-    assert "Communication" in group_titles
-    assert "Administration" in group_titles
-    assert "System" in group_titles
+    admin_routes = [item[1] for g in groups for item in g.get("items", [])]
+    assert "/dashboard" in admin_routes
+    assert "/knowledge-bases" in admin_routes
+    assert "/documents" in admin_routes
+    assert "/chat" in admin_routes
+    assert "/administrators" in admin_routes
 
-    # Also verify backward compatibility of get_nav_items
+    # Also verify route coverage of get_nav_items
     nav_items = get_nav_items(u)
-    nav_labels = [item[0] for item in nav_items]
-    assert "Dashboard" in nav_labels
-    assert "Courses" in nav_labels
-    assert "Documents" in nav_labels
-    assert "Admin Chat" in nav_labels
-    assert "Administrators" in nav_labels
+    nav_routes = [item[1] for item in nav_items]
+    assert "/dashboard" in nav_routes
+    assert "/knowledge-bases" in nav_routes
+    assert "/documents" in nav_routes
+    assert "/chat" in nav_routes
+    assert "/administrators" in nav_routes
 
 
 def test_admin_nav_groups_faculty_admin_scoped(test_setup_data):
@@ -155,13 +156,12 @@ def test_admin_nav_groups_faculty_admin_scoped(test_setup_data):
         permissions=data["faculty_admin"].permissions,
     )
     groups = get_admin_nav_groups(u)
-    group_titles = [g["title"] for g in groups]
+    faculty_routes = [item[1] for g in groups for item in g.get("items", [])]
 
-    assert "Overview" in group_titles
-    assert "Knowledge" in group_titles
-    assert "Communication" in group_titles
-    # Faculty Admin without ADMIN_VIEW cannot see Administration group
-    assert "Administration" not in group_titles
+    assert "/dashboard" in faculty_routes
+    assert "/knowledge-bases" in faculty_routes
+    # Faculty Admin without ADMIN_VIEW cannot see administrators route
+    assert "/administrators" not in faculty_routes
 
 
 def test_admin_nav_groups_student_empty():

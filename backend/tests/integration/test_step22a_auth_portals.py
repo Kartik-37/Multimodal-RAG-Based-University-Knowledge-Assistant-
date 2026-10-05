@@ -355,22 +355,20 @@ def test_19_navigation_shows_correct_role_after_authentication() -> None:
     api_client.student_login("student1@university.edu", "StudentPass123!")
     student_user = api_client.get_current_user()
     student_items = get_nav_items(student_user)
-    student_labels = [label for label, _, _ in student_items]
-    assert "Home" in student_labels
-    assert "Ask Assistant" in student_labels
-    assert "Courses" in student_labels
-    assert "Admin Chat" not in student_labels
-    assert "Administrators" not in student_labels
+    student_routes = [route for _, route, _ in student_items]
+    assert "/dashboard" in student_routes
+    assert "/chat" in student_routes
+    assert "/knowledge-bases" in student_routes
+    assert "/administrators" not in student_routes
 
     # Admin navigation
     api_client.logout()
     api_client.admin_login("admin@university.edu", "AdminPass123!")
     admin_user = api_client.get_current_user()
     admin_items = get_nav_items(admin_user)
-    admin_labels = [label for label, _, _ in admin_items]
-    assert "Dashboard" in admin_labels
-    assert "Admin Chat" in admin_labels
-    assert "Administrators" in admin_labels
+    admin_routes = [route for _, route, _ in admin_items]
+    assert "/dashboard" in admin_routes
+    assert "/administrators" in admin_routes
 
 
 def test_20_multi_user_session_isolation() -> None:

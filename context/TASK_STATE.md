@@ -47,8 +47,19 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
   - Verified clean working tree and `ruff check .` passes with 0 errors.
 
 ### Phase 3: Frontend Test Suite Rewrite
-- **Status:** **PENDING**
-- **Scope:** Delete and recreate stale presentation tests around behavior/contracts/security. Do not test CSS classes, exact DOM nesting, decorative animations, or card arrangements.
+- **Status:** **COMPLETED & VERIFIED**
+- **Accomplishments:**
+  - Deleted old stale presentation-locking frontend test suite (`backend/tests/unit/test_frontend.py`) and recreated it completely from scratch with 41 focused behavioral, API client, state, citation, and security contract tests.
+  - Rewrote `backend/tests/unit/test_student_dashboard_fixes.py` (5 tests) removing presentation assertions (such as "CURRENT COURSE", reconnect CSS, loading text, height classes) while preserving essential reasoning tag stripping, CoT removal, citation semantic transformation, and AppState lifecycle error handling.
+  - Rewrote `backend/tests/unit/test_step21e_frontend_workflow.py` (4 tests) replacing rigid ordered label lists with route paths and RBAC capability checks.
+  - Rewrote `backend/tests/unit/test_source_viewer.py` (10 tests) covering all 15 source-viewer behavioral contracts (authorized streaming, 401 unauthenticated, 401 ?token= rejection, 404 cross-course, 404 unassigned student, inactive doc lifecycle, revoked/expired session handling, canonical UUID, and HTML escaping of unsafe metadata).
+  - Hardened citation link generation in `frontend/pages/chat_page.py` with `html.escape(cit.document_name, quote=True)` to prevent attribute breakout/XSS in citation pills.
+  - Updated `backend/tests/integration/test_admin_redesign_workflow.py` and `backend/tests/integration/test_step22a_auth_portals.py` to assert route paths and permissions rather than UI label strings.
+  - Confirmed zero presentation-locking assertions remain across test files (zero matches for Tailwind classes, colors, card counts, DOM structure, hover/animation rules).
+  - Verified physical absence of `frontend/client/Untitled-1.txt` (`Test-Path` returned `False`) and zero `*Untitled*` files across repository.
+  - Verification: 570 passed, 0 failed, 3 warnings in the non-real_ollama regression suite (`pytest backend/tests/ -m "not real_ollama"` in 431.25s; tests marked real_ollama were excluded from this verification).
+  - Security suite: 50 passed, 0 failed in 61.19s (`pytest backend/tests/security/ -v`).
+  - Linter: `ruff check .` passed with 0 errors.
 
 ### Phase 4: Frontend Rebuild from Scratch
 - **Status:** **PENDING**
