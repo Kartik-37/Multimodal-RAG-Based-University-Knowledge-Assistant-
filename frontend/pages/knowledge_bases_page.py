@@ -13,6 +13,7 @@ from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.source_viewer import open_source_viewer
 from frontend.components.ui_kit import render_alert, render_empty_state
@@ -119,7 +120,7 @@ def register_knowledge_bases_page() -> None:
                         refresh_view()
                     except ValueError as err:
                         with dialog_error:
-                            render_alert(str(err), "negative")
+                            render_alert(normalize_error(err, context="course"), "negative")
 
                 with ui.row().classes("w-full justify-end gap-2 pt-3 border-t border-slate-100"):
                     ui.button("Cancel", on_click=create_dialog.close).props("flat no-caps").classes(

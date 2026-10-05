@@ -193,7 +193,7 @@ def _normalize_detail(
             return "Administrator privileges are required for this action."
         return "You do not have permission to perform this action."
 
-    # Suppress raw SQL, tracebacks, connection strings, hostnames, ports, and internal paths
+    # Suppress raw SQL, tracebacks, database errors, connection strings, hostnames, ports, internal paths, and Python runtime exceptions
     system_leak_patterns = (
         "select ",
         "insert ",
@@ -202,6 +202,8 @@ def _normalize_detail(
         "traceback",
         "syntax error",
         "psycopg",
+        "psycopg2",
+        "asyncpg",
         "sqlalchemy",
         "connection refused",
         "connecterror",
@@ -223,10 +225,44 @@ def _normalize_detail(
         "/home/",
         "/tmp/",
         "/storage/",
+        "attributeerror",
+        "typeerror",
+        "valueerror:",
+        "keyerror",
+        "indexerror",
+        "filenotfounderror",
+        "permissionerror",
+        "modulenotfounderror",
+        "importerror",
+        "runtimeerror",
+        "unhandled exception",
+        "internal server error",
+        "object has no attribute",
+        "operationalerror",
+        "programmingerror",
+        "integrityerror",
+        "databaseerror",
+        "dataerror",
+        "notnullviolation",
+        "uniqueviolation",
+        "foreignkeyviolation",
+        "checkviolation",
+        "null value in column",
+        'relation "',
+        'table "',
+        'column "',
     )
     if any(leak in lower for leak in system_leak_patterns):
         if context == "chat":
             return "Unable to complete query synthesis at this time. Please try again."
+        if context == "auth":
+            return "Authentication could not be completed due to a server processing error. Please try again."
+        if context == "document":
+            return "The document operation could not be completed. Please try again."
+        if context == "course":
+            return "The course operation could not be completed. Please try again."
+        if context == "admin":
+            return "The administrative operation could not be completed. Please try again."
         return "A server processing error occurred. Please try again later."
 
     # If a status code is available, fallback to status code normalization

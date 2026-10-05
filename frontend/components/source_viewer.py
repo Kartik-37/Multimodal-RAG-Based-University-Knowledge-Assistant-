@@ -14,7 +14,7 @@ import html
 import urllib.parse
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
 from frontend.client.api_client import api_client
 

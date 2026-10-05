@@ -15,6 +15,7 @@ from nicegui import events, ui
 from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import DocumentDTO, IndexingJobDTO
 from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.source_viewer import open_source_viewer
@@ -301,7 +302,7 @@ def register_documents_page() -> None:
                             poll_timer.activate()
                         except ValueError as err:
                             with upload_alert:
-                                render_alert(str(err), level="negative")
+                                render_alert(normalize_error(err, context="document"), level="negative")
 
                     ui.upload(
                         label=f"Drop course files here or click to browse (up to {max_mb} MB)",
@@ -844,7 +845,7 @@ def register_documents_page() -> None:
                                                             refresh_doc_list()
                                                             poll_timer.activate()
                                                         except ValueError as err:
-                                                            ui.notify(str(err), type="negative")
+                                                            ui.notify(normalize_error(err, context="document"), type="negative")
 
                                                     ui.button(
                                                         "Index",
@@ -872,7 +873,7 @@ def register_documents_page() -> None:
                                                             refresh_doc_list()
                                                             poll_timer.activate()
                                                         except ValueError as err:
-                                                            ui.notify(str(err), type="negative")
+                                                            ui.notify(normalize_error(err, context="document"), type="negative")
 
                                                     ui.button(
                                                         "Retry",
@@ -899,7 +900,7 @@ def register_documents_page() -> None:
                                                                 )
                                                                 refresh_doc_list()
                                                             except ValueError as err:
-                                                                ui.notify(str(err), type="negative")
+                                                                ui.notify(normalize_error(err, context="document"), type="negative")
 
                                                         open_confirm_dialog(
                                                             title=f'Deactivate "{name}"?',
@@ -934,7 +935,7 @@ def register_documents_page() -> None:
                                                             )
                                                             refresh_doc_list()
                                                         except ValueError as err:
-                                                            ui.notify(str(err), type="negative")
+                                                            ui.notify(normalize_error(err, context="document"), type="negative")
 
                                                     ui.button(
                                                         icon="check_circle",
@@ -960,7 +961,7 @@ def register_documents_page() -> None:
                                                                 )
                                                                 refresh_doc_list()
                                                             except ValueError as err:
-                                                                ui.notify(str(err), type="negative")
+                                                                ui.notify(normalize_error(err, context="document"), type="negative")
 
                                                         open_confirm_dialog(
                                                             title=f'Delete "{name}"?',

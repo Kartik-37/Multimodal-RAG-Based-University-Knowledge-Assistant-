@@ -7,7 +7,6 @@ UI components communicate strictly via the frontend.client.api_client boundary.
 
 from nicegui import app as nicegui_app
 from nicegui import ui
-
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
@@ -31,9 +30,9 @@ from frontend.pages.system_health_page import register_system_health_page
 
 class SessionCookieSyncMiddleware(BaseHTTPMiddleware):
     """
-    Synchronize authenticated session tokens from NiceGUI server-side storage
+    Synchronize authenticated session cookies from in-memory frontend clients
     into native HttpOnly session cookies in browser HTTP responses.
-    Ensures inline iframe/object PDF viewing and native same-origin requests
+    Ensures inline iframe PDF viewing and native same-origin requests
     carry the session credential automatically without JavaScript access.
     """
 
@@ -43,8 +42,10 @@ class SessionCookieSyncMiddleware(BaseHTTPMiddleware):
             nicegui_session_id = request.session.get("id")
             if nicegui_session_id:
                 try:
-                    user_storage = nicegui_app.storage._users.get(nicegui_session_id)
-                    token = user_storage.get("auth_session_token") if user_storage else None
+                    from frontend.client.api_client import _session_clients
+
+                    client = _session_clients.get(str(nicegui_session_id))
+                    token = client.get_session_token() if client else None
                     current_cookie = request.cookies.get(SESSION_COOKIE_NAME)
                     if token and current_cookie != token:
                         response.set_cookie(

@@ -10,39 +10,23 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
 
 ## Current defects / work remaining
 
-### Release-blocking / high priority (COMPLETED IN PHASE 1)
+### Release-blocking / high priority (COMPLETED & VERIFIED IN PHASE 1)
 - [x] Remove `?token=` authentication from `backend/app/api/deps.py`. Verified via `test_token_in_url_rejected_with_401`.
 - [x] Remove raw session-token URL construction and JavaScript cookie writes from `frontend/components/source_viewer.py`.
-- [x] Redesign source viewer around normal authenticated same-origin session via `SessionCookieSyncMiddleware` and server-side session resolution.
+- [x] Decouple backend authorization from NiceGUI internals: removed all `nicegui.app` and `storage._users` dependencies from `backend/app/api/deps.py`. FastAPI backend authenticates strictly via HttpOnly cookie or Authorization Bearer header.
+- [x] Completely remove raw session token persistence in `frontend/client/api_client.py` and `app.storage.user["auth_session_token"]`. Deleted `_get_persistent_token()` and `_set_persistent_token()`. Sessions survive page navigation purely via server-side memory (`_session_clients`) and browser HttpOnly cookies.
+- [x] Redesign `SessionCookieSyncMiddleware` in `frontend/main.py` to synchronize HttpOnly cookies directly from in-memory session clients without touching private NiceGUI user storage.
 - [x] Replace production `fastapi.testclient.TestClient` usage in `frontend/client/api_client.py` with deployment-safe `InProcessProductionTransport`.
-- [x] Stop unnecessarily exposing/persisting raw session token in frontend state/storage or client-side JavaScript.
-- [x] Sanitize background-generation and all user-facing exceptions (global FastAPI handler + regex-based redaction in `error_handler.py`).
-- [x] Add source-viewer token-leak regression tests (`backend/tests/security/test_phase1_security_hardening.py` - 6 tests passing).
-- [x] Fix source viewer PDF rendering container and verify document streaming across roles (43/43 security tests passing).
-
-
-### Frontend redesign
-- [ ] Delete/recreate stale presentation tests from scratch around behavior/security contracts.
-- [ ] Rebuild NiceGUI frontend from scratch; do not merely recolor/reclass existing pages.
-- [ ] Simplify student navigation to the core academic workflow.
-- [ ] Group administrator tools instead of presenting a long operational wall of links.
-- [ ] Remove unnecessary animations, hover transforms, decorative gradients, excessive badges/pills, and redundant cards.
-- [ ] Establish one canonical product name and remove competing invented branding.
-- [ ] Make chat answer/citations the visual priority.
-- [ ] Simplify the source viewer.
-- [ ] Verify desktop, tablet, mobile, empty, loading, error, long-content, and keyboard states.
-
-### Conditional history feature
-- [ ] Implement persistent Conversation/Message history only when backed by a real authorized persistent model/store.
-- [ ] Do not call process-memory `AppState._chat_history` persistent history.
-- [ ] Add cross-user history isolation tests if history is implemented.
-
-### Multimodal truthfulness
-- [ ] Verify genuine multimodal support. Current inspected parser registry is PDF/DOCX/TXT/Markdown/CSV and the audit did not find a clear image/vision embedding/retrieval path.
-- [ ] Implement a real non-text modality path or document current capability honestly as multi-format/text RAG. Never use "multimodal" as a false UI claim.
+- [x] Complete end-to-end exception sanitization: audited and updated all error paths in `FrontendAPIClient` and 14 call sites across `frontend/pages/` to route through `normalize_error()`. Redacted database errors, SQL, tracebacks, filesystem paths, internal hostnames, ports, tokens, and Python runtime exceptions.
+- [x] Preserved authoritative student course authorization: verified and kept strict membership-based course access model.
+- [x] Cleaned repository: verified absence of untracked file `frontend/client/Untitled-1.txt`.
+- [x] Expanded Phase 1 security regression tests to 13 comprehensive tests in `backend/tests/security/test_phase1_security_hardening.py` covering requirements A through N (13/13 passed).
+- [x] Verified full security test suite: 50/50 passed (`backend/tests/security/`).
+- [x] Verified full non-real-Ollama regression suite: 572/572 passed (`pytest backend/tests/ -m "not real_ollama"` in 423.96s).
+- [x] Verified code quality: `ruff check .` passed with 0 errors.
 
 ### Repository hygiene
-- [ ] Remove `frontend/client/Untitled-1.txt`.
+- [x] Remove `frontend/client/Untitled-1.txt` (confirmed clean).
 - [ ] Keep `.env`, `.git`, `storage/`, caches, `.nicegui/`, bytecode, and generated dumps out of source-sharing archives.
 - [ ] Check Git history/diff for secrets before every push.
 

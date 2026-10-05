@@ -14,6 +14,7 @@ from nicegui import ui
 
 from backend.app.core.permissions import PERMISSION_GROUPS
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import AdminUserDTO
 from frontend.components.layout import page_layout
 from frontend.components.ui_kit import render_alert, render_empty_state
@@ -379,7 +380,7 @@ def register_admin_users_page() -> None:
                     refresh_admins()
                 except ValueError as err:
                     with form_alert:
-                        render_alert(str(err), level="negative")
+                        render_alert(normalize_error(err, context="admin"), level="negative")
                 finally:
                     submit_btn.enable()
 
@@ -529,7 +530,7 @@ def register_admin_users_page() -> None:
                                 dialog.close()
                                 refresh_admins()
                             except ValueError as exc:
-                                ui.notify(str(exc), type="negative")
+                                ui.notify(normalize_error(exc, context="admin"), type="negative")
 
                         ui.button("Save Permissions", icon="save", on_click=save_permissions).props(
                             "color=purple dense no-caps"
@@ -566,7 +567,7 @@ def register_admin_users_page() -> None:
                     render_empty_state(
                         icon="error_outline",
                         title="Unable to Load Administrators",
-                        description=str(err),
+                        description=normalize_error(err, context="admin"),
                     )
                     return
 

@@ -58,20 +58,6 @@ def get_current_user_optional(
         if auth_header and auth_header.startswith("Bearer "):
             raw_token = auth_header[7:].strip()
 
-    # Fallback to NiceGUI user storage if request is within an active NiceGUI session
-    if not raw_token and "session" in request.scope:
-        nicegui_session_id = request.scope["session"].get("id")
-        if nicegui_session_id:
-            try:
-                from nicegui import app as nicegui_app
-
-                if hasattr(nicegui_app, "storage") and hasattr(nicegui_app.storage, "_users"):
-                    user_storage = nicegui_app.storage._users.get(nicegui_session_id)
-                    if user_storage:
-                        raw_token = user_storage.get("auth_session_token")
-            except Exception:
-                pass
-
     if not raw_token:
         return None
 

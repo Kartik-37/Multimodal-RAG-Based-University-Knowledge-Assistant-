@@ -14,6 +14,7 @@ aesthetics, and strict server-side role enforcement.
 from nicegui import ui
 
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.components.layout import _handle_logout, auth_layout
 from frontend.components.ui_kit import render_alert
 
@@ -163,7 +164,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                     ui.navigate.to("/dashboard")
                 except ValueError as err:
                     with error_container:
-                        render_alert(str(err), "negative")
+                        render_alert(normalize_error(err, context="auth"), "negative")
                 finally:
                     submit_btn.props(remove="loading disable")
                     submit_btn.text = "Student Sign In" if is_student else "Administrator Sign In"
@@ -745,7 +746,7 @@ def register_auth_pages() -> None:
                         ui.navigate.to("/dashboard")
                     except ValueError as err:
                         with error_container:
-                            render_alert(str(err), "negative")
+                            render_alert(normalize_error(err, context="auth"), "negative")
                     finally:
                         reg_btn.props(remove="loading disable")
                         reg_btn.text = "Create Student Account"

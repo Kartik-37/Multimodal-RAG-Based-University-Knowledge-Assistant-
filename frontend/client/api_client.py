@@ -20,10 +20,9 @@ from typing import Any
 from urllib.parse import unquote
 
 import anyio
-from anyio.from_thread import start_blocking_portal
 import httpx
+from anyio.from_thread import start_blocking_portal
 
-from backend.app.core.config import settings
 from backend.app.core.security import SESSION_COOKIE_NAME
 from backend.app.main import app
 from frontend.client.error_handler import normalize_error
@@ -178,7 +177,6 @@ class FrontendAPIClient:
         self._session_token = token
         if token:
             self._http.cookies.set(SESSION_COOKIE_NAME, token)
-            self._http.headers["Authorization"] = f"Bearer {token}"
         else:
             self.clear_session()
 
@@ -197,7 +195,6 @@ class FrontendAPIClient:
         """If response is 401 Unauthorized or 403 Forbidden, automatically invalidate the local session."""
         if status_code in (401, 403):
             self.clear_session()
-            _set_persistent_token(None)
 
     def login(self, email: str, password: str, required_role: str | None = None) -> UserDTO:
         """Authenticate user against Argon2id hash and establish PostgreSQL session."""
@@ -238,7 +235,6 @@ class FrontendAPIClient:
         raw_token = self._http.cookies.get(SESSION_COOKIE_NAME)
         if raw_token:
             self._session_token = raw_token
-            self._http.headers["Authorization"] = f"Bearer {raw_token}"
         return self._current_user
 
     def student_login(self, email: str, password: str) -> UserDTO:
@@ -276,10 +272,10 @@ class FrontendAPIClient:
         # Automatically authenticate the new student strictly into the student portal
         try:
             return self.student_login(email=email, password=password)
-        except Exception as exc:
+        except Exception:
             raise ValueError(
-                f"Account created successfully, but automatic login failed: {exc}"
-            ) from exc
+                "Account created successfully. Please sign in with your credentials on the login page."
+            ) from None
 
     def logout(self) -> None:
         """Terminate active session in PostgreSQL and clear cookie."""
@@ -553,8 +549,11 @@ class FrontendAPIClient:
         if resp.status_code == 403:
             raise ValueError("Students are not permitted to trigger vector indexing.")
         if resp.status_code not in (200, 202):
-            detail = resp.json().get("detail", "Failed to trigger vector indexing.")
-            raise ValueError(detail)
+            try:
+                detail = resp.json().get("detail", "Failed to trigger vector indexing.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="document"))
 
         item = resp.json()
         return DocumentDTO(
@@ -611,8 +610,11 @@ class FrontendAPIClient:
         if resp.status_code == 403:
             raise ValueError("You do not have permission to retry indexing.")
         if resp.status_code not in (200, 202):
-            detail = resp.json().get("detail", "Failed to retry indexing.")
-            raise ValueError(detail)
+            try:
+                detail = resp.json().get("detail", "Failed to retry indexing.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="document"))
 
         item = resp.json()
         doc_id = str(item.get("document_id") or item.get("id"))
@@ -899,11 +901,17 @@ class FrontendAPIClient:
         if resp.status_code == 404:
             raise ValueError("Knowledge base not found or unauthorized.")
         if resp.status_code == 422:
-            detail = resp.json().get("detail", "Invalid query parameters.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Invalid query parameters.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
         if resp.status_code != 200:
-            detail = resp.json().get("detail", "Vector retrieval failed.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Vector retrieval failed.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
 
         data = resp.json()
         return [
@@ -951,11 +959,17 @@ class FrontendAPIClient:
         if resp.status_code == 404:
             raise ValueError("Knowledge base not found or unauthorized.")
         if resp.status_code == 422:
-            detail = resp.json().get("detail", "Invalid query parameters.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Invalid query parameters.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
         if resp.status_code != 200:
-            detail = resp.json().get("detail", "Lexical retrieval failed.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Lexical retrieval failed.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
 
         data = resp.json()
         return [
@@ -1002,14 +1016,19 @@ class FrontendAPIClient:
         if resp.status_code == 404:
             raise ValueError("Knowledge base not found or unauthorized.")
         if resp.status_code == 422:
-            detail = resp.json().get("detail", "Invalid query parameters.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Invalid query parameters.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
         if resp.status_code == 503:
-            detail = resp.json().get("detail", "Embedding provider unavailable.")
-            raise ValueError(str(detail))
+            raise ValueError("Search service is temporarily unavailable. Please try again.")
         if resp.status_code != 200:
-            detail = resp.json().get("detail", "Hybrid retrieval failed.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Hybrid retrieval failed.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
 
         data = resp.json()
         return [
@@ -1064,14 +1083,19 @@ class FrontendAPIClient:
         if resp.status_code == 404:
             raise ValueError("Knowledge base not found or unauthorized.")
         if resp.status_code == 422:
-            detail = resp.json().get("detail", "Invalid query parameters.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Invalid query parameters.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
         if resp.status_code == 503:
-            detail = resp.json().get("detail", "Inference provider unavailable.")
-            raise ValueError(str(detail))
+            raise ValueError("Ranking service is temporarily unavailable. Please try again.")
         if resp.status_code != 200:
-            detail = resp.json().get("detail", "Reranking operation failed.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Reranking operation failed.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
 
         data = resp.json()
         return [
@@ -1106,10 +1130,13 @@ class FrontendAPIClient:
         if resp.status_code == 401:
             raise ValueError("Authentication required to process queries.")
         if resp.status_code == 422:
-            detail = resp.json().get("detail", "Invalid query.")
-            raise ValueError(str(detail))
+            try:
+                detail = resp.json().get("detail", "Invalid query.")
+            except Exception:
+                detail = resp.text
+            raise ValueError(normalize_error(detail, context="chat"))
         if resp.status_code != 200:
-            raise ValueError("Query processing failed.")
+            raise ValueError("Query processing failed. Please try again.")
 
         item = resp.json()
         return QueryProcessingResultDTO(
@@ -1307,43 +1334,45 @@ def _get_browser_session_id() -> str | None:
     return None
 
 
-def _get_persistent_token() -> str | None:
-    """Retrieve session token from server-side app.storage.user if in UI context."""
+def _get_incoming_session_cookie() -> str | None:
+    """Extract session_id cookie from active request context if present."""
+    # 1. From NiceGUI storage request contextvar
     try:
-        from nicegui import app
+        from nicegui.storage import request_contextvar
 
-        if hasattr(app, "storage") and hasattr(app.storage, "user"):
-            return app.storage.user.get("auth_session_token")
+        req = request_contextvar.get()
+        if req and hasattr(req, "cookies") and SESSION_COOKIE_NAME in req.cookies:
+            return req.cookies.get(SESSION_COOKIE_NAME)
     except Exception:
         pass
+
+    # 2. From NiceGUI context.client.request
+    try:
+        from nicegui import context
+
+        client = context.client
+        if client and hasattr(client, "request") and client.request:
+            req = client.request
+            if hasattr(req, "cookies") and SESSION_COOKIE_NAME in req.cookies:
+                return req.cookies.get(SESSION_COOKIE_NAME)
+    except Exception:
+        pass
+
     return None
-
-
-def _set_persistent_token(token: str | None) -> None:
-    """Save or remove session token in server-side app.storage.user if in UI context."""
-    try:
-        from nicegui import app
-
-        if hasattr(app, "storage") and hasattr(app.storage, "user"):
-            if token:
-                app.storage.user["auth_session_token"] = token
-            else:
-                app.storage.user.pop("auth_session_token", None)
-    except Exception:
-        pass
 
 
 class _SessionAPIClientProxy:
     """Resolve one FrontendAPIClient per browser session.
 
     The FastAPI session is stored in PostgreSQL and authenticated via an HttpOnly
-    cookie or Authorization header. In NiceGUI, each browser user is identified by
-    a persistent session ID (via Starlette SessionMiddleware).
+    cookie. In NiceGUI, each browser user is identified by a persistent session ID
+    (via Starlette SessionMiddleware).
 
     This proxy ensures:
     - Each browser client has an isolated FrontendAPIClient with its own cookie jar.
     - User A never shares or inherits User B's authentication or cookies.
-    - Authentication survives page navigation (e.g. /login -> /dashboard).
+    - Raw tokens are NEVER persisted in NiceGUI app.storage.user or client-side storage.
+    - Authentication survives page navigation via server memory and HttpOnly cookies.
     - When outside a NiceGUI client context (unit tests / CLI code), a private fallback client is used.
     """
 
@@ -1359,20 +1388,16 @@ class _SessionAPIClientProxy:
         client = _session_clients.get(session_id)
         if client is None:
             client = FrontendAPIClient()
-            saved_token = _get_persistent_token()
-            if saved_token:
-                client.set_session_token(saved_token)
+            incoming_cookie = _get_incoming_session_cookie()
+            if incoming_cookie:
+                client.set_session_token(incoming_cookie)
             _session_clients[session_id] = client
 
         return client
 
     def login(self, email: str, password: str, required_role: str | None = None) -> UserDTO:
         client = self._get_client()
-        user = client.login(email, password, required_role=required_role)
-        token = client.get_session_token()
-        if token:
-            _set_persistent_token(token)
-        return user
+        return client.login(email, password, required_role=required_role)
 
     def student_login(self, email: str, password: str) -> UserDTO:
         return self.login(email, password, required_role="STUDENT")
@@ -1382,11 +1407,7 @@ class _SessionAPIClientProxy:
 
     def register(self, email: str, password: str, full_name: str) -> UserDTO:
         client = self._get_client()
-        user = client.register(email, password, full_name)
-        token = client.get_session_token()
-        if token:
-            _set_persistent_token(token)
-        return user
+        return client.register(email, password, full_name)
 
     def logout(self) -> None:
         session_id = _get_browser_session_id()
@@ -1394,33 +1415,23 @@ class _SessionAPIClientProxy:
         try:
             client.logout()
         finally:
-            _set_persistent_token(None)
             if session_id and session_id in _session_clients:
                 _session_clients.pop(session_id, None)
 
     def get_current_user(self) -> UserDTO | None:
         client = self._get_client()
-        user = client.get_current_user()
-        if user is None:
-            _set_persistent_token(None)
-        return user
+        return client.get_current_user()
 
     def clear_session(self) -> None:
         session_id = _get_browser_session_id()
         client = self._get_client()
         client.clear_session()
-        _set_persistent_token(None)
         if session_id and session_id in _session_clients:
             _session_clients.pop(session_id, None)
 
     def get_session_token(self) -> str | None:
         client = self._get_client()
-        token = client.get_session_token()
-        if not token:
-            token = _get_persistent_token()
-            if token:
-                client.set_session_token(token)
-        return token
+        return client.get_session_token()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._get_client(), name)

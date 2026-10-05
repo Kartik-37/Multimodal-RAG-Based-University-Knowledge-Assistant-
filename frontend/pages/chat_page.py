@@ -15,6 +15,7 @@ from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import CitationDTO, DocumentDTO, KnowledgeBaseDTO
 from frontend.components.evidence_panel import render_evidence_panel
 from frontend.components.hybrid_inspect import open_hybrid_retrieval_dialog
@@ -143,7 +144,7 @@ def register_chat_page() -> None:
                 try:
                     kbs = api_client.get_knowledge_bases()
                 except Exception:
-                    course_load_error = str(err)
+                    course_load_error = normalize_error(err, context="course")
 
             # Check requested course; verify existence across global catalog if not in initial list
             requested_kb = next((course for course in kbs if course.id == kb_id), None)
@@ -194,7 +195,7 @@ def register_chat_page() -> None:
                         active_scope["docs"] = api_client.get_documents(active_scope["kb_id"])
                     except ValueError as err:
                         active_scope["docs"] = []
-                        document_load_error = str(err)
+                        document_load_error = normalize_error(err, context="document")
                 else:
                     active_scope["docs"] = []
 

@@ -11,8 +11,10 @@ Validates all Phase 1 requirements:
 7. Cross-user/role authorization rules are strictly maintained for document streaming.
 """
 
-from pathlib import Path
 import uuid
+from datetime import UTC
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -161,6 +163,198 @@ class TestPhase1SecurityHardening:
         # 3. backend deps.py
         deps_code = Path("backend/app/api/deps.py").read_text(encoding="utf-8")
         assert 'request.query_params.get("token")' not in deps_code
+        assert "nicegui" not in deps_code.lower()
+
+    def test_backend_deps_contains_no_nicegui_dependency(self) -> None:
+        """Requirement F: backend deps.py must NOT import or depend on NiceGUI internals."""
+        deps_code = Path("backend/app/api/deps.py").read_text(encoding="utf-8")
+        assert "from nicegui" not in deps_code
+        assert "import nicegui" not in deps_code
+        assert "nicegui_app" not in deps_code
+        assert "nicegui" not in deps_code.lower()
+
+    def test_no_app_storage_user_session_token_persistence(self) -> None:
+        """Requirement G: app.storage.user is not used to persist raw auth session tokens."""
+        for path in Path("frontend").rglob("*.py"):
+            code = path.read_text(encoding="utf-8")
+            assert "auth_session_token" not in code, f"Found auth_session_token in {path}"
+            assert "_get_persistent_token" not in code, f"Found _get_persistent_token in {path}"
+            assert "_set_persistent_token" not in code, f"Found _set_persistent_token in {path}"
+
+    def test_session_lifecycle_and_logout_invalidation(self, db_session: Session) -> None:
+        """Requirements H & I: Normal session lifecycle works, and logout invalidates session."""
+        email = f"user_{uuid.uuid4().hex[:6]}@university.edu"
+        password = "UserPass123!"
+        _create_test_user(db_session, email=email, password=password, role=UserRole.STUDENT)
+
+        client = TestClient(app)
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password},
+        )
+        assert login_resp.status_code == 200
+        token = client.cookies.get(SESSION_COOKIE_NAME)
+        assert token is not None
+
+        # Verify active session works
+        me_resp = client.get("/api/v1/auth/me")
+        assert me_resp.status_code == 200
+        assert me_resp.json()["email"] == email
+
+        # Logout
+        logout_resp = client.post("/api/v1/auth/logout")
+        assert logout_resp.status_code == 200
+
+        # Verify cookie is invalidated and subsequent request returns 401
+        post_logout_resp = client.get("/api/v1/auth/me")
+        assert post_logout_resp.status_code == 401
+
+    def test_expired_session_is_rejected(self, db_session: Session) -> None:
+        """Requirement J: Expired sessions are rejected with 401."""
+        from datetime import datetime, timedelta
+
+        from backend.app.core.security import hash_session_token
+        from backend.app.models.user import UserSession
+
+        email = f"expired_{uuid.uuid4().hex[:6]}@university.edu"
+        password = "ExpiredPass123!"
+        user = _create_test_user(db_session, email=email, password=password, role=UserRole.STUDENT)
+
+        raw_token = f"fake_token_{uuid.uuid4().hex}"
+        token_hash = hash_session_token(raw_token)
+        past_time = datetime.now(UTC) - timedelta(hours=2)
+
+        expired_session = UserSession(
+            user_id=user.id,
+            session_token_hash=token_hash,
+            expires_at=past_time,
+        )
+        db_session.add(expired_session)
+        db_session.commit()
+
+        client = TestClient(app)
+        client.cookies.set(SESSION_COOKIE_NAME, raw_token)
+        resp = client.get("/api/v1/auth/me")
+        assert resp.status_code == 401
+
+    def test_multiple_browser_sessions_remain_isolated(self, db_session: Session) -> None:
+        """Requirement K: Multiple user sessions remain strictly isolated."""
+        user_a = _create_test_user(
+            db_session,
+            email=f"user_a_{uuid.uuid4().hex[:6]}@university.edu",
+            password="PasswordA123!",
+            role=UserRole.ADMIN,
+        )
+        user_b = _create_test_user(
+            db_session,
+            email=f"user_b_{uuid.uuid4().hex[:6]}@university.edu",
+            password="PasswordB123!",
+            role=UserRole.ADMIN,
+        )
+
+        client_a = TestClient(app)
+        client_b = TestClient(app)
+
+        client_a.post("/api/v1/auth/login", json={"email": user_a.email, "password": "PasswordA123!"})
+        client_b.post("/api/v1/auth/login", json={"email": user_b.email, "password": "PasswordB123!"})
+
+        assert client_a.cookies.get(SESSION_COOKIE_NAME) != client_b.cookies.get(SESSION_COOKIE_NAME)
+
+        # Admin A creates a course
+        kb_resp = client_a.post("/api/v1/knowledge-bases", json={"name": "A Private Course"})
+        assert kb_resp.status_code == 201
+        kb_id = kb_resp.json()["id"]
+
+        # Admin B cannot access Admin A's private course (returns 404)
+        get_b = client_b.get(f"/api/v1/knowledge-bases/{kb_id}")
+        assert get_b.status_code == 404
+
+    def test_registration_failure_does_not_expose_raw_exception(self) -> None:
+        """Requirement M: Registration error handling never exposes raw internal exception details."""
+        from unittest.mock import MagicMock
+
+        from frontend.client.api_client import FrontendAPIClient
+
+        test_client = FrontendAPIClient()
+        test_client._http = MagicMock()
+
+        # Mock successful registration response
+        mock_reg_resp = MagicMock()
+        mock_reg_resp.status_code = 201
+        mock_reg_resp.json.return_value = {
+            "id": str(uuid.uuid4()),
+            "email": "newstudent@university.edu",
+            "full_name": "New Student",
+            "role": "STUDENT",
+        }
+        test_client._http.post.side_effect = [
+            mock_reg_resp,
+            Exception("Internal Server Traceback: connection to postgresql://admin:secret@127.0.0.1:5432 failed"),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            test_client.register(
+                email="newstudent@university.edu",
+                password="StudentPassword123!",
+                full_name="New Student",
+            )
+
+        err_msg = str(exc_info.value)
+        assert "postgresql://" not in err_msg
+        assert "5432" not in err_msg
+        assert "secret" not in err_msg
+        assert "traceback" not in err_msg.lower()
+        assert "Account created successfully. Please sign in with your credentials on the login page." in err_msg
+
+    def test_api_client_error_paths_sanitize_raw_backend_details(self) -> None:
+        """Requirement N: Retrieval, indexing, reranking, and query processing normalize error details."""
+        from unittest.mock import MagicMock
+
+        from frontend.client.api_client import FrontendAPIClient
+
+        test_client = FrontendAPIClient()
+        test_client._http = MagicMock()
+
+        raw_leak_response = MagicMock()
+        raw_leak_response.status_code = 500
+        raw_leak_response.headers = {"content-type": "application/json"}
+        raw_leak_response.json.return_value = {
+            "detail": "sqlalchemy.exc.OperationalError: SELECT * FROM documents WHERE port 5432 D:\\Kartik\\db.py"
+        }
+        test_client._http.post.return_value = raw_leak_response
+
+        # Test index_document
+        with pytest.raises(ValueError) as exc:
+            test_client.index_document(str(uuid.uuid4()), str(uuid.uuid4()))
+        assert "sqlalchemy" not in str(exc.value)
+        assert "5432" not in str(exc.value)
+        assert "D:\\" not in str(exc.value)
+
+        # Test retry_indexing
+        with pytest.raises(ValueError) as exc:
+            test_client.retry_indexing(str(uuid.uuid4()), str(uuid.uuid4()))
+        assert "sqlalchemy" not in str(exc.value)
+
+        # Test retrieve_chunks
+        with pytest.raises(ValueError) as exc:
+            test_client.retrieve_chunks(str(uuid.uuid4()), "search query")
+        assert "sqlalchemy" not in str(exc.value)
+        assert "Unable to complete query synthesis" in str(exc.value) or "server processing error" in str(exc.value)
+
+        # Test retrieve_lexical_chunks
+        with pytest.raises(ValueError) as exc:
+            test_client.retrieve_lexical_chunks(str(uuid.uuid4()), "search query")
+        assert "sqlalchemy" not in str(exc.value)
+
+        # Test retrieve_hybrid_chunks
+        with pytest.raises(ValueError) as exc:
+            test_client.retrieve_hybrid_chunks(str(uuid.uuid4()), "search query")
+        assert "sqlalchemy" not in str(exc.value)
+
+        # Test rerank_chunks
+        with pytest.raises(ValueError) as exc:
+            test_client.rerank_chunks(str(uuid.uuid4()), "search query")
+        assert "sqlalchemy" not in str(exc.value)
 
     def test_production_api_client_does_not_use_testclient(self) -> None:
         """Verify FrontendAPIClient does not import or instantiate TestClient."""
