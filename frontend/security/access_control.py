@@ -62,14 +62,19 @@ def has_admin_permission(user: UserDTO | None, permission: Permission | str) -> 
 def can_access_route(user: UserDTO | None, route: str) -> bool:
     """Determine whether a given user role has capability to access an application route.
 
-    Framework-independent behavioral boundary that survives visual frontend redesigns.
+    Authoritative authorization is ALWAYS enforced server-side by backend API dependencies
+    and database query layers. This client-side capability helper ensures the UI does not
+    expose controls or navigate to routes that the backend would reject.
+
+    Rules:
+    - None (unauthenticated): Only routes in PUBLIC_ROUTES are accessible.
+    - STUDENT: Only permitted student routes (/dashboard, /knowledge-bases, /chat, /profile).
+    - ADMIN (MAIN_ADMIN): Full administrative route suite.
+    - ADMIN (FACULTY_ADMIN): Fine-grained permission-checked capabilities (plus /dashboard, /profile).
+    - Unknown / malformed role: Fails closed — strictly DENIED all protected routes.
     """
     if not user:
         return route in PUBLIC_ROUTES
-
-    # Common routes accessible to all authenticated users
-    if route in {"/dashboard", "/profile"}:
-        return True
 
     # Student capabilities: strictly scoped to student dashboard, chat, and course list
     if user.role == "STUDENT":
@@ -77,6 +82,10 @@ def can_access_route(user: UserDTO | None, route: str) -> bool:
 
     # Administrator capabilities
     if user.role == "ADMIN":
+        # Common routes accessible to authenticated administrators
+        if route in {"/dashboard", "/profile"}:
+            return True
+
         if user.admin_role == "MAIN_ADMIN":
             return route in {
                 "/dashboard",
@@ -103,5 +112,7 @@ def can_access_route(user: UserDTO | None, route: str) -> bool:
             return has_admin_permission(user, Permission.ADMIN_CHAT)
         if route in {"/administrators", "/activity", "/system-health"}:
             return has_admin_permission(user, Permission.ADMIN_VIEW)
+        return False
 
+    # Fail closed for any unknown, unhandled, or malformed role
     return False

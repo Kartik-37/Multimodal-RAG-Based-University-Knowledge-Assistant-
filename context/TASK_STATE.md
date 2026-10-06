@@ -46,36 +46,38 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
   - Verified physical absence of `frontend/client/Untitled-1.txt` (`Test-Path` returned `False`) and verified no other `Untitled` scratch files exist in the project.
   - Verified clean working tree and `ruff check .` passes with 0 errors.
 
-### Phase 3: Frontend Test Suite Rewrite & Future-Proofing
+### Phase 3: Frontend Test Suite Rewrite, Architecture Decoupling & Content Safety
 - **Status:** **COMPLETED & VERIFIED**
-- **Commit:** `test(frontend): decouple behavioral tests from UI implementation`
+- **Commit:** Pending final correction commit (`fix(testing): finalize Phase 3 boundaries and content safety`)
 - **Accomplishments:**
   - Removed and verified physical absence of `frontend/client/Untitled-1.txt` (`Test-Path` returned `False`) and verified zero `*Untitled*` scratch files across the entire repository.
   - Verified and handled generated egg-info packaging artifact (`bca_rag_assistant.egg-info/` removed from workspace; confirmed `.gitignore` contains `*.egg-info/`).
-  - Framework-independent access control module:
-    * Created `frontend/security/access_control.py` containing authoritative `PUBLIC_ROUTES`, `has_admin_permission()`, and `can_access_route()`.
-    * Corrected `/indexing` capability gating to strictly require `Permission.DOCUMENT_INDEX` or `Permission.DOCUMENT_INDEX_RETRY` (properly differentiated from `DOCUMENT_VIEW`).
-    * Completely removed presentation code coupling; `frontend/components/layout.py` now imports from `access_control.py`.
-  - Framework-independent citation processing module:
-    * Created `frontend/client/citations.py` providing pure semantic parsing, index mapping (`SemanticCitationRef`), and marker substitution (`extract_resolved_citations`, `replace_citation_markers`) without HTML, DOM, NiceGUI, or Tailwind CSS dependencies.
-  - Framework-independent content safety module:
-    * Created `frontend/client/content_safety.py` housing pure string `sanitize_markdown_text()`.
-  - Decoupled current chat presentation page:
-    * `frontend/pages/chat_page.py` imports and delegates to `frontend.client.citations` and `frontend.client.content_safety` while continuing to render current visual citation-pill markup.
-  - Decoupled behavioral unit tests from presentation layer:
-    * `backend/tests/unit/test_frontend.py` eliminated all imports from `frontend.components` and `frontend.pages`; tested pure client-side DTO conversions, state isolation, semantic citation extraction, markdown sanitization, and expanded role/capability combinations (student, main admin, faculty admin with/without fine-grained permissions, unauthenticated/unknown roles).
-    * `backend/tests/unit/test_source_viewer.py` refactored to verify pure semantic citation mapping, document UUID contracts, page fragment syntax, and absence of credential leakage without asserting HTML attributes like `data-citation-index`.
-    * `backend/tests/unit/test_student_dashboard_fixes.py` refactored to test semantic citation resolution without testing chat HTML.
-    * `backend/tests/unit/test_step21e_frontend_workflow.py`, `test_admin_redesign_workflow.py`, and `test_step22a_auth_portals.py` updated to import capability helpers from `frontend.security.access_control`.
-  - Made `backend/tests/unit/conftest.py` resilient:
-    * Configures `SessionLocal` to point to test database when PostgreSQL is available (ensuring `test_indexing_service.py` succeeds), while gracefully no-oping when offline.
-  - Confirmed zero presentation locks across test suite (zero matches for `box-border`, `max-w-`, `animate-`, `citation-pill`, `card_count`, `hover:`, `transition-`, `shadow-`, `gradient`, `text-blue-`, `bg-`, `h-[`, `w-[`, `data-citation-index`).
-  - Real API client database workflows maintained in `backend/tests/integration/test_frontend_workflows.py`.
+  - Unit tests made truly framework-independent:
+    * Completely removed `nicegui.storage.request_contextvar` and `starlette.requests.Request` from `backend/tests/unit/test_frontend.py`.
+    * Transferred AppState per-browser-session isolation test to `backend/tests/integration/test_frontend_workflows.py` (`TestAppStateSessionIntegrationContracts`), maintaining pure in-memory unit tests in `test_frontend.py`.
+    * Documented unit vs integration boundary clearly in test module docstrings.
+  - Removed presentation coupling from authentication persistence test:
+    * Removed `from frontend.components.layout import page_layout` and `with page_layout(...)` invocation from `backend/tests/integration/test_auth_session_persistence.py`.
+    * Replaced with stable verification of authenticated user identity, role, and session token state.
+  - Fail-closed access control on unknown roles:
+    * Corrected `frontend/security/access_control.py`: unknown and malformed roles are strictly DENIED all protected routes (`/dashboard`, `/profile`, `/chat`, `/knowledge-bases`, `/documents`, `/indexing`, `/administrators`, `/activity`, `/system-health`).
+    * Backend authorization remains authoritative; access control is strictly client capability gating.
+    * Added dedicated unit test `test_unknown_role_is_denied_protected_routes` verifying fail-closed denial.
+  - Content safety and dangerous URI scheme neutralization:
+    * Hardened `frontend/client/content_safety.py` to identify and neutralize active URI schemes: `javascript:` (standard, mixed-case `JaVaScRiPt:`, whitespace/tab/newline obfuscations), `vbscript:`, `data:text/html`, and dangerous HTML `href`/`src` attributes.
+    * Preserves legitimate Markdown syntax (`**bold**`, `*italic*`, code) and safe HTTPS/HTTP URLs (`https://university.edu`).
+    * Replaced `href="javascript:void(0)"` with safe anchor `href="#"` in `chat_page.py` citation pills, eliminating script schemes from citation markup.
+  - Citation semantic processing framework independence:
+    * `frontend/client/citations.py` parses and resolves citation markers without HTML or UI dependencies.
+    * Protected citation-like syntax inside inline code (`` `...` ``) and fenced code blocks (` ```...``` `), ensuring code snippets such as `arr[1]` are never corrupted into citation references.
+  - Removed swallowing unit conftest:
+    * Deleted redundant and error-masking `backend/tests/unit/conftest.py`, ensuring root `conftest.py` manages transactions cleanly without hiding database connection failures.
+  - Confirmed zero presentation locks across test suite (zero matches for `box-border`, `max-w-`, `animate-`, `citation-pill`, `card_count`, `hover:`, `transition-`, `shadow-`, `gradient`, `class=`, `style=`, `page_layout`).
   - Verification on local PostgreSQL 16 server:
-    * `pytest backend/tests/unit/ -v`: 335 passed, 0 failed.
+    * `pytest backend/tests/unit/ -v`: 342 passed, 0 failed.
     * `pytest backend/tests/security/ -v`: 50 passed, 0 failed.
-    * `pytest backend/tests/integration/ -v`: 190 passed, 0 failed.
-    * `pytest backend/tests/ -m "not real_ollama"`: 575 passed, 0 failed (in 423.06s).
+    * `pytest backend/tests/integration/ -v`: 191 passed, 0 failed.
+    * `pytest backend/tests/ -m "not real_ollama"`: 583 passed, 0 failed (in 413.25s; tests marked `real_ollama` were excluded from this verification).
     * `ruff check .`: All checks passed with 0 errors.
 
 ### Phase 4: Frontend Rebuild from Scratch

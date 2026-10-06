@@ -1,14 +1,16 @@
 """
-Integration Tests for Frontend API Client Workflows and Route Registration.
+Integration Tests for Frontend API Client Workflows, AppState Session Isolation, and Route Registration.
 
 Validates end-to-end integration contracts between FrontendAPIClient, NiceGUI
-route registration, FastAPI API endpoints, and the PostgreSQL database:
+route registration, per-browser-session AppState proxy isolation (via Starlette/NiceGUI
+request context), FastAPI API endpoints, and the PostgreSQL database:
 - User registration, login, and session clearance against real database.
 - Knowledge base CRUD workflows.
 - Document upload, listing, and deletion workflows.
 - Backend query processing integration.
 - Public registration strict student role assignment.
 - Application and authentication route registration contracts.
+- Per-browser-session AppState isolation using real request_contextvar and Starlette Request.
 """
 
 import uuid
@@ -153,3 +155,34 @@ class TestFrontendRouteContracts:
         assert "/student/login" in registered
         assert "/admin/login" in registered
         assert "/register" in registered
+
+
+class TestAppStateSessionIntegrationContracts:
+    """Integration test suite for per-browser-session AppState isolation.
+
+    Validates that the NiceGUI/Starlette request contextvar properly isolates AppState
+    instances between independent browser sessions, ensuring no cross-session state leakage.
+    """
+
+    def test_app_state_per_session_isolation(self) -> None:
+        from nicegui.storage import request_contextvar
+        from starlette.requests import Request
+
+        from frontend.state.app_state import AppState, _session_app_states
+
+        _session_app_states.clear()
+        req1 = Request({"type": "http", "method": "GET", "path": "/", "session": {"id": "session-1"}})
+        req2 = Request({"type": "http", "method": "GET", "path": "/", "session": {"id": "session-2"}})
+
+        request_contextvar.set(req1)
+        state1 = AppState()
+        state1.add_user_message("User 1 question")
+
+        request_contextvar.set(req2)
+        state2 = AppState()
+        assert len(state2.chat_history) == 0
+
+        request_contextvar.set(req1)
+        assert len(state1.chat_history) == 1
+
+        request_contextvar.set(None)

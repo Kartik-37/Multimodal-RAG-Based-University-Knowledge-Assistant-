@@ -2,20 +2,21 @@
 Behavioral and Contract Unit Tests for Frontend Presentation Layer.
 
 Validates pure client-side contracts, data transformations, and state management
-independently of database services or visual markup:
+independently of database services, Starlette/NiceGUI request contexts, or visual markup:
 - API client input validation, DTO conversions, and mocked response handling.
-- AppState in-memory lifecycle and per-session isolation.
-- Citation parsing, semantic linking, and security escaping.
-- Markdown sanitization and error normalization.
-- Stable role-based capability and route access semantics.
+- AppState in-memory lifecycle and state mutations (pure unit isolation).
+  (Note: Per-browser-session isolation via Starlette/NiceGUI request_contextvar is
+   tested in integration tests under backend/tests/integration/test_frontend_workflows.py).
+- Citation parsing, semantic linking, code-block preservation, and security escaping.
+- Markdown sanitization, URI scheme neutralizing (javascript:, vbscript:, data:text/html),
+  and error normalization.
+- Stable role-based capability and route access semantics (fail-closed unknown roles).
 """
 
 import uuid
 from unittest.mock import MagicMock
 
 import pytest
-from nicegui.storage import request_contextvar
-from starlette.requests import Request
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import FrontendAPIClient
@@ -34,7 +35,7 @@ from frontend.client.models import (
     UserDTO,
 )
 from frontend.security.access_control import can_access_route, has_admin_permission
-from frontend.state.app_state import AppState, _session_app_states
+from frontend.state.app_state import AppState
 
 # ==============================================================================
 # A. API CLIENT PURE UNIT CONTRACTS
@@ -288,24 +289,6 @@ class TestFrontendStateUnitContracts:
         assert state.is_generating is False
         assert state.generation_error is None
 
-    def test_app_state_per_session_isolation(self) -> None:
-        _session_app_states.clear()
-        req1 = Request({"type": "http", "method": "GET", "path": "/", "session": {"id": "session-1"}})
-        req2 = Request({"type": "http", "method": "GET", "path": "/", "session": {"id": "session-2"}})
-
-        request_contextvar.set(req1)
-        state1 = AppState()
-        state1.add_user_message("User 1 question")
-
-        request_contextvar.set(req2)
-        state2 = AppState()
-        assert len(state2.chat_history) == 0
-
-        request_contextvar.set(req1)
-        assert len(state1.chat_history) == 1
-
-        request_contextvar.set(None)
-
     def test_app_state_is_admin_property(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from frontend.client.api_client import api_client
 
@@ -444,6 +427,31 @@ class TestCitationProcessingUnitContracts:
         assert resolved[0].citation.document_id == "doc-malicious"
         assert resolved[0].citation.document_name == '"><script>alert(1)</script>.pdf'
 
+    def test_citation_markers_in_code_blocks_and_inline_code_are_preserved(
+        self, sample_citations: list[CitationDTO]
+    ) -> None:
+        text = (
+            "Here is array indexing `arr[1]` and a code block:\n"
+            "```python\n"
+            "items = [1, 2]\n"
+            "val = items[1]\n"
+            "source = [source_1]\n"
+            "```\n"
+            "Now here is a real citation [1] and [source_2]."
+        )
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 2
+        assert resolved[0].index == 1
+        assert resolved[1].index == 2
+
+        replaced = replace_citation_markers(text, sample_citations, lambda ref: f"CIT_{ref.index}")
+        assert "`arr[1]`" in replaced
+        assert "items = [1, 2]" in replaced
+        assert "val = items[1]" in replaced
+        assert "source = [source_1]" in replaced
+        assert "CIT_1" in replaced
+        assert "CIT_2" in replaced
+
 
 # ==============================================================================
 # D. MARKDOWN / OUTPUT SECURITY PURE UNIT CONTRACTS
@@ -472,6 +480,71 @@ class TestMarkdownOutputSecurityUnitContracts:
         dangerous = '<img src="missing.png" onerror="alert(document.cookie)">'
         sanitized = sanitize_markdown_text(dangerous)
         assert "onerror=" not in sanitized
+
+    def test_markdown_sanitizer_neutralizes_javascript_uri(self) -> None:
+        malicious = "[Click Me](javascript:alert(1))"
+        sanitized = sanitize_markdown_text(malicious)
+        assert "javascript:" not in sanitized.lower()
+        assert "[Click Me](#)" in sanitized
+
+    def test_markdown_sanitizer_neutralizes_mixed_case_and_whitespace_javascript(self) -> None:
+        cases = [
+            "[Link](JaVaScRiPt:alert(1))",
+            "[Link](  javascript:alert(1))",
+            "[Link](\tjavascript:alert(1))",
+            "[Link](jav&#x61;script:alert(1))",
+        ]
+        for c in cases:
+            sanitized = sanitize_markdown_text(c)
+            assert "(#)" in sanitized
+            assert "javascript" not in sanitized.lower()
+
+    def test_markdown_sanitizer_neutralizes_vbscript_uri(self) -> None:
+        malicious = "[VBScript Link](vbscript:msgbox(1))"
+        sanitized = sanitize_markdown_text(malicious)
+        assert "vbscript:" not in sanitized.lower()
+        assert "(#)" in sanitized
+
+    def test_markdown_sanitizer_neutralizes_dangerous_data_uris(self) -> None:
+        malicious = "[Data Link](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)"
+        sanitized = sanitize_markdown_text(malicious)
+        assert "data:text/html" not in sanitized.lower()
+        assert "(#)" in sanitized
+
+    def test_markdown_sanitizer_neutralizes_dangerous_html_href_and_src(self) -> None:
+        html_input = '<a href="javascript:alert(1)">Click</a><img src="javascript:alert(2)">'
+        sanitized = sanitize_markdown_text(html_input)
+        assert 'href="#"' in sanitized
+        assert "javascript:" not in sanitized.lower()
+
+    def test_markdown_sanitizer_preserves_legitimate_https_links(self) -> None:
+        legit = "[University Portal](https://university.edu)"
+        sanitized = sanitize_markdown_text(legit)
+        assert sanitized == legit
+
+    def test_citation_link_security_and_safe_anchor(self) -> None:
+        from frontend.pages.chat_page import format_citation_links
+
+        sample_cit = [
+            CitationDTO(
+                document_id="doc-1",
+                document_name="Regulations.pdf",
+                page_number=5,
+                chunk_id="chk-1",
+                snippet="Valid snippet",
+                relevance_score=0.9,
+            )
+        ]
+        text = "According to the university charter [1]."
+        formatted = format_citation_links(text, sample_cit)
+        sanitized = sanitize_markdown_text(formatted)
+
+        assert 'href="javascript:' not in formatted.lower()
+        assert 'href="#"' in formatted
+        assert "data-citation-index=\"1\"" in formatted
+        assert "auth_session_token" not in formatted
+        assert "token=" not in formatted
+        assert 'href="#"' in sanitized
 
     def test_error_normalizer_suppresses_sql_and_tracebacks(self) -> None:
         raw_sql_error = (
@@ -528,19 +601,38 @@ class TestRoleCapabilityUnitContracts:
         assert can_access_route(None, "/indexing") is False
         assert can_access_route(None, "/system-health") is False
 
-    def test_unknown_role_cannot_access_protected_routes(self) -> None:
+    def test_unknown_role_is_denied_protected_routes(self) -> None:
         unknown_user = UserDTO(
             id="u-unknown",
             email="unknown@univ.edu",
             full_name="Guest",
             role="GUEST",
         )
-        assert can_access_route(unknown_user, "/dashboard") is True  # Common route
-        assert can_access_route(unknown_user, "/knowledge-bases") is False
-        assert can_access_route(unknown_user, "/documents") is False
-        assert can_access_route(unknown_user, "/indexing") is False
-        assert can_access_route(unknown_user, "/administrators") is False
-        assert can_access_route(unknown_user, "/system-health") is False
+        protected_routes = [
+            "/dashboard",
+            "/profile",
+            "/chat",
+            "/knowledge-bases",
+            "/documents",
+            "/indexing",
+            "/administrators",
+            "/activity",
+            "/system-health",
+        ]
+        for route in protected_routes:
+            assert (
+                can_access_route(unknown_user, route) is False
+            ), f"Unknown role must be denied access to protected route {route}"
+
+        # Test malformed role fails closed
+        malformed_user = UserDTO(
+            id="u-bad",
+            email="bad@univ.edu",
+            full_name="Bad Role",
+            role="MALFORMED_ROLE",
+        )
+        for route in protected_routes:
+            assert can_access_route(malformed_user, route) is False
 
     def test_student_role_route_capabilities(self) -> None:
         student = UserDTO(

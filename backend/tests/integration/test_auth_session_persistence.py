@@ -26,7 +26,6 @@ from starlette.requests import Request
 from backend.app.core.security import get_password_hash, hash_session_token
 from backend.app.models.user import AdminRole, User, UserRole, UserSession
 from frontend.client.api_client import _session_clients, api_client
-from frontend.components.layout import page_layout
 from frontend.state.app_state import _session_app_states, state
 
 
@@ -148,13 +147,10 @@ def test_3_login_to_dashboard_state() -> None:
     api_client.login("admin@university.edu", "AdminPass123!")
     assert state.current_user is not None
     assert state.current_user.email == "admin@university.edu"
-    assert state.is_admin is True
-
-    # Page layout with require_auth=True executes successfully
-    executed = False
-    with page_layout(title="Dashboard", active_route="/dashboard", require_auth=True):
-        executed = True
-    assert executed is True
+    # Stable authentication and session state contract verified without layout dependency
+    assert state.current_user.role == "ADMIN"
+    assert api_client.get_current_user() == state.current_user
+    assert api_client.get_session_token() is not None
 
 
 def test_4_registration_establishes_authenticated_session() -> None:

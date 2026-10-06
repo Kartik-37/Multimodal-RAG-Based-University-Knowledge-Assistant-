@@ -44,7 +44,7 @@ def format_citation_links(text: str, citations: list[CitationDTO]) -> str:
         page_info = f" • Page {cit.page_number}" if cit.page_number else ""
         title_text = html.escape(f"Click to view {cit.document_name}{page_info} in Source Viewer", quote=True)
         return (
-            f'<a href="javascript:void(0)" data-citation-index="{idx}" '
+            f'<a href="#" data-citation-index="{idx}" '
             f'title="{title_text}" '
             f'class="citation-pill inline-flex items-center px-1.5 py-0.5 mx-0.5 text-[11px] font-bold font-mono '
             f"text-blue-700 bg-blue-100 hover:bg-blue-200 hover:text-blue-950 rounded cursor-pointer "
