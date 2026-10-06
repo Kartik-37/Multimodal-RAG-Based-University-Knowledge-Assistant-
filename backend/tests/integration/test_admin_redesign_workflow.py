@@ -28,7 +28,7 @@ from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import AdminRole, User, UserRole
 from frontend.client.api_client import api_client
 from frontend.client.models import UserDTO
-from frontend.components.layout import can_access_route, has_admin_permission
+from frontend.security.access_control import can_access_route, has_admin_permission
 
 
 @pytest.fixture

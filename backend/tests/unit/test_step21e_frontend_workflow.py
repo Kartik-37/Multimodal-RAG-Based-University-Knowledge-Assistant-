@@ -8,7 +8,7 @@ specific visual navigation component structures or markup implementations.
 
 from backend.app.core.permissions import Permission
 from frontend.client.models import UserDTO
-from frontend.components.layout import can_access_route, has_admin_permission
+from frontend.security.access_control import can_access_route, has_admin_permission
 
 
 def test_main_admin_capabilities_and_routes() -> None:

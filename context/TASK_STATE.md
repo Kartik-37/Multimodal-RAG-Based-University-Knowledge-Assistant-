@@ -48,27 +48,35 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
 
 ### Phase 3: Frontend Test Suite Rewrite & Future-Proofing
 - **Status:** **COMPLETED & VERIFIED**
-- **Commit:** Finalized in Phase 3 Final Correction pass
+- **Commit:** `test(frontend): decouple behavioral tests from UI implementation`
 - **Accomplishments:**
   - Removed and verified physical absence of `frontend/client/Untitled-1.txt` (`Test-Path` returned `False`) and verified zero `*Untitled*` scratch files across the entire repository.
   - Verified and handled generated egg-info packaging artifact (`bca_rag_assistant.egg-info/` removed from workspace; confirmed `.gitignore` contains `*.egg-info/`).
-  - Corrected unit/integration test boundary:
-    * `backend/tests/unit/test_frontend.py` rewritten strictly as pure unit tests with mocked boundaries, zero database dependencies, and no `bootstrap_admin()` calls (34 tests).
-    * Real API client database workflows (student registration/login lifecycle, KB CRUD, document CRUD, query processing, student role enforcement, route registration) moved into `backend/tests/integration/test_frontend_workflows.py`.
-    * Added `backend/tests/unit/conftest.py` stubbing root database fixtures to guarantee pure unit test determinism and offline execution.
-  - Re-architected source-viewer tests:
-    * `backend/tests/unit/test_source_viewer.py` contains only pure source/citation formatting, canonical UUID URL construction, and escaping contracts (4 tests).
-    * `backend/tests/integration/test_source_viewer.py` contains real document streaming, authentication, course membership isolation, revoked/expired session handling, and file bytes verification (8 tests).
-    * All 15 source-viewer security and behavioral requirements preserved without loss or duplication.
-  - Future-proofed frontend workflow and authorization tests:
-    * Created framework-independent `can_access_route()` capability contract in `frontend/components/layout.py`.
-    * Rewrote `backend/tests/unit/test_step21e_frontend_workflow.py` to assert stable capability and route semantics (`can_access_route` and `has_admin_permission`) without coupling to visual `get_nav_items()` tuple implementations.
-    * Refactored `backend/tests/integration/test_admin_redesign_workflow.py` to assert RBAC route access rather than visual grouping dictionary counts (`len(groups) >= 4`).
-    * Refactored `backend/tests/integration/test_step22a_auth_portals.py` to assert route registration contracts rather than private visual render functions (`_render_login_form`, `_render_authenticated_role_notice`).
-  - Verified `backend/tests/unit/test_student_dashboard_fixes.py` contains only stable behavioral contracts (reasoning tag stripping, CoT removal, citation semantic transformation, and safe error handling).
-  - Confirmed zero presentation locks across test suite (zero matches for `box-border`, `max-w-`, `animate-`, `citation-pill`, `card_count`, `hover:`, `transition-`, `shadow-`, `gradient`, `text-blue-`, `bg-`, `h-[`, `w-[`).
-  - Performed read-only architecture review confirming future multimodal readiness: `DocumentChunk` JSONB `chunk_metadata`, `page_number`, `section_title`, and extensible parser/retrieval interfaces accommodate future bounding boxes, image regions, and visual embeddings without schema changes. Multimodal RAG remains strictly deferred.
-  - Verification: 47/47 targeted unit tests passed in 0.33s; `ruff check .` passed with 0 errors. Database-backed integration/security tests require live PostgreSQL service on port 5432.
+  - Framework-independent access control module:
+    * Created `frontend/security/access_control.py` containing authoritative `PUBLIC_ROUTES`, `has_admin_permission()`, and `can_access_route()`.
+    * Corrected `/indexing` capability gating to strictly require `Permission.DOCUMENT_INDEX` or `Permission.DOCUMENT_INDEX_RETRY` (properly differentiated from `DOCUMENT_VIEW`).
+    * Completely removed presentation code coupling; `frontend/components/layout.py` now imports from `access_control.py`.
+  - Framework-independent citation processing module:
+    * Created `frontend/client/citations.py` providing pure semantic parsing, index mapping (`SemanticCitationRef`), and marker substitution (`extract_resolved_citations`, `replace_citation_markers`) without HTML, DOM, NiceGUI, or Tailwind CSS dependencies.
+  - Framework-independent content safety module:
+    * Created `frontend/client/content_safety.py` housing pure string `sanitize_markdown_text()`.
+  - Decoupled current chat presentation page:
+    * `frontend/pages/chat_page.py` imports and delegates to `frontend.client.citations` and `frontend.client.content_safety` while continuing to render current visual citation-pill markup.
+  - Decoupled behavioral unit tests from presentation layer:
+    * `backend/tests/unit/test_frontend.py` eliminated all imports from `frontend.components` and `frontend.pages`; tested pure client-side DTO conversions, state isolation, semantic citation extraction, markdown sanitization, and expanded role/capability combinations (student, main admin, faculty admin with/without fine-grained permissions, unauthenticated/unknown roles).
+    * `backend/tests/unit/test_source_viewer.py` refactored to verify pure semantic citation mapping, document UUID contracts, page fragment syntax, and absence of credential leakage without asserting HTML attributes like `data-citation-index`.
+    * `backend/tests/unit/test_student_dashboard_fixes.py` refactored to test semantic citation resolution without testing chat HTML.
+    * `backend/tests/unit/test_step21e_frontend_workflow.py`, `test_admin_redesign_workflow.py`, and `test_step22a_auth_portals.py` updated to import capability helpers from `frontend.security.access_control`.
+  - Made `backend/tests/unit/conftest.py` resilient:
+    * Configures `SessionLocal` to point to test database when PostgreSQL is available (ensuring `test_indexing_service.py` succeeds), while gracefully no-oping when offline.
+  - Confirmed zero presentation locks across test suite (zero matches for `box-border`, `max-w-`, `animate-`, `citation-pill`, `card_count`, `hover:`, `transition-`, `shadow-`, `gradient`, `text-blue-`, `bg-`, `h-[`, `w-[`, `data-citation-index`).
+  - Real API client database workflows maintained in `backend/tests/integration/test_frontend_workflows.py`.
+  - Verification on local PostgreSQL 16 server:
+    * `pytest backend/tests/unit/ -v`: 335 passed, 0 failed.
+    * `pytest backend/tests/security/ -v`: 50 passed, 0 failed.
+    * `pytest backend/tests/integration/ -v`: 190 passed, 0 failed.
+    * `pytest backend/tests/ -m "not real_ollama"`: 575 passed, 0 failed (in 423.06s).
+    * `ruff check .`: All checks passed with 0 errors.
 
 ### Phase 4: Frontend Rebuild from Scratch
 - **Status:** **PENDING**

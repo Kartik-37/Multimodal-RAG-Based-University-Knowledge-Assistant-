@@ -6,8 +6,8 @@ frontend visual layouts, CSS, or implementation-specific DOM fragments.
 """
 
 from backend.app.services.llm.service import _SOURCE_REF_REGEX, _sanitize_llm_answer
+from frontend.client.citations import extract_resolved_citations
 from frontend.client.models import CitationDTO
-from frontend.pages.chat_page import format_citation_links
 from frontend.state.app_state import AppState
 
 
@@ -65,8 +65,8 @@ def test_sanitize_llm_answer_handles_think_tags() -> None:
     assert 'This Act may be called "Kaushalya the Skill University Act 2021" [source_2].' in cleaned
 
 
-def test_format_citation_links_semantic_transformation() -> None:
-    """Verify semantic citation link transformation handles both [1] and [source_1] markers."""
+def test_semantic_citation_resolution_for_numeric_and_source_markers() -> None:
+    """Verify semantic citation resolution handles both [1] and [source_1] markers without UI coupling."""
     citations = [
         CitationDTO(
             document_id="doc-123",
@@ -79,14 +79,18 @@ def test_format_citation_links_semantic_transformation() -> None:
     ]
 
     # Test numeric format: [1]
-    res_numeric = format_citation_links("As stated in [1].", citations)
-    assert 'data-citation-index="1"' in res_numeric
-    assert "KSU-Act-English.pdf" in res_numeric
+    res_numeric = extract_resolved_citations("As stated in [1].", citations)
+    assert len(res_numeric) == 1
+    assert res_numeric[0].index == 1
+    assert res_numeric[0].citation.document_name == "KSU-Act-English.pdf"
+    assert res_numeric[0].citation.document_id == "doc-123"
 
     # Test source_X format: [source_1]
-    res_source = format_citation_links("As stated in [source_1].", citations)
-    assert 'data-citation-index="1"' in res_source
-    assert "KSU-Act-English.pdf" in res_source
+    res_source = extract_resolved_citations("As stated in [source_1].", citations)
+    assert len(res_source) == 1
+    assert res_source[0].index == 1
+    assert res_source[0].citation.document_name == "KSU-Act-English.pdf"
+    assert res_source[0].citation.document_id == "doc-123"
 
 
 def test_app_state_background_generation_state() -> None:

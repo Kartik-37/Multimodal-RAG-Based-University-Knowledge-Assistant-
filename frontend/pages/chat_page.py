@@ -9,13 +9,14 @@ Supports explicit search scopes: All Courses, Selected Course, and Selected Docu
 """
 
 import html
-import re
 from typing import Any
 
 from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.citations import SemanticCitationRef, replace_citation_markers
+from frontend.client.content_safety import sanitize_markdown_text
 from frontend.client.error_handler import normalize_error
 from frontend.client.models import CitationDTO, DocumentDTO, KnowledgeBaseDTO
 from frontend.components.evidence_panel import render_evidence_panel
@@ -29,66 +30,28 @@ from frontend.state.app_state import state
 
 
 def format_citation_links(text: str, citations: list[CitationDTO]) -> str:
-    """
-    Transform citation tags [1], [2] or [source_1], [source_2] in assistant markdown into interactive citation pills.
-    Clicking any citation pill triggers the Source Viewer side drawer to open to that page.
+    """Transform citation tags [1], [2] or [source_1], [source_2] in assistant markdown into interactive citation pills.
+
+    Separates semantic citation processing from visual pill rendering:
+    Uses replace_citation_markers() to resolve citations semantically, then formats as NiceGUI citation-pill anchors.
     """
     if not citations or not text:
         return text
 
-    # Map both source_id (e.g. "source_1") and 1-based index (e.g. "1") to citation
-    cit_lookup: dict[str, tuple[int, CitationDTO]] = {}
-    for i, c in enumerate(citations, start=1):
-        cit_lookup[str(i)] = (i, c)
-        if c.source_id:
-            cit_lookup[c.source_id.lower()] = (i, c)
-            m = re.match(r"source_(\d+)", c.source_id, re.IGNORECASE)
-            if m:
-                cit_lookup[m.group(1)] = (i, c)
+    def _render_pill(ref: SemanticCitationRef) -> str:
+        idx = ref.index
+        cit = ref.citation
+        page_info = f" • Page {cit.page_number}" if cit.page_number else ""
+        title_text = html.escape(f"Click to view {cit.document_name}{page_info} in Source Viewer", quote=True)
+        return (
+            f'<a href="javascript:void(0)" data-citation-index="{idx}" '
+            f'title="{title_text}" '
+            f'class="citation-pill inline-flex items-center px-1.5 py-0.5 mx-0.5 text-[11px] font-bold font-mono '
+            f"text-blue-700 bg-blue-100 hover:bg-blue-200 hover:text-blue-950 rounded cursor-pointer "
+            f'no-underline border border-blue-300 transition-colors shadow-2xs">[{idx}]</a>'
+        )
 
-    def replace_cit(m: re.Match) -> str:
-        key = m.group(1).lower()
-        if key in cit_lookup:
-            idx, cit = cit_lookup[key]
-            page_info = f" • Page {cit.page_number}" if cit.page_number else ""
-            title_text = html.escape(f"Click to view {cit.document_name}{page_info} in Source Viewer", quote=True)
-            return (
-                f'<a href="javascript:void(0)" data-citation-index="{idx}" '
-                f'title="{title_text}" '
-                f'class="citation-pill inline-flex items-center px-1.5 py-0.5 mx-0.5 text-[11px] font-bold font-mono '
-                f"text-blue-700 bg-blue-100 hover:bg-blue-200 hover:text-blue-950 rounded cursor-pointer "
-                f'no-underline border border-blue-300 transition-colors shadow-2xs">[{idx}]</a>'
-            )
-        return m.group(0)
-
-    # Match bracketed integers [1] or [source_1] not part of markdown links [1](url)
-    return re.sub(r"\[(?:source_)?(\d+)\](?!\()", replace_cit, text, flags=re.IGNORECASE)
-
-
-def sanitize_markdown_text(raw_text: str) -> str:
-    """
-    Sanitize text before markdown rendering by escaping raw HTML tags.
-    Preserves standard markdown formatting (*, _, `, #, -, [link](url))
-    while preventing HTML injection (scripts, iframes, event handlers).
-    """
-    if not raw_text:
-        return ""
-    # Strip or escape script, style, iframe, and dangerous HTML tags
-    cleaned = re.sub(
-        r"<\s*(script|style|iframe|object|embed|applet|form)[^>]*>.*?<\s*/\s*\1\s*>",
-        "",
-        raw_text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    cleaned = re.sub(
-        r"<\s*(script|style|iframe|object|embed|applet|form)[^>]*>",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    # Neutralize HTML event handlers like onload=, onclick=
-    cleaned = re.sub(r"on\w+\s*=", "data-disabled-event=", cleaned, flags=re.IGNORECASE)
-    return cleaned
+    return replace_citation_markers(text, citations, _render_pill)
 
 
 def register_chat_page() -> None:

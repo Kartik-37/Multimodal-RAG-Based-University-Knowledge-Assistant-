@@ -37,8 +37,8 @@ from backend.app.core.security import get_password_hash, hash_session_token
 from backend.app.models.user import AdminRole, User, UserRole, UserSession
 from frontend.client.api_client import _session_clients, api_client
 from frontend.client.error_handler import normalize_error
-from frontend.components.layout import can_access_route
 from frontend.pages.auth_pages import register_auth_pages
+from frontend.security.access_control import can_access_route
 from frontend.state.app_state import _session_app_states, state
 
 

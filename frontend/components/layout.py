@@ -15,85 +15,8 @@ from nicegui import ui
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
 from frontend.client.models import UserDTO
+from frontend.security.access_control import has_admin_permission
 from frontend.state.app_state import state
-
-
-def has_admin_permission(user: UserDTO | None, permission: Permission | str) -> bool:
-    """Mirror backend permission semantics for navigation/UI hints only.
-
-    This function never replaces backend authorization. It only prevents users
-    from being shown controls that the server would reject.
-    """
-    if user is None or user.role != "ADMIN":
-        return False
-    if user.admin_role == "MAIN_ADMIN":
-        return True
-
-    value = permission.value if isinstance(permission, Permission) else str(permission)
-    if user.permissions:
-        return value in user.permissions
-
-    # Keep legacy/unassigned ADMIN UI behavior aligned with backend defaults.
-    default_permissions = {
-        Permission.COURSE_VIEW.value,
-        Permission.COURSE_CREATE.value,
-        Permission.COURSE_EDIT.value,
-        Permission.COURSE_DELETE.value,
-        Permission.DOCUMENT_VIEW.value,
-        Permission.DOCUMENT_UPLOAD.value,
-        Permission.DOCUMENT_DELETE.value,
-        Permission.DOCUMENT_PUBLISH.value,
-        Permission.DOCUMENT_INDEX.value,
-        Permission.DOCUMENT_INDEX_RETRY.value,
-        Permission.ADMIN_CHAT.value,
-        Permission.ADMIN_VIEW.value,
-        Permission.ADMIN_CREATE.value,
-    }
-    return value in default_permissions
-
-
-def can_access_route(user: UserDTO | None, route: str) -> bool:
-    """Stable capability contract: determines whether a user role can access an application route.
-
-    Framework-independent behavioral boundary that survives visual frontend redesigns.
-    """
-    if not user:
-        return route in {"/", "/login", "/student/login", "/admin/login", "/register"}
-
-    # Common routes accessible to all authenticated users
-    if route in {"/dashboard", "/profile"}:
-        return True
-
-    if user.role == "STUDENT":
-        return route in {"/dashboard", "/knowledge-bases", "/chat", "/profile"}
-
-    if user.role == "ADMIN":
-        if user.admin_role == "MAIN_ADMIN":
-            return route in {
-                "/dashboard",
-                "/knowledge-bases",
-                "/documents",
-                "/indexing",
-                "/chat",
-                "/administrators",
-                "/activity",
-                "/system-health",
-                "/profile",
-            }
-
-        # Fine-grained faculty admin route capabilities
-        if route == "/knowledge-bases":
-            return has_admin_permission(user, Permission.COURSE_VIEW)
-        if route in {"/documents", "/indexing"}:
-            return has_admin_permission(user, Permission.DOCUMENT_VIEW)
-        if route == "/chat":
-            return has_admin_permission(user, Permission.ADMIN_CHAT)
-        if route in {"/administrators", "/activity"}:
-            return has_admin_permission(user, Permission.ADMIN_VIEW)
-        if route == "/system-health":
-            return has_admin_permission(user, Permission.ADMIN_VIEW)
-
-    return False
 
 
 def get_nav_items(user: UserDTO | None) -> list[tuple[str, str, str]]:

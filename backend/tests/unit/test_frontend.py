@@ -10,7 +10,6 @@ independently of database services or visual markup:
 - Stable role-based capability and route access semantics.
 """
 
-import html
 import uuid
 from unittest.mock import MagicMock
 
@@ -20,6 +19,12 @@ from starlette.requests import Request
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import FrontendAPIClient
+from frontend.client.citations import (
+    SemanticCitationRef,
+    extract_resolved_citations,
+    replace_citation_markers,
+)
+from frontend.client.content_safety import sanitize_markdown_text
 from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
     AdminUserDTO,
@@ -28,8 +33,7 @@ from frontend.client.models import (
     KnowledgeBaseDTO,
     UserDTO,
 )
-from frontend.components.layout import can_access_route, has_admin_permission
-from frontend.pages.chat_page import format_citation_links, sanitize_markdown_text
+from frontend.security.access_control import can_access_route, has_admin_permission
 from frontend.state.app_state import AppState, _session_app_states
 
 # ==============================================================================
@@ -364,46 +368,65 @@ class TestCitationProcessingUnitContracts:
             ),
         ]
 
-    def test_citation_mapping_numeric_bracket(self, sample_citations) -> None:
+    def test_citation_mapping_numeric_bracket(self, sample_citations: list[CitationDTO]) -> None:
         text = "As stated in the act [1]."
-        res = format_citation_links(text, sample_citations)
-        assert 'data-citation-index="1"' in res
-        assert "KSU-Act-English.pdf" in res
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 1
+        assert resolved[0].index == 1
+        assert resolved[0].citation.document_name == "KSU-Act-English.pdf"
+        assert resolved[0].raw_marker == "[1]"
 
-    def test_citation_mapping_source_bracket(self, sample_citations) -> None:
+    def test_citation_mapping_source_bracket(self, sample_citations: list[CitationDTO]) -> None:
         text = "As stated in the act [source_1]."
-        res = format_citation_links(text, sample_citations)
-        assert 'data-citation-index="1"' in res
-        assert "KSU-Act-English.pdf" in res
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 1
+        assert resolved[0].index == 1
+        assert resolved[0].citation.document_name == "KSU-Act-English.pdf"
+        assert resolved[0].raw_marker == "[source_1]"
 
-    def test_citation_mapping_multiple_citations(self, sample_citations) -> None:
+    def test_citation_mapping_multiple_citations(self, sample_citations: list[CitationDTO]) -> None:
         text = "Refer to the board powers [1] and the grading policy [2]."
-        res = format_citation_links(text, sample_citations)
-        assert 'data-citation-index="1"' in res
-        assert 'data-citation-index="2"' in res
-        assert "KSU-Act-English.pdf" in res
-        assert "Syllabus-2026.pdf" in res
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 2
+        assert resolved[0].index == 1
+        assert resolved[0].citation.document_name == "KSU-Act-English.pdf"
+        assert resolved[1].index == 2
+        assert resolved[1].citation.document_name == "Syllabus-2026.pdf"
 
-    def test_citation_invalid_reference_preserved_as_text(self, sample_citations) -> None:
+    def test_citation_invalid_reference_preserved_as_text(self, sample_citations: list[CitationDTO]) -> None:
         text = "Unavailable citations [99] and [source_99] should not crash."
-        res = format_citation_links(text, sample_citations)
-        assert "[99]" in res
-        assert "[source_99]" in res
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 0
 
-    def test_citation_does_not_corrupt_standard_markdown_links(self, sample_citations) -> None:
+        # Unresolved markers must remain intact in text when substituted
+        replaced = replace_citation_markers(text, sample_citations, lambda ref: f"RESOLVED_{ref.index}")
+        assert "[99]" in replaced
+        assert "[source_99]" in replaced
+
+    def test_citation_does_not_corrupt_standard_markdown_links(self, sample_citations: list[CitationDTO]) -> None:
         text = "According to [1], visit [University Portal](https://university.edu) for details."
-        res = format_citation_links(text, sample_citations)
-        assert 'data-citation-index="1"' in res
-        assert "[University Portal](https://university.edu)" in res
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 1
+        assert resolved[0].index == 1
 
-    def test_citation_output_contains_no_session_tokens(self, sample_citations) -> None:
+        replaced = replace_citation_markers(text, sample_citations, lambda ref: f"({ref.index})")
+        assert "(1)" in replaced
+        assert "[University Portal](https://university.edu)" in replaced
+
+    def test_citation_output_contains_no_session_tokens(self, sample_citations: list[CitationDTO]) -> None:
         text = "Document reference [1]."
-        res = format_citation_links(text, sample_citations)
-        assert "token=" not in res
-        assert "auth_session_token" not in res
-        assert "cookie" not in res
+        resolved = extract_resolved_citations(text, sample_citations)
+        assert len(resolved) == 1
 
-    def test_citation_metadata_html_escaping(self) -> None:
+        def safe_formatter(ref: SemanticCitationRef) -> str:
+            return f"[{ref.index}: {ref.citation.document_name}]"
+
+        replaced = replace_citation_markers(text, sample_citations, safe_formatter)
+        assert "token=" not in replaced
+        assert "auth_session_token" not in replaced
+        assert "cookie" not in replaced
+
+    def test_citation_metadata_handling(self) -> None:
         malicious_citations = [
             CitationDTO(
                 document_id="doc-malicious",
@@ -415,10 +438,11 @@ class TestCitationProcessingUnitContracts:
             )
         ]
         text = "Check this source [1]."
-        res = format_citation_links(text, malicious_citations)
-        assert "<script>" not in res
-        assert 'onerror="alert' not in res
-        assert html.escape('"><script>alert(1)</script>.pdf') in res or "&lt;script&gt;" in res
+        resolved = extract_resolved_citations(text, malicious_citations)
+        assert len(resolved) == 1
+        assert resolved[0].index == 1
+        assert resolved[0].citation.document_id == "doc-malicious"
+        assert resolved[0].citation.document_name == '"><script>alert(1)</script>.pdf'
 
 
 # ==============================================================================
@@ -501,6 +525,22 @@ class TestRoleCapabilityUnitContracts:
         assert can_access_route(None, "/knowledge-bases") is False
         assert can_access_route(None, "/documents") is False
         assert can_access_route(None, "/administrators") is False
+        assert can_access_route(None, "/indexing") is False
+        assert can_access_route(None, "/system-health") is False
+
+    def test_unknown_role_cannot_access_protected_routes(self) -> None:
+        unknown_user = UserDTO(
+            id="u-unknown",
+            email="unknown@univ.edu",
+            full_name="Guest",
+            role="GUEST",
+        )
+        assert can_access_route(unknown_user, "/dashboard") is True  # Common route
+        assert can_access_route(unknown_user, "/knowledge-bases") is False
+        assert can_access_route(unknown_user, "/documents") is False
+        assert can_access_route(unknown_user, "/indexing") is False
+        assert can_access_route(unknown_user, "/administrators") is False
+        assert can_access_route(unknown_user, "/system-health") is False
 
     def test_student_role_route_capabilities(self) -> None:
         student = UserDTO(
@@ -552,6 +592,58 @@ class TestRoleCapabilityUnitContracts:
             "/profile",
         ]:
             assert can_access_route(admin, route) is True
+
+    def test_faculty_admin_indexing_requires_document_index_permission(self) -> None:
+        """Verify indexing route strictly requires DOCUMENT_INDEX or DOCUMENT_INDEX_RETRY, not DOCUMENT_VIEW."""
+        faculty_view_only = UserDTO(
+            id="fa-view",
+            email="view_only@univ.edu",
+            full_name="View Only Faculty",
+            role="ADMIN",
+            admin_role="FACULTY_ADMIN",
+            permissions=[Permission.DOCUMENT_VIEW.value],
+        )
+        assert can_access_route(faculty_view_only, "/documents") is True
+        assert can_access_route(faculty_view_only, "/indexing") is False
+        assert has_admin_permission(faculty_view_only, Permission.DOCUMENT_INDEX) is False
+
+        faculty_with_index = faculty_view_only.model_copy(
+            update={"permissions": [Permission.DOCUMENT_INDEX.value]}
+        )
+        assert can_access_route(faculty_with_index, "/indexing") is True
+        assert has_admin_permission(faculty_with_index, Permission.DOCUMENT_INDEX) is True
+
+        faculty_with_retry = faculty_view_only.model_copy(
+            update={"permissions": [Permission.DOCUMENT_INDEX_RETRY.value]}
+        )
+        assert can_access_route(faculty_with_retry, "/indexing") is True
+        assert has_admin_permission(faculty_with_retry, Permission.DOCUMENT_INDEX_RETRY) is True
+
+    def test_faculty_admin_course_view_and_admin_view_permissions(self) -> None:
+        """Verify faculty admin fine-grained capabilities for course and administrator sections."""
+        faculty = UserDTO(
+            id="fa-2",
+            email="fa2@univ.edu",
+            full_name="Faculty Two",
+            role="ADMIN",
+            admin_role="FACULTY_ADMIN",
+            permissions=[],
+        )
+        # Without COURSE_VIEW
+        assert can_access_route(faculty, "/knowledge-bases") is False
+        # Without ADMIN_VIEW
+        assert can_access_route(faculty, "/administrators") is False
+        assert can_access_route(faculty, "/activity") is False
+        assert can_access_route(faculty, "/system-health") is False
+
+        # With COURSE_VIEW and ADMIN_VIEW
+        granted = faculty.model_copy(
+            update={"permissions": [Permission.COURSE_VIEW.value, Permission.ADMIN_VIEW.value]}
+        )
+        assert can_access_route(granted, "/knowledge-bases") is True
+        assert can_access_route(granted, "/administrators") is True
+        assert can_access_route(granted, "/activity") is True
+        assert can_access_route(granted, "/system-health") is True
 
     def test_faculty_admin_chat_permission_capability_scope(self) -> None:
         faculty_without_chat = UserDTO(
