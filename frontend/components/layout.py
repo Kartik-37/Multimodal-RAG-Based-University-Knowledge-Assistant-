@@ -52,6 +52,50 @@ def has_admin_permission(user: UserDTO | None, permission: Permission | str) -> 
     return value in default_permissions
 
 
+def can_access_route(user: UserDTO | None, route: str) -> bool:
+    """Stable capability contract: determines whether a user role can access an application route.
+
+    Framework-independent behavioral boundary that survives visual frontend redesigns.
+    """
+    if not user:
+        return route in {"/", "/login", "/student/login", "/admin/login", "/register"}
+
+    # Common routes accessible to all authenticated users
+    if route in {"/dashboard", "/profile"}:
+        return True
+
+    if user.role == "STUDENT":
+        return route in {"/dashboard", "/knowledge-bases", "/chat", "/profile"}
+
+    if user.role == "ADMIN":
+        if user.admin_role == "MAIN_ADMIN":
+            return route in {
+                "/dashboard",
+                "/knowledge-bases",
+                "/documents",
+                "/indexing",
+                "/chat",
+                "/administrators",
+                "/activity",
+                "/system-health",
+                "/profile",
+            }
+
+        # Fine-grained faculty admin route capabilities
+        if route == "/knowledge-bases":
+            return has_admin_permission(user, Permission.COURSE_VIEW)
+        if route in {"/documents", "/indexing"}:
+            return has_admin_permission(user, Permission.DOCUMENT_VIEW)
+        if route == "/chat":
+            return has_admin_permission(user, Permission.ADMIN_CHAT)
+        if route in {"/administrators", "/activity"}:
+            return has_admin_permission(user, Permission.ADMIN_VIEW)
+        if route == "/system-health":
+            return has_admin_permission(user, Permission.ADMIN_VIEW)
+
+    return False
+
+
 def get_nav_items(user: UserDTO | None) -> list[tuple[str, str, str]]:
     """
     Unified navigation items definition shared identically across desktop and mobile.

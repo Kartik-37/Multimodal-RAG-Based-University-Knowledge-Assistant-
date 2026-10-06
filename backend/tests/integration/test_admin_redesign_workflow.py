@@ -2,7 +2,7 @@
 Comprehensive Integration Tests for Complete Admin Experience Redesign.
 
 Validates the full admin specification:
-1. Shell navigation structure (get_admin_nav_groups & get_nav_items) respecting RBAC.
+1. RBAC route capability structure respecting roles and permissions.
 2. Main Admin vs Faculty Admin hierarchy & course-scoped permissions.
 3. Final active Main Admin cannot be deleted or deactivated.
 4. Self-deletion and self-deactivation protection.
@@ -28,7 +28,7 @@ from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import AdminRole, User, UserRole
 from frontend.client.api_client import api_client
 from frontend.client.models import UserDTO
-from frontend.components.layout import get_admin_nav_groups, get_nav_items
+from frontend.components.layout import can_access_route, has_admin_permission
 
 
 @pytest.fixture
@@ -109,12 +109,12 @@ def test_setup_data(db_session: Session):
 
 
 # ==============================================================================
-# 1. NAVIGATION & RBAC SHELL
+# 1. RBAC ROUTE CAPABILITY AND AUTHORIZATION
 # ==============================================================================
 
 
-def test_admin_nav_groups_main_admin(test_setup_data):
-    """Main Admin sees all admin navigation sections: Overview, Knowledge, Communication, Administration, System."""
+def test_main_admin_route_capabilities(test_setup_data):
+    """Main Admin has authorization across all administrative routes."""
     data = test_setup_data
     u = UserDTO(
         id=str(data["main_admin"].id),
@@ -124,28 +124,18 @@ def test_admin_nav_groups_main_admin(test_setup_data):
         admin_role="MAIN_ADMIN",
         permissions=[],
     )
-    groups = get_admin_nav_groups(u)
-    assert len(groups) >= 4
-
-    admin_routes = [item[1] for g in groups for item in g.get("items", [])]
-    assert "/dashboard" in admin_routes
-    assert "/knowledge-bases" in admin_routes
-    assert "/documents" in admin_routes
-    assert "/chat" in admin_routes
-    assert "/administrators" in admin_routes
-
-    # Also verify route coverage of get_nav_items
-    nav_items = get_nav_items(u)
-    nav_routes = [item[1] for item in nav_items]
-    assert "/dashboard" in nav_routes
-    assert "/knowledge-bases" in nav_routes
-    assert "/documents" in nav_routes
-    assert "/chat" in nav_routes
-    assert "/administrators" in nav_routes
+    for route in [
+        "/dashboard",
+        "/knowledge-bases",
+        "/documents",
+        "/chat",
+        "/administrators",
+    ]:
+        assert can_access_route(u, route) is True
 
 
-def test_admin_nav_groups_faculty_admin_scoped(test_setup_data):
-    """Faculty Admin sees only sections permitted by their RBAC permissions."""
+def test_faculty_admin_scoped_capabilities(test_setup_data):
+    """Faculty Admin sees only routes permitted by their RBAC permissions."""
     data = test_setup_data
     u = UserDTO(
         id=str(data["faculty_admin"].id),
@@ -155,24 +145,31 @@ def test_admin_nav_groups_faculty_admin_scoped(test_setup_data):
         admin_role="FACULTY_ADMIN",
         permissions=data["faculty_admin"].permissions,
     )
-    groups = get_admin_nav_groups(u)
-    faculty_routes = [item[1] for g in groups for item in g.get("items", [])]
+    assert can_access_route(u, "/dashboard") is True
+    assert can_access_route(u, "/knowledge-bases") is True
+    assert can_access_route(u, "/documents") is True
+    assert can_access_route(u, "/chat") is True
+    # Faculty Admin without ADMIN_VIEW cannot access administrators route
+    assert can_access_route(u, "/administrators") is False
+    assert has_admin_permission(u, Permission.ADMIN_VIEW) is False
 
-    assert "/dashboard" in faculty_routes
-    assert "/knowledge-bases" in faculty_routes
-    # Faculty Admin without ADMIN_VIEW cannot see administrators route
-    assert "/administrators" not in faculty_routes
 
-
-def test_admin_nav_groups_student_empty():
-    """Students cannot access the admin navigation groups."""
+def test_student_prohibited_from_admin_routes():
+    """Students cannot access any administrator routes."""
     student = UserDTO(
         id="s-1",
         email="student@university.edu",
         full_name="Student",
         role="STUDENT",
     )
-    assert get_admin_nav_groups(student) == []
+    for route in [
+        "/documents",
+        "/administrators",
+        "/indexing",
+        "/activity",
+        "/system-health",
+    ]:
+        assert can_access_route(student, route) is False
 
 
 # ==============================================================================

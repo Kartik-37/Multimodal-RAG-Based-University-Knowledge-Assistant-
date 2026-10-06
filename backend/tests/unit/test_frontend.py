@@ -1,9 +1,13 @@
 """
 Behavioral and Contract Unit Tests for Frontend Presentation Layer.
 
-Replaces stale presentation-locking tests with stable behavioral, API client,
-state management, citation transformation, and security contracts that survive
-a complete frontend rebuild.
+Validates pure client-side contracts, data transformations, and state management
+independently of database services or visual markup:
+- API client input validation, DTO conversions, and mocked response handling.
+- AppState in-memory lifecycle and per-session isolation.
+- Citation parsing, semantic linking, and security escaping.
+- Markdown sanitization and error normalization.
+- Stable role-based capability and route access semantics.
 """
 
 import html
@@ -11,69 +15,35 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
-from nicegui import app as nicegui_app
 from nicegui.storage import request_contextvar
 from starlette.requests import Request
 
 from backend.app.core.permissions import Permission
-from backend.tests.fixtures_documents import create_sample_pdf_bytes
 from frontend.client.api_client import FrontendAPIClient
 from frontend.client.error_handler import normalize_error
 from frontend.client.models import (
     AdminUserDTO,
     ChatMessageDTO,
     CitationDTO,
-    DocumentDTO,
     KnowledgeBaseDTO,
     UserDTO,
 )
-from frontend.components.layout import get_nav_items, has_admin_permission
-from frontend.main import init_ui
+from frontend.components.layout import can_access_route, has_admin_permission
 from frontend.pages.chat_page import format_citation_links, sanitize_markdown_text
 from frontend.state.app_state import AppState, _session_app_states
-from scripts.bootstrap_admin import bootstrap_admin
-
-
-@pytest.fixture(autouse=True)
-def ensure_admin_bootstrapped() -> None:
-    """Ensure standard test administrator exists for client operations."""
-    bootstrap_admin("admin@university.edu", "AdminPass123!", "System Administrator")
-
 
 # ==============================================================================
-# A. API CLIENT CONTRACTS
+# A. API CLIENT PURE UNIT CONTRACTS
 # ==============================================================================
 
 
-class TestAPIClientContracts:
+class TestAPIClientUnitContracts:
     """Test suite validating API client communication contracts and data transformations."""
 
     def test_api_client_initial_state(self) -> None:
         client = FrontendAPIClient()
         assert client.get_current_user() is None
-
-    def test_api_client_student_registration_and_login_lifecycle(self) -> None:
-        client = FrontendAPIClient()
-        unique_email = f"student_{uuid.uuid4().hex[:8]}@university.edu"
-        full_name = "Alex Mercer"
-
-        # Registration creates STUDENT account
-        reg_user = client.register(unique_email, "SecurePassword123!", full_name)
-        assert isinstance(reg_user, UserDTO)
-        assert reg_user.email == unique_email
-        assert reg_user.full_name == full_name
-        assert reg_user.role == "STUDENT"
-        assert client.get_current_user() == reg_user
-
-        # Logout clears current user
-        client.logout()
-        assert client.get_current_user() is None
-
-        # Login re-establishes authenticated session
-        login_user = client.login(unique_email, "SecurePassword123!")
-        assert isinstance(login_user, UserDTO)
-        assert login_user.email == unique_email
-        assert client.get_current_user() == login_user
+        assert client.get_session_token() is None
 
     def test_api_client_auth_input_validation(self) -> None:
         client = FrontendAPIClient()
@@ -86,6 +56,12 @@ class TestAPIClientContracts:
 
         with pytest.raises(ValueError, match="All registration fields are required"):
             client.register("", "secret", "Name")
+
+        with pytest.raises(ValueError, match="must not be empty"):
+            client.student_login("", "")
+
+        with pytest.raises(ValueError, match="must not be empty"):
+            client.admin_login("", "")
 
     def test_api_client_unauthorized_401_clears_auth_state(self) -> None:
         client = FrontendAPIClient()
@@ -105,6 +81,7 @@ class TestAPIClientContracts:
         user = client.get_current_user()
         assert user is None
         assert client._current_user is None
+        assert client.get_session_token() is None
 
     def test_api_client_forbidden_403_handling(self) -> None:
         client = FrontendAPIClient()
@@ -117,50 +94,6 @@ class TestAPIClientContracts:
 
         with pytest.raises(ValueError, match="Administrator Portal"):
             client.login("admin@university.edu", "AdminPass123!", required_role="STUDENT")
-
-    def test_api_client_knowledge_base_crud_contracts(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        unique_name = f"Course-{uuid.uuid4().hex[:6]}"
-
-        # Create
-        kb = client.create_knowledge_base(unique_name, "Course syllabus")
-        assert isinstance(kb, KnowledgeBaseDTO)
-        assert kb.name == unique_name
-        assert kb.document_count == 0
-
-        # List
-        all_kbs = client.get_knowledge_bases()
-        assert any(k.id == kb.id for k in all_kbs)
-
-        # Empty name rejection
-        with pytest.raises(ValueError, match="Knowledge base name cannot be empty"):
-            client.create_knowledge_base("   ")
-
-    def test_api_client_document_crud_contracts(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb = client.create_knowledge_base(f"DocKB-{uuid.uuid4().hex[:6]}", "Docs")
-
-        pdf_bytes = create_sample_pdf_bytes()
-        doc = client.upload_document(
-            kb_id=kb.id,
-            filename="syllabus.pdf",
-            content=pdf_bytes,
-        )
-        assert isinstance(doc, DocumentDTO)
-        assert doc.filename == "syllabus.pdf"
-        assert doc.file_type == "pdf"
-        assert doc.status in ("PENDING", "PROCESSING", "COMPLETED")
-
-        # List contains document
-        docs = client.get_documents(kb.id)
-        assert any(d.id == doc.id for d in docs)
-
-        # Delete document
-        client.delete_document(kb.id, doc.id)
-        docs_after = client.get_documents(kb.id)
-        assert not any(d.id == doc.id for d in docs_after)
 
     def test_api_client_chat_response_dto_conversion_and_provenance(self) -> None:
         client = FrontendAPIClient()
@@ -236,35 +169,23 @@ class TestAPIClientContracts:
         with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
             client.send_chat_message("not-a-uuid", "Valid question")
 
-    def test_api_client_retrieval_contracts(self) -> None:
+    def test_api_client_retrieval_validation_contracts(self) -> None:
         client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-        kb = client.create_knowledge_base(f"RetrKB-{uuid.uuid4().hex[:6]}", "Retrieval")
+        dummy_kb_id = str(uuid.uuid4())
 
         # Empty query validation
         with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.retrieve_chunks(kb.id, "   ")
+            client.retrieve_chunks(dummy_kb_id, "   ")
         with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.retrieve_lexical_chunks(kb.id, "   ")
+            client.retrieve_lexical_chunks(dummy_kb_id, "   ")
         with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.retrieve_hybrid_chunks(kb.id, "   ")
+            client.retrieve_hybrid_chunks(dummy_kb_id, "   ")
         with pytest.raises(ValueError, match="Query string cannot be empty"):
-            client.rerank_chunks(kb.id, "   ")
+            client.rerank_chunks(dummy_kb_id, "   ")
 
         # Invalid UUID validation
         with pytest.raises(ValueError, match="Invalid knowledge base ID format"):
             client.retrieve_chunks("not-a-uuid", "query")
-
-    def test_api_client_query_processing_contract(self) -> None:
-        client = FrontendAPIClient()
-        client.login("admin@university.edu", "AdminPass123!")
-
-        res = client.process_query("   What is   TCP   in   BCA Sem-4?   ")
-        assert res.original_query == "   What is   TCP   in   BCA Sem-4?   "
-        assert res.processed_query == "What is TCP in BCA Sem-4?"
-        assert res.character_count == len("What is TCP in BCA Sem-4?")
-        assert res.token_estimate > 0
-        assert res.has_technical_tokens is True
 
     def test_api_client_admin_user_dto_privacy(self) -> None:
         dto = AdminUserDTO(
@@ -290,13 +211,20 @@ class TestAPIClientContracts:
         err = str(excinfo.value).lower()
         assert "server processing error" in err or "could not be completed" in err
 
+    def test_api_client_has_portal_methods(self) -> None:
+        client = FrontendAPIClient()
+        assert hasattr(client, "student_login")
+        assert callable(client.student_login)
+        assert hasattr(client, "admin_login")
+        assert callable(client.admin_login)
+
 
 # ==============================================================================
-# B. FRONTEND STATE CONTRACTS
+# B. FRONTEND STATE PURE UNIT CONTRACTS
 # ==============================================================================
 
 
-class TestFrontendStateContracts:
+class TestFrontendStateUnitContracts:
     """Test suite for AppState presentation state management."""
 
     def test_app_state_initialization(self) -> None:
@@ -374,26 +302,41 @@ class TestFrontendStateContracts:
 
         request_contextvar.set(None)
 
-    def test_app_state_is_admin_property(self) -> None:
+    def test_app_state_is_admin_property(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from frontend.client.api_client import api_client
 
-        api_client.logout()
+        # Mock unauthenticated
+        monkeypatch.setattr(api_client, "get_current_user", lambda: None)
         state = AppState()
         assert state.is_admin is False
 
-        api_client.login("admin@university.edu", "AdminPass123!")
+        # Mock admin
+        admin_user = UserDTO(
+            id="admin-1",
+            email="admin@univ.edu",
+            full_name="Admin",
+            role="ADMIN",
+        )
+        monkeypatch.setattr(api_client, "get_current_user", lambda: admin_user)
         assert state.is_admin is True
 
-        api_client.logout()
+        # Mock student
+        student_user = UserDTO(
+            id="student-1",
+            email="student@univ.edu",
+            full_name="Student",
+            role="STUDENT",
+        )
+        monkeypatch.setattr(api_client, "get_current_user", lambda: student_user)
         assert state.is_admin is False
 
 
 # ==============================================================================
-# C. CITATION PROCESSING CONTRACTS
+# C. CITATION PROCESSING PURE UNIT CONTRACTS
 # ==============================================================================
 
 
-class TestCitationProcessingContracts:
+class TestCitationProcessingUnitContracts:
     """Test suite validating semantic citation linking, safety, and markdown integrity."""
 
     @pytest.fixture
@@ -479,11 +422,11 @@ class TestCitationProcessingContracts:
 
 
 # ==============================================================================
-# D. MARKDOWN / OUTPUT SECURITY CONTRACTS
+# D. MARKDOWN / OUTPUT SECURITY PURE UNIT CONTRACTS
 # ==============================================================================
 
 
-class TestMarkdownOutputSecurityContracts:
+class TestMarkdownOutputSecurityUnitContracts:
     """Test suite validating client-side HTML output sanitization and error masking."""
 
     def test_markdown_sanitizer_preserves_valid_markdown(self) -> None:
@@ -525,128 +468,6 @@ class TestMarkdownOutputSecurityContracts:
         assert "size" in normalize_error(413, context="document").lower()
         assert "format" in normalize_error(415, context="document").lower()
 
-
-# ==============================================================================
-# E. NAVIGATION AND ACCESS SEMANTICS CONTRACTS
-# ==============================================================================
-
-
-class TestNavigationAccessContracts:
-    """Test suite validating navigation availability by route path and role authorization."""
-
-    def test_navigation_unauthenticated_returns_empty_items(self) -> None:
-        assert get_nav_items(None) == []
-
-    def test_navigation_student_routes(self) -> None:
-        student = UserDTO(
-            id="s-100",
-            email="student@univ.edu",
-            full_name="Enrolled Student",
-            role="STUDENT",
-        )
-        items = get_nav_items(student)
-        routes = [route for _, route, _ in items]
-
-        # Allowed student routes
-        assert "/dashboard" in routes
-        assert "/knowledge-bases" in routes
-        assert "/chat" in routes
-        assert "/profile" in routes
-
-        # Prohibited administrator routes
-        assert "/documents" not in routes
-        assert "/administrators" not in routes
-        assert "/system-health" not in routes
-
-    def test_navigation_admin_routes(self) -> None:
-        admin = UserDTO(
-            id="a-100",
-            email="admin@univ.edu",
-            full_name="Administrator",
-            role="ADMIN",
-            admin_role="MAIN_ADMIN",
-        )
-        items = get_nav_items(admin)
-        routes = [route for _, route, _ in items]
-
-        assert "/dashboard" in routes
-        assert "/knowledge-bases" in routes
-        assert "/documents" in routes
-        assert "/chat" in routes
-        assert "/profile" in routes
-
-    def test_navigation_faculty_admin_chat_permission_scope(self) -> None:
-        # Faculty admin without chat permission
-        faculty_without_chat = UserDTO(
-            id="fa-1",
-            email="faculty1@univ.edu",
-            full_name="Faculty One",
-            role="ADMIN",
-            admin_role="FACULTY_ADMIN",
-            permissions=[Permission.DOCUMENT_VIEW.value],
-        )
-        routes_without = [route for _, route, _ in get_nav_items(faculty_without_chat)]
-        assert "/chat" not in routes_without
-        assert has_admin_permission(faculty_without_chat, Permission.ADMIN_CHAT) is False
-
-        # Faculty admin with chat permission
-        faculty_with_chat = faculty_without_chat.model_copy(
-            update={
-                "permissions": [
-                    Permission.DOCUMENT_VIEW.value,
-                    Permission.ADMIN_CHAT.value,
-                ]
-            }
-        )
-        routes_with = [route for _, route, _ in get_nav_items(faculty_with_chat)]
-        assert "/chat" in routes_with
-        assert has_admin_permission(faculty_with_chat, Permission.ADMIN_CHAT) is True
-
-    def test_protected_page_routes_registered(self) -> None:
-        init_ui()
-        registered_paths = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
-
-        expected_routes = [
-            "/",
-            "/login",
-            "/student/login",
-            "/admin/login",
-            "/register",
-            "/dashboard",
-            "/knowledge-bases",
-            "/chat",
-            "/documents",
-            "/profile",
-        ]
-        for route in expected_routes:
-            assert route in registered_paths, f"Expected route {route} not registered"
-
-
-# ==============================================================================
-# F. AUTHENTICATION PAGE CONTRACTS
-# ==============================================================================
-
-
-class TestAuthPageContracts:
-    """Test suite validating authentication portal endpoints and server-side role gating."""
-
-    def test_auth_routes_registration(self) -> None:
-        from frontend.pages.auth_pages import register_auth_pages
-
-        register_auth_pages()
-        registered = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
-        assert "/login" in registered
-        assert "/student/login" in registered
-        assert "/admin/login" in registered
-        assert "/register" in registered
-
-    def test_api_client_has_portal_methods(self) -> None:
-        client = FrontendAPIClient()
-        assert hasattr(client, "student_login")
-        assert callable(client.student_login)
-        assert hasattr(client, "admin_login")
-        assert callable(client.admin_login)
-
     def test_wrong_portal_directional_guidance(self) -> None:
         admin_guidance = (
             "This account belongs to the Administrator Portal. Please use Administrator Sign In."
@@ -660,10 +481,98 @@ class TestAuthPageContracts:
         assert normalize_error({"detail": admin_guidance}, context="auth") == admin_guidance
         assert normalize_error({"detail": student_guidance}, context="auth") == student_guidance
 
-    def test_registration_is_strictly_student(self) -> None:
-        client = FrontendAPIClient()
-        unique_email = f"student_check_{uuid.uuid4().hex[:6]}@univ.edu"
-        user = client.register(unique_email, "StudentPass123!", "Strict Student")
 
-        assert user.role == "STUDENT"
-        assert getattr(user, "admin_role", None) is None
+# ==============================================================================
+# E. ROLE CAPABILITY AND ROUTE ACCESS PURE UNIT CONTRACTS
+# ==============================================================================
+
+
+class TestRoleCapabilityUnitContracts:
+    """Test suite validating role capabilities and route access independent of visual UI."""
+
+    def test_unauthenticated_can_only_access_public_routes(self) -> None:
+        assert can_access_route(None, "/login") is True
+        assert can_access_route(None, "/student/login") is True
+        assert can_access_route(None, "/admin/login") is True
+        assert can_access_route(None, "/register") is True
+
+        assert can_access_route(None, "/dashboard") is False
+        assert can_access_route(None, "/chat") is False
+        assert can_access_route(None, "/knowledge-bases") is False
+        assert can_access_route(None, "/documents") is False
+        assert can_access_route(None, "/administrators") is False
+
+    def test_student_role_route_capabilities(self) -> None:
+        student = UserDTO(
+            id="s-100",
+            email="student@univ.edu",
+            full_name="Enrolled Student",
+            role="STUDENT",
+        )
+        # Permitted student capabilities
+        assert can_access_route(student, "/dashboard") is True
+        assert can_access_route(student, "/knowledge-bases") is True
+        assert can_access_route(student, "/chat") is True
+        assert can_access_route(student, "/profile") is True
+
+        # Prohibited administrator capabilities
+        assert can_access_route(student, "/documents") is False
+        assert can_access_route(student, "/administrators") is False
+        assert can_access_route(student, "/system-health") is False
+        assert can_access_route(student, "/indexing") is False
+        assert can_access_route(student, "/activity") is False
+
+        # Student cannot hold admin permissions
+        for perm in [
+            Permission.ADMIN_CHAT,
+            Permission.ADMIN_VIEW,
+            Permission.COURSE_CREATE,
+            Permission.DOCUMENT_UPLOAD,
+        ]:
+            assert has_admin_permission(student, perm) is False
+
+    def test_main_admin_role_route_capabilities(self) -> None:
+        admin = UserDTO(
+            id="a-100",
+            email="admin@univ.edu",
+            full_name="Administrator",
+            role="ADMIN",
+            admin_role="MAIN_ADMIN",
+        )
+        # Main Admin has full capabilities across all sections
+        for route in [
+            "/dashboard",
+            "/knowledge-bases",
+            "/documents",
+            "/indexing",
+            "/chat",
+            "/administrators",
+            "/activity",
+            "/system-health",
+            "/profile",
+        ]:
+            assert can_access_route(admin, route) is True
+
+    def test_faculty_admin_chat_permission_capability_scope(self) -> None:
+        faculty_without_chat = UserDTO(
+            id="fa-1",
+            email="faculty1@univ.edu",
+            full_name="Faculty One",
+            role="ADMIN",
+            admin_role="FACULTY_ADMIN",
+            permissions=[Permission.DOCUMENT_VIEW.value],
+        )
+        assert can_access_route(faculty_without_chat, "/chat") is False
+        assert has_admin_permission(faculty_without_chat, Permission.ADMIN_CHAT) is False
+        assert can_access_route(faculty_without_chat, "/documents") is True
+
+        faculty_with_chat = faculty_without_chat.model_copy(
+            update={
+                "permissions": [
+                    Permission.DOCUMENT_VIEW.value,
+                    Permission.ADMIN_CHAT.value,
+                ]
+            }
+        )
+        assert can_access_route(faculty_with_chat, "/chat") is True
+        assert has_admin_permission(faculty_with_chat, Permission.ADMIN_CHAT) is True

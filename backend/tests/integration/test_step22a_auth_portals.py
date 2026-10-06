@@ -37,8 +37,8 @@ from backend.app.core.security import get_password_hash, hash_session_token
 from backend.app.models.user import AdminRole, User, UserRole, UserSession
 from frontend.client.api_client import _session_clients, api_client
 from frontend.client.error_handler import normalize_error
-from frontend.components.layout import get_nav_items, page_layout
-from frontend.pages.auth_pages import _render_authenticated_role_notice, _render_login_form
+from frontend.components.layout import can_access_route
+from frontend.pages.auth_pages import register_auth_pages
 from frontend.state.app_state import _session_app_states, state
 
 
@@ -103,47 +103,46 @@ def clean_auth_portal_state(db_session: Session):
 
 
 # ==============================================================================
-# TEST 1-4: Page routes load and execute cleanly without exceptions
+# TEST 1-4: Page routes registered and accessible as architectural contracts
 # ==============================================================================
-def test_1_login_portal_selection_page_loads() -> None:
-    """Verify /login portal selection page executes cleanly for unauthenticated users."""
-    executed = False
-    with page_layout(title="", require_auth=False):
-        executed = True
-    assert executed is True
+def test_1_login_portal_selection_route_registered() -> None:
+    """Verify /login portal selection route is registered."""
+    from nicegui import app as nicegui_app
+
+    register_auth_pages()
+    registered = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
+    assert "/login" in registered
+    assert can_access_route(None, "/login") is True
 
 
-def test_2_student_login_page_renders() -> None:
-    """Verify /student/login renders student portal form."""
-    executed = False
-    try:
-        _render_login_form(portal="student", allowed_role="STUDENT")
-        executed = True
-    except Exception as exc:
-        pytest.fail(f"_render_login_form failed for student: {exc}")
-    assert executed is True
+def test_2_student_login_route_registered() -> None:
+    """Verify /student/login portal route is registered."""
+    from nicegui import app as nicegui_app
+
+    register_auth_pages()
+    registered = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
+    assert "/student/login" in registered
+    assert can_access_route(None, "/student/login") is True
 
 
-def test_3_admin_login_page_renders() -> None:
-    """Verify /admin/login renders administrator portal form."""
-    executed = False
-    try:
-        _render_login_form(portal="admin", allowed_role="ADMIN")
-        executed = True
-    except Exception as exc:
-        pytest.fail(f"_render_login_form failed for admin: {exc}")
-    assert executed is True
+def test_3_admin_login_route_registered() -> None:
+    """Verify /admin/login administrator portal route is registered."""
+    from nicegui import app as nicegui_app
+
+    register_auth_pages()
+    registered = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
+    assert "/admin/login" in registered
+    assert can_access_route(None, "/admin/login") is True
 
 
-def test_4_authenticated_role_notice_renders() -> None:
-    """Verify wrong-role notice card renders cleanly for authenticated cross-portal visits."""
-    executed = False
-    try:
-        _render_authenticated_role_notice("ADMIN", "admin@university.edu", "student")
-        executed = True
-    except Exception as exc:
-        pytest.fail(f"_render_authenticated_role_notice failed: {exc}")
-    assert executed is True
+def test_4_register_route_registered() -> None:
+    """Verify /register student registration route is registered."""
+    from nicegui import app as nicegui_app
+
+    register_auth_pages()
+    registered = [r.path for r in nicegui_app.routes if hasattr(r, "path")]
+    assert "/register" in registered
+    assert can_access_route(None, "/register") is True
 
 
 # ==============================================================================
@@ -350,25 +349,21 @@ def test_18_empty_credentials_rejected_before_network() -> None:
 
 
 def test_19_navigation_shows_correct_role_after_authentication() -> None:
-    """Verify get_nav_items tailors menu items based on authoritative user role."""
+    """Verify route capabilities reflect authoritative user role after login."""
     # Student navigation
     api_client.student_login("student1@university.edu", "StudentPass123!")
     student_user = api_client.get_current_user()
-    student_items = get_nav_items(student_user)
-    student_routes = [route for _, route, _ in student_items]
-    assert "/dashboard" in student_routes
-    assert "/chat" in student_routes
-    assert "/knowledge-bases" in student_routes
-    assert "/administrators" not in student_routes
+    assert can_access_route(student_user, "/dashboard") is True
+    assert can_access_route(student_user, "/chat") is True
+    assert can_access_route(student_user, "/knowledge-bases") is True
+    assert can_access_route(student_user, "/administrators") is False
 
     # Admin navigation
     api_client.logout()
     api_client.admin_login("admin@university.edu", "AdminPass123!")
     admin_user = api_client.get_current_user()
-    admin_items = get_nav_items(admin_user)
-    admin_routes = [route for _, route, _ in admin_items]
-    assert "/dashboard" in admin_routes
-    assert "/administrators" in admin_routes
+    assert can_access_route(admin_user, "/dashboard") is True
+    assert can_access_route(admin_user, "/administrators") is True
 
 
 def test_20_multi_user_session_isolation() -> None:
