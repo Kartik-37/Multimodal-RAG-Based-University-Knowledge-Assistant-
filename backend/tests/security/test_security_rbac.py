@@ -395,6 +395,7 @@ def test_student_without_membership_cannot_access_kb(
         name="Faculty Exam Key",
         description="Exam answer keys",
         created_by_id=admin.id,
+        is_student_visible=False,
     )
     db_session.add(kb)
     db_session.commit()

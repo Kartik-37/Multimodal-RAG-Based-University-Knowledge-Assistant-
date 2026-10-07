@@ -430,7 +430,7 @@ def test_unauthorized_cross_kb_leakage_prevention(
 
     kb_authorized = KnowledgeBase(id=uuid.uuid4(), name="Enrolled Course A", created_by_id=admin.id)
     kb_unauthorized = KnowledgeBase(
-        id=uuid.uuid4(), name="Private Course B", created_by_id=admin.id
+        id=uuid.uuid4(), name="Private Course B", created_by_id=admin.id, is_student_visible=False
     )
     db_session.add_all([kb_authorized, kb_unauthorized])
     db_session.commit()

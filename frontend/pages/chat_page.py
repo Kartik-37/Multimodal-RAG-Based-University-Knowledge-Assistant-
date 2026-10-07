@@ -74,7 +74,7 @@ def register_chat_page() -> None:
             subtitle=page_subtitle,
             active_route="/chat",
             require_auth=True,
-            breadcrumbs=[("Dashboard", "/dashboard"), ("Chat Assistant", None)],
+            breadcrumbs=None if not is_admin else [("Dashboard", "/dashboard"), ("Chat Assistant", None)],
         ):
             if not user:
                 return
@@ -136,10 +136,10 @@ def register_chat_page() -> None:
                 except Exception:
                     selected_kb = None
 
-            initial_scope = "COURSE" if selected_kb else "ALL_COURSES"
+            initial_scope = "COURSE" if requested_kb else "ALL_COURSES"
             active_scope: dict[str, Any] = {
                 "scope": initial_scope,
-                "kb_id": selected_kb.id if selected_kb else (kbs[0].id if kbs else None),
+                "kb_id": requested_kb.id if requested_kb else None,
                 "doc_id": None,
                 "docs": [],
                 "selected_doc": None,
@@ -162,11 +162,11 @@ def register_chat_page() -> None:
             if active_scope["kb_id"]:
                 load_docs_for_current_kb()
 
-            # Top Search Scope Controls Card
-            with ui.card().classes(
-                "academic-card w-full p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs mb-2"
+            # Compact, Secondary Search Scope / Status Bar
+            with ui.row().classes(
+                "w-full items-center justify-between pb-3 mb-2 border-b border-slate-200/80 gap-3 flex-wrap"
             ):
-                scope_controls_row = ui.row().classes("w-full items-center gap-3 flex-wrap")
+                scope_controls_row = ui.row().classes("items-center gap-2.5 flex-wrap")
                 scope_error_container = ui.column().classes("w-full")
                 doc_warning_container = ui.column().classes("w-full")
 
@@ -249,180 +249,214 @@ def register_chat_page() -> None:
                                     f"Document '{doc.filename}' is fully indexed ({doc.chunk_count} chunks ready)."
                                 ).classes("text-xs font-medium text-emerald-800")
 
+            def clear_chat_history() -> None:
+                state.clear_chat()
+                try:
+                    send_btn.enable()
+                    input_box.enable()
+                except NameError:
+                    pass
+                ui.notify("Conversation cleared.", type="info")
+                render_messages()
+                render_evidence()
+
             def render_controls() -> None:
                 scope_controls_row.clear()
                 with scope_controls_row:
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("filter_alt", size="sm").classes("text-blue-700")
-                        ui.label("Search Scope:").classes(
-                            "text-xs font-bold text-slate-700 uppercase tracking-wider"
-                        )
+                    if not is_admin:
+                        # STUDENT NAVIGATION: Understated and natural scope selection
+                        student_scope_options = {"ALL_COURSES": "All Available Courses"}
+                        for k in kbs:
+                            student_scope_options[k.id] = k.name
 
-                        scope_options = {
-                            "ALL_COURSES": "All Published Courses",
-                            "COURSE": "Selected Course",
-                            "DOCUMENT": "Selected Document",
-                        }
+                        def on_student_scope_change(e: Any) -> None:
+                            if e.value == "ALL_COURSES":
+                                active_scope["scope"] = "ALL_COURSES"
+                                active_scope["kb_id"] = None
+                            else:
+                                active_scope["scope"] = "COURSE"
+                                active_scope["kb_id"] = e.value
+                            render_controls()
 
-                        def on_scope_change(e: Any) -> None:
-                            active_scope["scope"] = e.value
-                            active_scope["doc_id"] = None
-                            active_scope["selected_doc"] = None
-                            if e.value == "COURSE" and not active_scope["kb_id"] and kbs:
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Scope:").classes("text-xs font-semibold text-slate-700")
+                            ui.select(
+                                options=student_scope_options,
+                                value=active_scope["kb_id"] if active_scope["scope"] == "COURSE" else "ALL_COURSES",
+                                on_change=on_student_scope_change,
+                            ).props("outlined dense options-dense").classes("text-xs min-w-[210px] minimalist-select")
+
+                        with ui.row().classes("items-center gap-1.5 hidden sm:flex text-slate-500 text-xs font-medium ml-2"):
+                            ui.icon("verified", size="14px").classes("text-emerald-600")
+                            ui.label("Grounded in official course materials")
+
+                        with ui.row().classes("ml-auto items-center"):
+                            ui.button(
+                                "Clear Chat",
+                                icon="delete_sweep",
+                                on_click=clear_chat_history,
+                            ).props("flat dense no-caps").classes(
+                                "text-xs text-rose-600 hover:bg-rose-50 rounded-lg px-2.5 py-1 font-semibold"
+                            )
+                    else:
+                        # ADMIN NAVIGATION: Multi-level diagnostic search scope
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("filter_alt", size="sm").classes("text-blue-700")
+                            ui.label("Search Scope:").classes(
+                                "text-xs font-bold text-slate-700 uppercase tracking-wider"
+                            )
+
+                            scope_options = {
+                                "ALL_COURSES": "All Published Courses",
+                                "COURSE": "Selected Course",
+                                "DOCUMENT": "Selected Document",
+                            }
+
+                            def on_scope_change(e: Any) -> None:
+                                active_scope["scope"] = e.value
+                                active_scope["doc_id"] = None
+                                active_scope["selected_doc"] = None
+                                if e.value == "COURSE" and not active_scope["kb_id"] and kbs:
+                                    active_scope["kb_id"] = kbs[0].id
+                                    load_docs_for_current_kb()
+                                elif e.value == "DOCUMENT":
+                                    if not active_scope["kb_id"] and kbs:
+                                        active_scope["kb_id"] = kbs[0].id
+                                    load_docs_for_current_kb()
+                                    if active_scope["docs"]:
+                                        active_scope["selected_doc"] = active_scope["docs"][0]
+                                        active_scope["doc_id"] = active_scope["docs"][0].id
+                                else:
+                                    active_scope["kb_id"] = None
+                                    active_scope["docs"] = []
+                                render_controls()
+                                refresh_scope_error()
+                                refresh_doc_warning()
+
+                            ui.select(
+                                options=scope_options,
+                                value=active_scope["scope"],
+                                on_change=on_scope_change,
+                            ).props("outlined dense options-dense").classes("text-xs min-w-[190px]")
+
+                        if active_scope["scope"] in ("COURSE", "DOCUMENT"):
+                            kb_options = {kb.id: kb.name for kb in kbs}
+                            if not active_scope["kb_id"] and kbs:
                                 active_scope["kb_id"] = kbs[0].id
                                 load_docs_for_current_kb()
-                            elif e.value == "DOCUMENT":
-                                if not active_scope["kb_id"] and kbs:
-                                    active_scope["kb_id"] = kbs[0].id
+
+                            def on_kb_change(e: Any) -> None:
+                                active_scope["kb_id"] = e.value
+                                active_scope["selected_doc"] = None
+                                active_scope["doc_id"] = None
+                                active_scope["docs"] = []
+                                selected = next((k for k in kbs if k.id == e.value), None)
+                                if selected:
+                                    state.active_kb = selected
                                 load_docs_for_current_kb()
-                                if active_scope["docs"]:
+                                if active_scope["scope"] == "DOCUMENT" and active_scope["docs"]:
                                     active_scope["selected_doc"] = active_scope["docs"][0]
                                     active_scope["doc_id"] = active_scope["docs"][0].id
-                            else:
-                                active_scope["kb_id"] = None
-                                active_scope["docs"] = []
-                            render_controls()
-                            refresh_scope_error()
-                            refresh_doc_warning()
+                                render_controls()
+                                refresh_scope_error()
+                                refresh_doc_warning()
 
-                        ui.select(
-                            options=scope_options,
-                            value=active_scope["scope"],
-                            on_change=on_scope_change,
-                        ).props("outlined dense options-dense").classes("text-xs min-w-[190px]")
+                            ui.select(
+                                options=kb_options,
+                                value=active_scope["kb_id"],
+                                on_change=on_kb_change,
+                                label="Course",
+                            ).props("outlined dense options-dense").classes("text-xs min-w-[200px]")
 
-                    # Course selector (shown if COURSE or DOCUMENT)
-                    if active_scope["scope"] in ("COURSE", "DOCUMENT"):
-                        kb_options = {kb.id: kb.name for kb in kbs}
-                        if not active_scope["kb_id"] and kbs:
-                            active_scope["kb_id"] = kbs[0].id
-                            load_docs_for_current_kb()
-
-                        def on_kb_change(e: Any) -> None:
-                            active_scope["kb_id"] = e.value
-                            active_scope["selected_doc"] = None
-                            active_scope["doc_id"] = None
-                            active_scope["docs"] = []
-                            selected = next((k for k in kbs if k.id == e.value), None)
-                            if selected:
-                                state.active_kb = selected
-                            load_docs_for_current_kb()
-                            if active_scope["scope"] == "DOCUMENT" and active_scope["docs"]:
-                                active_scope["selected_doc"] = active_scope["docs"][0]
+                        if active_scope["scope"] == "DOCUMENT":
+                            doc_options = {d.id: d.filename for d in active_scope["docs"]}
+                            if not active_scope["doc_id"] and active_scope["docs"]:
                                 active_scope["doc_id"] = active_scope["docs"][0].id
-                            render_controls()
-                            refresh_scope_error()
-                            refresh_doc_warning()
+                                active_scope["selected_doc"] = active_scope["docs"][0]
 
-                        ui.select(
-                            options=kb_options,
-                            value=active_scope["kb_id"],
-                            on_change=on_kb_change,
-                            label="Course",
-                        ).props("outlined dense options-dense").classes("text-xs min-w-[200px]")
-
-                    # Document selector (shown if DOCUMENT)
-                    if active_scope["scope"] == "DOCUMENT":
-                        doc_options = {d.id: d.filename for d in active_scope["docs"]}
-                        if not active_scope["doc_id"] and active_scope["docs"]:
-                            active_scope["doc_id"] = active_scope["docs"][0].id
-                            active_scope["selected_doc"] = active_scope["docs"][0]
-
-                        def on_doc_change(e: Any) -> None:
-                            active_scope["doc_id"] = e.value
-                            selected = next(
-                                (d for d in active_scope["docs"] if d.id == e.value), None
-                            )
-                            active_scope["selected_doc"] = selected
-                            refresh_doc_warning()
-
-                        ui.select(
-                            options=doc_options,
-                            value=active_scope["doc_id"],
-                            on_change=on_doc_change,
-                            label="Document",
-                        ).props("outlined dense options-dense").classes("text-xs min-w-[220px]")
-
-                    # Diagnostics & Clear chat
-                    with ui.row().classes("ml-auto items-center gap-2 flex-wrap"):
-                        diag_kb_id = active_scope["kb_id"] or (kbs[0].id if kbs else None)
-                        if is_admin and diag_kb_id:
-                            diag_kb_name = next(
-                                (k.name for k in kbs if k.id == diag_kb_id), "Course"
-                            )
-                            with (
-                                ui.button("Diagnostics", icon="bug_report")
-                                .props("outline dense no-caps icon-right=arrow_drop_down")
-                                .classes(
-                                    "text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
+                            def on_doc_change(e: Any) -> None:
+                                active_scope["doc_id"] = e.value
+                                selected = next(
+                                    (d for d in active_scope["docs"] if d.id == e.value), None
                                 )
-                            ):
-                                with ui.menu().classes(
-                                    "p-2 bg-white border border-slate-200 shadow-lg rounded-lg"
-                                ) as debug_menu:
-                                    ui.label("RAG Diagnostics").classes(
-                                        "text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1"
+                                active_scope["selected_doc"] = selected
+                                refresh_doc_warning()
+
+                            ui.select(
+                                options=doc_options,
+                                value=active_scope["doc_id"],
+                                on_change=on_doc_change,
+                                label="Document",
+                            ).props("outlined dense options-dense").classes("text-xs min-w-[220px]")
+
+                        with ui.row().classes("ml-auto items-center gap-2 flex-wrap"):
+                            diag_kb_id = active_scope["kb_id"] or (kbs[0].id if kbs else None)
+                            if diag_kb_id:
+                                diag_kb_name = next(
+                                    (k.name for k in kbs if k.id == diag_kb_id), "Course"
+                                )
+                                with (
+                                    ui.button("Diagnostics", icon="bug_report")
+                                    .props("outline dense no-caps icon-right=arrow_drop_down")
+                                    .classes(
+                                        "text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
                                     )
-                                    with ui.column().classes("gap-1 w-full min-w-[180px]"):
-                                        ui.button(
-                                            "Dense Vector",
-                                            icon="manage_search",
-                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: [
-                                                debug_menu.close(),
-                                                open_vector_retrieval_dialog(k, n),
-                                            ],
-                                        ).props("flat dense no-caps align=left").classes(
-                                            "w-full text-xs text-blue-700 justify-start hover:bg-blue-50"
+                                ):
+                                    with ui.menu().classes(
+                                        "p-2 bg-white border border-slate-200 shadow-lg rounded-lg"
+                                    ) as debug_menu:
+                                        ui.label("RAG Diagnostics").classes(
+                                            "text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1"
                                         )
-                                        ui.button(
-                                            "Lexical FTS",
-                                            icon="search",
-                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: [
-                                                debug_menu.close(),
-                                                open_lexical_retrieval_dialog(k, n),
-                                            ],
-                                        ).props("flat dense no-caps align=left").classes(
-                                            "w-full text-xs text-slate-700 justify-start hover:bg-slate-50"
-                                        )
-                                        ui.button(
-                                            "Hybrid RRF",
-                                            icon="layers",
-                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: [
-                                                debug_menu.close(),
-                                                open_hybrid_retrieval_dialog(k, n),
-                                            ],
-                                        ).props("flat dense no-caps align=left").classes(
-                                            "w-full text-xs text-indigo-700 justify-start hover:bg-indigo-50"
-                                        )
-                                        ui.button(
-                                            "Reranker",
-                                            icon="tune",
-                                            on_click=lambda k=diag_kb_id, n=diag_kb_name: [
-                                                debug_menu.close(),
-                                                open_rerank_inspection_dialog(k, n),
-                                            ],
-                                        ).props("flat dense no-caps align=left").classes(
-                                            "w-full text-xs text-slate-700 justify-start hover:bg-slate-50"
-                                        )
+                                        with ui.column().classes("gap-1 w-full min-w-[180px]"):
+                                            ui.button(
+                                                "Dense Vector",
+                                                icon="manage_search",
+                                                on_click=lambda k=diag_kb_id, n=diag_kb_name: [
+                                                    debug_menu.close(),
+                                                    open_vector_retrieval_dialog(k, n),
+                                                ],
+                                            ).props("flat dense no-caps align=left").classes(
+                                                "w-full text-xs text-blue-700 justify-start hover:bg-blue-50"
+                                            )
+                                            ui.button(
+                                                "Lexical FTS",
+                                                icon="search",
+                                                on_click=lambda k=diag_kb_id, n=diag_kb_name: [
+                                                    debug_menu.close(),
+                                                    open_lexical_retrieval_dialog(k, n),
+                                                ],
+                                            ).props("flat dense no-caps align=left").classes(
+                                                "w-full text-xs text-slate-700 justify-start hover:bg-slate-50"
+                                            )
+                                            ui.button(
+                                                "Hybrid RRF",
+                                                icon="layers",
+                                                on_click=lambda k=diag_kb_id, n=diag_kb_name: [
+                                                    debug_menu.close(),
+                                                    open_hybrid_retrieval_dialog(k, n),
+                                                ],
+                                            ).props("flat dense no-caps align=left").classes(
+                                                "w-full text-xs text-indigo-700 justify-start hover:bg-indigo-50"
+                                            )
+                                            ui.button(
+                                                "Reranker",
+                                                icon="tune",
+                                                on_click=lambda k=diag_kb_id, n=diag_kb_name: [
+                                                    debug_menu.close(),
+                                                    open_rerank_inspection_dialog(k, n),
+                                                ],
+                                            ).props("flat dense no-caps align=left").classes(
+                                                "w-full text-xs text-slate-700 justify-start hover:bg-slate-50"
+                                            )
 
-                        def clear_chat_history() -> None:
-                            state.clear_chat()
-                            try:
-                                send_btn.enable()
-                                input_box.enable()
-                            except NameError:
-                                pass
-                            ui.notify("Conversation cleared.", type="info")
-                            render_messages()
-                            render_evidence()
-
-                        ui.button(
-                            "Clear Chat",
-                            icon="delete_sweep",
-                            on_click=clear_chat_history,
-                        ).props("flat dense no-caps").classes(
-                            "text-xs text-rose-600 hover:bg-rose-50 rounded-lg px-2 py-1 font-medium"
-                        )
+                            ui.button(
+                                "Clear Chat",
+                                icon="delete_sweep",
+                                on_click=clear_chat_history,
+                            ).props("flat dense no-caps").classes(
+                                "text-xs text-rose-600 hover:bg-rose-50 rounded-lg px-2 py-1 font-medium"
+                            )
 
             render_controls()
             refresh_scope_error()
@@ -441,21 +475,21 @@ def register_chat_page() -> None:
                         ui.button(icon="close", on_click=evidence_dialog.close).props("flat round dense")
                     evidence_container = ui.column().classes("w-full flex-1 overflow-y-auto")
 
-            # Main Chat Area
+            # Main Chat Area: Integrated, Breathing Conversation Stream
             with ui.column().classes("w-full max-w-4xl mx-auto gap-4 mt-1"):
-                # Conversation Thread Container
+                # Conversation Stream: No giant border card
                 message_container = ui.column().classes(
-                    "w-full min-h-[460px] max-h-[66vh] overflow-y-auto p-4 sm:p-6 bg-slate-50/70 border border-slate-200 rounded-xl shadow-xs gap-4"
+                    "w-full min-h-[440px] max-h-[68vh] overflow-y-auto p-1 sm:p-3 gap-6 box-border"
                 )
 
-                # Input Dock
+                # Modern Attached Composer
                 input_placeholder = (
                     "Ask a question about course materials, syllabi, grading criteria..."
                     if not is_admin
                     else "Ask a question to test retrieval, reranking, and citation synthesis..."
                 )
                 with ui.card().classes(
-                    "w-full p-2.5 bg-white border border-slate-200 rounded-xl shadow-xs focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-colors"
+                    "w-full p-3 bg-white border border-slate-200/95 rounded-2xl shadow-xs focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-colors"
                 ):
                     with ui.row().classes("w-full items-center gap-2"):
                         input_box = (
@@ -469,9 +503,12 @@ def register_chat_page() -> None:
                             ui.button(icon="send")
                             .props("dense")
                             .classes(
-                                "w-10 h-10 rounded-lg !bg-blue-700 hover:!bg-blue-800 text-white shadow-xs shrink-0 flex items-center justify-center transition-colors"
+                                "w-10 h-10 rounded-xl !bg-blue-700 hover:!bg-blue-800 text-white shadow-xs shrink-0 flex items-center justify-center transition-colors"
                             )
                         ).tooltip("Send question (Enter)")
+                    ui.label("Answers are synthesized strictly from official course materials with verified citations.").classes(
+                        "text-[11px] text-slate-400 font-medium px-1 mt-1 select-none"
+                    )
 
             async def send_message(question_text: str) -> None:
                 q_clean = question_text.strip()
@@ -628,36 +665,40 @@ def register_chat_page() -> None:
                 with message_container:
                     if not state.chat_history:
                         with ui.column().classes(
-                            "w-full py-10 items-center justify-center text-center"
+                            "w-full py-12 items-center justify-center text-center max-w-xl mx-auto"
                         ):
                             with ui.element("div").classes(
-                                "w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs mb-3"
+                                "w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold mb-3 border border-blue-200 shadow-2xs"
                             ):
                                 ui.icon("school", size="24px")
-                            ui.label("RAG Assistant").classes(
-                                "text-lg font-bold text-slate-900 tracking-tight"
+                            ui.label("What would you like to explore?").classes(
+                                "text-xl font-extrabold text-slate-900 tracking-tight"
                             )
                             ui.label(
-                                "Ask a question below. Answers are synthesized strictly from verified course materials "
-                                "with direct citations to source documents and page numbers."
-                            ).classes("text-xs text-slate-600 max-w-md mt-1 mb-5 leading-relaxed")
+                                "Ask about your course syllabi, grading policies, examination formats, or lecture materials. "
+                                "Every answer is verified against official documents with page citations."
+                            ).classes("text-xs sm:text-sm text-slate-600 mt-1 mb-6 leading-relaxed")
 
-                            ui.label("SUGGESTED QUESTIONS").classes(
-                                "text-[10px] font-bold text-slate-400 tracking-wider mb-2 font-mono"
+                            ui.label("Suggested starting questions").classes(
+                                "text-xs font-bold text-slate-400 tracking-wider mb-2.5 uppercase font-mono"
                             )
-                            with ui.row().classes("gap-2 flex-wrap justify-center max-w-xl"):
+                            with ui.row().classes("gap-2 flex-wrap justify-center w-full"):
                                 starter_prompts = [
-                                    "What are the examination grading criteria?",
-                                    "Explain the core topics covered in this syllabus.",
-                                    "What are the requirements to pass this course?",
+                                    "Summarize the core syllabus topics",
+                                    "What are the examination and pass criteria?",
+                                    "Explain the late submission and attendance policies",
+                                    "Outline key concepts and definitions",
                                 ]
                                 for prompt in starter_prompts:
-                                    ui.button(
-                                        prompt,
-                                        on_click=lambda p=prompt: send_message(p),
-                                    ).props("outline dense no-caps").classes(
-                                        "text-xs text-slate-700 border-slate-200 bg-white hover:border-blue-400 hover:text-blue-800 rounded-lg px-3 py-1.5 shadow-2xs transition-colors"
-                                    )
+                                    with (
+                                        ui.row()
+                                        .classes(
+                                            "items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs font-medium text-slate-700 hover:text-blue-900 cursor-pointer shadow-2xs transition-colors"
+                                        )
+                                        .on("click", lambda p=prompt: send_message(p))
+                                    ):
+                                        ui.icon("arrow_outward", size="13px").classes("text-slate-400")
+                                        ui.label(prompt)
                     else:
                         for msg in state.chat_history:
                             if msg.role == "user":

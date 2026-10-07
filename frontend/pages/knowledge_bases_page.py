@@ -27,9 +27,9 @@ def register_knowledge_bases_page() -> None:
         is_student = user is None or user.role == "STUDENT"
         can_create_course = has_admin_permission(user, Permission.COURSE_CREATE)
 
-        page_title = "Course Materials" if is_student else "Course Knowledge Bases"
+        page_title = "Academic Library & Courses" if is_student else "Course Knowledge Bases"
         page_subtitle = (
-            "Browse your enrolled courses, view verified materials, and ask questions with citations."
+            "Explore published courses, inspect learning materials, and launch grounded assistant inquiries."
             if is_student
             else "Curate academic courses, provision syllabi repositories, and manage learning documents."
         )
@@ -39,7 +39,7 @@ def register_knowledge_bases_page() -> None:
             subtitle=page_subtitle,
             active_route="/knowledge-bases",
             require_auth=True,
-            breadcrumbs=[("Dashboard", "/dashboard"), ("Courses", None)],
+            breadcrumbs=None if is_student else [("Dashboard", "/dashboard"), ("Courses", None)],
         ):
             # ------------------------------------------------------------------
             # CREATE COURSE DIALOG (Admin Only)

@@ -239,14 +239,22 @@ def get_authorized_knowledge_bases(
     role_str = str(role_val).upper() if role_val is not None else ""
 
     if role_str == "STUDENT" or role_val == UserRole.STUDENT:
-        # Student visibility is strictly membership-based via KnowledgeBaseMember
+        # Student visibility is strictly membership-based via KnowledgeBaseMember.
+        # Inactive or hidden courses are strictly excluded.
         stmt = (
             select(KnowledgeBase)
             .join(
                 KnowledgeBaseMember,
                 KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
             )
-            .where(KnowledgeBaseMember.user_id == user_id_val)
+            .where(
+                and_(
+                    KnowledgeBaseMember.user_id == user_id_val,
+                    KnowledgeBase.is_active.is_(True),
+                    KnowledgeBase.is_student_visible.is_(True),
+                )
+            )
+            .distinct()
             .order_by(KnowledgeBase.created_at.desc())
         )
         return list(db.execute(stmt).scalars().all())
@@ -359,12 +367,16 @@ def get_authorized_knowledge_base(
             select(KnowledgeBase)
             .join(
                 KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                and_(
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                    KnowledgeBaseMember.user_id == current_user.id,
+                ),
             )
             .where(
                 and_(
                     KnowledgeBase.id == kb_id,
-                    KnowledgeBaseMember.user_id == current_user.id,
+                    KnowledgeBase.is_active.is_(True),
+                    KnowledgeBase.is_student_visible.is_(True),
                 )
             )
         )

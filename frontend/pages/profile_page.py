@@ -20,17 +20,18 @@ def register_profile_page() -> None:
 
     @ui.page("/profile")
     def profile_page() -> None:
+        user = state.current_user or api_client.get_current_user()
+        is_admin = bool(user and user.role == "ADMIN")
         with page_layout(
             title="Account & Profile",
             subtitle="Manage your authenticated session and view your university account profile.",
             active_route="/profile",
             require_auth=True,
+            breadcrumbs=None if not is_admin else [("Dashboard", "/dashboard"), ("My Profile", None)],
         ):
-            user = state.current_user
             if not user:
                 return
 
-            is_admin = user.role == "ADMIN"
             is_main_admin = is_admin and (user.admin_role == "MAIN_ADMIN" or not user.admin_role)
 
             def handle_sign_out() -> None:
@@ -43,13 +44,13 @@ def register_profile_page() -> None:
             with ui.column().classes("w-full max-w-4xl mx-auto gap-6 py-2"):
                 # 1. Profile Hero Card with Avatar & Badges
                 with ui.card().classes(
-                    "academic-card w-full p-6 sm:p-7 bg-white border border-slate-200 rounded-lg shadow-2xs"
+                    "academic-card w-full p-6 sm:p-7 bg-white border border-slate-200 rounded-xl shadow-xs"
                 ):
                     with ui.row().classes("w-full items-center justify-between gap-4 flex-wrap sm:flex-nowrap"):
                         with ui.row().classes("items-center gap-4 min-w-0"):
                             initials = "".join(p[0].upper() for p in user.full_name.split()[:2]) or "U"
                             with ui.element("div").classes(
-                                "w-14 h-14 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-lg shrink-0"
+                                "w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-xs"
                             ):
                                 ui.label(initials)
 
@@ -70,7 +71,7 @@ def register_profile_page() -> None:
                                             "text-[10px] font-bold px-2 py-0.5"
                                         )
                                     else:
-                                        ui.badge("ENROLLED STUDENT", color="blue-700").classes(
+                                        ui.badge("UNIVERSITY STUDENT", color="blue-700").classes(
                                             "text-[10px] font-bold px-2 py-0.5"
                                         )
 
@@ -84,21 +85,21 @@ def register_profile_page() -> None:
                                 icon="arrow_back",
                                 on_click=lambda: ui.navigate.to("/dashboard"),
                             ).props("outline dense no-caps").classes(
-                                "text-xs font-semibold px-3 py-1.5 border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md"
+                                "text-xs font-semibold px-3 py-1.5 border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg"
                             )
                             ui.button(
                                 "Sign Out",
                                 icon="logout",
                                 on_click=handle_sign_out,
                             ).props("flat dense no-caps").classes(
-                                "text-xs font-semibold px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-md"
+                                "text-xs font-semibold px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
                             )
 
                 # 2. Main Profile Details Grid
                 with ui.row().classes("w-full gap-5 items-stretch flex-wrap md:flex-nowrap"):
                     # Left Card: Identity & Credentials
                     with ui.card().classes(
-                        "academic-card flex-1 min-w-[300px] w-full p-5 bg-white border border-slate-200 rounded-lg shadow-2xs gap-3 flex flex-col justify-between"
+                        "academic-card flex-1 min-w-[300px] w-full p-5 bg-white border border-slate-200 rounded-xl shadow-xs gap-3 flex flex-col justify-between"
                     ):
                         with ui.column().classes("w-full gap-1"):
                             with ui.row().classes("items-center gap-2 pb-2.5 border-b border-slate-100"):
@@ -135,11 +136,11 @@ def register_profile_page() -> None:
                                     ui.label("Authentication").classes("text-slate-500 font-medium")
                                     with ui.row().classes("items-center gap-1 text-emerald-700 font-semibold"):
                                         ui.icon("check_circle", size="14px")
-                                        ui.label("PostgreSQL Session Active")
+                                        ui.label("Institutional Session Verified")
 
                     # Right Card: Academic Privileges & Course Access
                     with ui.card().classes(
-                        "academic-card flex-1 min-w-[300px] w-full p-5 bg-white border border-slate-200 rounded-lg shadow-2xs gap-3 flex flex-col justify-between"
+                        "academic-card flex-1 min-w-[300px] w-full p-5 bg-white border border-slate-200 rounded-xl shadow-xs gap-3 flex flex-col justify-between"
                     ):
                         with ui.column().classes("w-full gap-1"):
                             with ui.row().classes("items-center gap-2 pb-2.5 border-b border-slate-100"):
@@ -167,14 +168,13 @@ def register_profile_page() -> None:
                                     level="info",
                                 )
                             else:
-                                # Dynamic student enrolled courses
                                 try:
                                     enrolled_kbs = api_client.get_knowledge_bases()
                                 except Exception:
                                     enrolled_kbs = []
 
                                 with ui.column().classes("w-full py-2 gap-2 text-xs"):
-                                    ui.label("Enrolled University Courses:").classes("text-slate-500 font-medium")
+                                    ui.label("Accessible Academic Courses:").classes("text-slate-500 font-medium")
                                     if enrolled_kbs:
                                         with ui.row().classes("w-full gap-1.5 flex-wrap"):
                                             for kb in enrolled_kbs:
@@ -182,12 +182,12 @@ def register_profile_page() -> None:
                                                     "text-xs font-semibold px-2 py-0.5 border border-slate-200"
                                                 )
                                     else:
-                                        ui.label("No active course enrollments assigned yet.").classes(
+                                        ui.label("No active courses published yet.").classes(
                                             "text-slate-400 italic text-xs"
                                         )
 
                                 render_alert(
-                                    message="You have Student privileges. You can query enrolled university course materials, inspect source citations, and open original reference documents.",
+                                    message="You have Student privileges. You can query published university course materials, inspect source citations, and open original reference documents.",
                                     level="info",
                                 )
 

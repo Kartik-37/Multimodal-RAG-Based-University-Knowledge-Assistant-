@@ -27,6 +27,8 @@ class KnowledgeBaseDTO(BaseModel):
     id: str
     name: str
     description: str = ""
+    is_active: bool = True
+    is_student_visible: bool = True
     document_count: int = 0
     created_at: str = ""
 
@@ -229,6 +231,8 @@ class CourseSummaryDTO(BaseModel):
     id: str
     name: str
     description: str = ""
+    is_active: bool = True
+    is_student_visible: bool = True
     created_at: str = ""
     total_documents: int = 0
     active_documents: int = 0

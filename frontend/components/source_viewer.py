@@ -158,26 +158,36 @@ def open_source_viewer(
             with ui.tabs().classes(
                 "w-full bg-slate-50/80 border-b border-slate-200 px-3 text-slate-600 shrink-0"
             ).props("dense active-color=primary indicator-color=primary align=left") as tabs:
-                tab_pdf = ui.tab("pdf_view", label="PDF Document", icon="picture_as_pdf")
-                tab_text = ui.tab("text_view", label="Document Text & Chunks", icon="segment")
+                tab_pdf = ui.tab("pdf_view", label="PDF Document", icon="picture_as_pdf") if is_pdf else None
+                tab_text = ui.tab(
+                    "text_view",
+                    label="Original Content & Chunks" if not is_pdf else "Document Text & Chunks",
+                    icon="segment",
+                )
 
-            with ui.tab_panels(tabs, value=tab_pdf).classes("w-full flex-1 p-0 m-0 overflow-hidden flex flex-col"):
-                # TAB 1: Native PDF Viewer
-                with ui.tab_panel(tab_pdf).classes("w-full h-full p-0 m-0 flex flex-col bg-slate-100 overflow-hidden flex-1"):
-                    with ui.element("div").classes("w-full h-full flex-1 bg-white flex flex-col overflow-hidden relative"):
-                        safe_title = html.escape(document_name, quote=True)
-                        safe_url = html.escape(iframe_url, quote=True)
-                        ui.html(
-                            f'<iframe src="{safe_url}" class="w-full flex-1" '
-                            f'style="width: 100%; height: calc(100vh - 170px); min-height: 520px; border: none; display: block;" '
-                            f'allow="fullscreen" title="{safe_title}">'
-                            f'<div class="p-6 text-center text-xs text-slate-500">'
-                            f'<p>Inline preview not supported by browser.</p>'
-                            f'<a href="{safe_url}" target="_blank" class="text-blue-600 underline font-semibold mt-2 inline-block">'
-                            f'Open {safe_title} in new browser tab ↗</a>'
-                            f'</div>'
-                            f'</iframe>'
-                        ).classes("w-full flex-1 flex flex-col")
+            initial_tab = tab_pdf if (is_pdf and tab_pdf) else tab_text
+            with ui.tab_panels(tabs, value=initial_tab).classes("w-full flex-1 p-0 m-0 overflow-hidden flex flex-col"):
+                # TAB 1: Native PDF Viewer (Only if document is a PDF)
+                if is_pdf and tab_pdf:
+                    with ui.tab_panel(tab_pdf).classes("w-full h-full p-0 m-0 flex flex-col bg-slate-100 overflow-hidden flex-1"):
+                        with ui.element("div").classes("w-full h-full flex-1 bg-white flex flex-col overflow-hidden relative"):
+                            safe_title = html.escape(document_name, quote=True)
+                            safe_url = html.escape(iframe_url, quote=True)
+                            ui.html(
+                                f'<object data="{safe_url}" type="application/pdf" class="w-full flex-1" '
+                                f'style="width: 100%; height: calc(100vh - 170px); min-height: 520px; border: none; display: block;" '
+                                f'title="{safe_title}">'
+                                f'<iframe src="{safe_url}" class="w-full flex-1" '
+                                f'style="width: 100%; height: 100%; min-height: 520px; border: none; display: block;" '
+                                f'allow="fullscreen" title="{safe_title}">'
+                                f'<div class="p-6 text-center text-xs text-slate-600">'
+                                f'<p class="font-semibold text-slate-800">Inline PDF preview is not supported by your browser configuration.</p>'
+                                f'<a href="{safe_url}" target="_blank" class="text-blue-700 underline font-semibold mt-2 inline-block">'
+                                f'Open {safe_title} in new browser tab ↗</a>'
+                                f'</div>'
+                                f'</iframe>'
+                                f'</object>'
+                            ).classes("w-full flex-1 flex flex-col")
 
                 # TAB 2: Extracted Text & Chunks (Guaranteed Readable in All Browsers)
                 with ui.tab_panel(tab_text).classes("w-full h-full p-4 flex flex-col bg-slate-50 overflow-y-auto"):
@@ -227,10 +237,11 @@ def open_source_viewer(
                             ui.label(
                                 "This document may still be undergoing indexing, or you can read the original file using the PDF Document tab."
                             ).classes("text-xs text-slate-500 max-w-sm")
+                            fallback_label = "Open PDF in New Browser Tab" if is_pdf else "Open File in New Browser Tab"
                             ui.button(
-                                "Open PDF in New Browser Tab",
+                                fallback_label,
                                 icon="open_in_new",
-                                on_click=lambda u=iframe_url: ui.navigate.to(u, new_tab=True),
+                                on_click=lambda u=file_url: ui.navigate.to(u, new_tab=True),
                             ).props("outline dense no-caps").classes("text-xs text-blue-700 mt-2")
 
             # Footer with Document Metadata & Fallback Link

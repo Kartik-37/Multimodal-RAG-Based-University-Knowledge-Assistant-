@@ -53,85 +53,166 @@ def register_dashboard_page() -> None:
             # STUDENT PERSPECTIVE
             # ------------------------------------------------------------------
             if not is_admin:
+                import datetime
+                import urllib.parse
+
+                now_hour = datetime.datetime.now().hour
+                time_greeting = "Good morning" if now_hour < 12 else ("Good afternoon" if now_hour < 18 else "Good evening")
+                user_first_name = user.full_name.split()[0] if (user and user.full_name) else "Student"
+
                 course_load_error = False
                 enrolled_kbs = []
                 try:
-                    # Strictly membership-based access: fetch assigned knowledge bases
                     enrolled_kbs = api_client.get_knowledge_bases() if user else []
                 except ValueError as err:
                     course_load_error = True
-                    render_alert(f"Unable to load assigned courses. {err}", "negative")
+                    render_alert(f"Unable to load courses. {err}", "negative")
 
-                # 1. Quick Inquiry Input Box
+                # 1. Study Starting Point Header & Personalized Greeting
+                with ui.element("div").classes("w-full mb-2"):
+                    with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap"):
+                        with ui.column().classes("gap-1"):
+                            ui.label(f"{time_greeting}, {user_first_name}").classes(
+                                "text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-sans"
+                            )
+                            ui.label(
+                                "Ask questions across your university course materials with verified source citations."
+                            ).classes("text-sm text-slate-600 leading-relaxed")
+                        with ui.row().classes("items-center gap-2"):
+                            ui.badge("Verified Academic Grounding", color="blue-1").props("text-color=blue-9").classes(
+                                "text-xs font-semibold px-2.5 py-1 border border-blue-200"
+                            )
+
+                # 2. Visually Integrated Assistant Composer
                 with ui.card().classes(
-                    "w-full p-6 sm:p-7 bg-white border border-slate-200 rounded-xl shadow-xs gap-3 box-border"
+                    "w-full p-6 sm:p-7 bg-white border border-slate-200/90 rounded-2xl shadow-xs gap-4 box-border my-2"
                 ):
                     with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
                         with ui.row().classes("items-center gap-2"):
                             with ui.element("div").classes(
-                                "w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold"
+                                "w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold"
                             ):
                                 ui.icon("chat", size="18px")
-                            ui.label("Ask Course Assistant").classes(
-                                "text-base font-bold text-slate-900 tracking-tight"
+                            ui.label("Ask Knowledge Assistant").classes(
+                                "text-sm sm:text-base font-bold text-slate-900 tracking-tight"
                             )
-                        ui.badge("Source Grounded", color="blue-1").props("text-color=blue-9").classes(
-                            "text-[10px] font-bold px-2 py-0.5 border border-blue-200"
+                        ui.label("Searches all accessible course syllabi & notes").classes(
+                            "text-xs font-medium text-slate-500"
                         )
 
-                    ui.label(
-                        "Inquire across your enrolled course materials, syllabi, and official regulations. "
-                        "Answers are synthesized strictly from verified documents with page citations."
-                    ).classes("text-xs sm:text-sm text-slate-600 leading-relaxed")
-
-                    def handle_quick_ask() -> None:
-                        q = (ask_input.value or "").strip()
-                        if q:
-                            ui.navigate.to(f"/chat?q={ui.run_javascript('encodeURIComponent')}")
-                            # Use query string navigation
-                            import urllib.parse
-                            ui.navigate.to(f"/chat?q={urllib.parse.quote(q)}")
+                    def handle_quick_ask(custom_query: str | None = None) -> None:
+                        q_val = custom_query or (ask_input.value or "").strip()
+                        if q_val:
+                            encoded_q = urllib.parse.quote(q_val)
+                            ui.navigate.to(f"/chat?q={encoded_q}")
                         else:
                             ui.navigate.to("/chat")
 
-                    with ui.row().classes("w-full gap-2 items-center mt-1"):
+                    with ui.row().classes("w-full gap-2.5 items-center"):
                         ask_input = (
                             ui.input(
-                                placeholder="Type a question (e.g. 'What is pipelining in Computer Architecture?')...",
+                                placeholder="Ask any question about your courses (e.g. 'Explain cache coherence' or 'What is the attendance policy?')...",
                             )
                             .props("outlined dense")
                             .classes("flex-1 text-sm minimalist-input")
                         )
-                        ask_input.on("keydown.enter", handle_quick_ask)
+                        ask_input.on("keydown.enter", lambda: handle_quick_ask())
 
                         ui.button(
                             "Ask Assistant",
                             icon="arrow_forward",
-                            on_click=handle_quick_ask,
+                            on_click=lambda: handle_quick_ask(),
                         ).props("no-caps").classes(
-                            "px-4 py-2 font-medium text-sm rounded-lg !bg-blue-700 hover:!bg-blue-800 !text-white shadow-xs transition-colors"
+                            "px-4 sm:px-5 py-2 font-semibold text-sm rounded-xl !bg-blue-700 hover:!bg-blue-800 !text-white shadow-xs transition-colors shrink-0"
                         )
 
-                # 2. Enrolled Courses Section
-                with ui.column().classes("w-full gap-4 mt-2"):
+                    # Example Prompt Inspiration Chips
+                    with ui.column().classes("w-full gap-2 pt-1"):
+                        ui.label("Suggested starting inquiries:").classes(
+                            "text-xs font-semibold text-slate-500 tracking-wider uppercase"
+                        )
+                        prompt_examples = [
+                            "Explain the main topics covered in the syllabus",
+                            "What is the evaluation and grading breakdown?",
+                            "Summarize the late submission policy",
+                            "Compare key concepts from recent lecture notes",
+                        ]
+                        with ui.row().classes("w-full items-center gap-2 flex-wrap"):
+                            for prompt_text in prompt_examples:
+                                with (
+                                    ui.row()
+                                    .classes(
+                                        "items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200/80 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-900 cursor-pointer transition-colors shadow-2xs"
+                                    )
+                                    .on("click", lambda p=prompt_text: handle_quick_ask(p))
+                                ):
+                                    ui.icon("arrow_outward", size="12px").classes("text-slate-400")
+                                    ui.label(prompt_text).classes("font-medium")
+
+                # 3. Quick Action Strips & Metrics
+                with ui.element("div").classes(
+                    "w-full grid grid-cols-1 sm:grid-cols-3 gap-4 my-2 box-border"
+                ):
+                    total_docs = sum(c.document_count for c in enrolled_kbs)
+                    actions_data = [
+                        (
+                            "menu_book",
+                            "Available Courses",
+                            f"{len(enrolled_kbs)} Course(s) Active",
+                            "Explore course library",
+                            "/knowledge-bases",
+                        ),
+                        (
+                            "chat",
+                            "Direct Assistant Chat",
+                            "Full Conversation Mode",
+                            "Start new inquiry",
+                            "/chat",
+                        ),
+                        (
+                            "description",
+                            "Learning Materials",
+                            f"{total_docs} Verified Document(s)",
+                            "View course materials",
+                            "/knowledge-bases",
+                        ),
+                    ]
+                    for a_icon, a_title, a_sub, _a_action, a_route in actions_data:
+                        with (
+                            ui.card()
+                            .classes(
+                                "academic-card p-4 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col justify-between cursor-pointer hover:border-slate-300 transition-colors"
+                            )
+                            .on("click", lambda r=a_route: ui.navigate.to(r))
+                        ):
+                            with ui.row().classes("items-center justify-between w-full mb-1"):
+                                with ui.element("div").classes(
+                                    "w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold"
+                                ):
+                                    ui.icon(a_icon, size="18px")
+                                ui.icon("chevron_right", size="18px").classes("text-slate-400")
+                            with ui.column().classes("gap-0.5"):
+                                ui.label(a_title).classes("text-sm font-bold text-slate-900")
+                                ui.label(a_sub).classes("text-xs text-slate-500 font-medium")
+
+                # 4. Available Courses Catalog Section
+                with ui.column().classes("w-full gap-4 mt-4"):
                     with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
                         with ui.row().classes("items-center gap-2"):
                             with ui.element("div").classes(
                                 "w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold"
                             ):
                                 ui.icon("school", size="16px")
-                            ui.label("Enrolled Courses").classes(
+                            ui.label("Your Academic Courses").classes(
                                 "text-base font-bold text-slate-900 tracking-tight"
                             )
-                            ui.label(
-                                f"({len(enrolled_kbs)} assigned)"
-                                if not course_load_error
-                                else ""
-                            ).classes("text-xs text-slate-500 font-mono")
+                            ui.label(f"({len(enrolled_kbs)} available)").classes(
+                                "text-xs text-slate-500 font-mono"
+                            )
 
-                        if enrolled_kbs and len(enrolled_kbs) > 3:
+                        if enrolled_kbs and len(enrolled_kbs) > 2:
                             search_input = (
-                                ui.input(placeholder="Filter courses...")
+                                ui.input(placeholder="Search courses...")
                                 .props("outlined dense clearable")
                                 .classes("w-60 text-xs minimalist-input")
                             )
@@ -163,13 +244,13 @@ def register_dashboard_page() -> None:
                                         title=(
                                             "No Matching Courses"
                                             if clean_q
-                                            else "No Assigned Courses"
+                                            else "No Courses Available"
                                         ),
                                         description=(
-                                            f"No assigned course matches '{clean_q}'."
+                                            f"No course matches '{clean_q}'."
                                             if clean_q
-                                            else "You are not currently assigned to any university courses. "
-                                            "Your faculty instructor or administrator must enroll you in course materials."
+                                            else "No university courses are currently published for student access. "
+                                            "Your faculty instructor will publish course materials shortly."
                                         ),
                                     )
                             elif filtered:
@@ -186,7 +267,7 @@ def register_dashboard_page() -> None:
                                                     f"{kb.document_count} doc(s)",
                                                     color="slate-1",
                                                 ).props("text-color=slate-7").classes(
-                                                    "text-[10px] font-mono font-semibold px-1.5 py-0.5 border border-slate-200 shrink-0"
+                                                    "text-[10px] font-mono font-semibold px-2 py-0.5 border border-slate-200 shrink-0"
                                                 )
 
                                             ui.label(
@@ -206,17 +287,17 @@ def register_dashboard_page() -> None:
                                                     f"/chat?kb_id={c_id}"
                                                 ),
                                             ).props("no-caps dense").classes(
-                                                "text-xs font-medium px-3 py-1.5 !bg-blue-700 hover:!bg-blue-800 !text-white rounded-lg shadow-xs transition-colors"
+                                                "text-xs font-semibold px-3 py-1.5 !bg-blue-700 hover:!bg-blue-800 !text-white rounded-lg shadow-xs transition-colors"
                                             )
                                             ui.button(
                                                 "View Materials",
                                                 icon="menu_book",
                                                 on_click=lambda: ui.navigate.to("/knowledge-bases"),
                                             ).props("flat dense no-caps").classes(
-                                                "text-xs text-slate-600 hover:text-slate-900 px-2 py-1"
+                                                "text-xs font-semibold text-slate-600 hover:text-slate-900 px-2 py-1"
                                             )
 
-                    if enrolled_kbs and len(enrolled_kbs) > 3:
+                    if enrolled_kbs and len(enrolled_kbs) > 2:
                         search_input.on_value_change(lambda e: render_enrolled_cards(e.value))
 
                     render_enrolled_cards()

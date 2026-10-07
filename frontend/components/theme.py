@@ -130,24 +130,45 @@ html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
 /* Modern Academic Card Primitives */
 .academic-card {
     background: #ffffff;
-    border: 1px solid rgba(226, 232, 240, 0.9);
+    border: 1px solid rgba(226, 232, 240, 0.95);
     border-radius: 12px;
-    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
-    transition: border-color 0.15s ease, background-color 0.15s ease;
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .academic-card:hover {
     border-color: #cbd5e1;
 }
 
-/* Modern Course Card Hover Effect */
+/* Modern High-Contrast Typography Utilities */
+.academic-text-heading {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+}
+.academic-text-subheading {
+    color: #1e293b !important;
+    font-weight: 600 !important;
+}
+.academic-text-body {
+    color: #334155 !important;
+    line-height: 1.6 !important;
+}
+.academic-text-muted {
+    color: #475569 !important;
+    font-weight: 500 !important;
+}
+
+/* Modern Course Card */
 .modern-course-card {
+    background: #ffffff !important;
     border-radius: 12px !important;
-    border: 1px solid rgba(226, 232, 240, 0.9) !important;
-    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.02) !important;
-    transition: border-color 0.15s ease, background-color 0.15s ease !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04) !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 .modern-course-card:hover {
     border-color: #94a3b8 !important;
+    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.06) !important;
 }
 
 /* Modern Collapsible Slim Sidebar Styling */

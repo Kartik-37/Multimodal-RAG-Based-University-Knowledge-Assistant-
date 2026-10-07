@@ -43,9 +43,13 @@ def _stream_document(doc: Document) -> FileResponse:
             detail="Document file not found on disk.",
         )
 
-    media_type = doc.mime_type or "application/pdf"
+    media_type = doc.mime_type or "application/octet-stream"
+    disposition = "inline"
     if doc.file_type == "pdf":
         media_type = "application/pdf"
+    elif doc.file_type in ("docx", "doc"):
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        disposition = "attachment"
     elif doc.file_type in ("txt", "text"):
         media_type = "text/plain; charset=utf-8"
     elif doc.file_type in ("md", "markdown"):
@@ -57,7 +61,8 @@ def _stream_document(doc: Document) -> FileResponse:
         path=str(abs_path),
         media_type=media_type,
         filename=doc.original_filename,
-        content_disposition_type="inline",
+        content_disposition_type=disposition,
+        headers={"Accept-Ranges": "bytes"},
     )
 
 

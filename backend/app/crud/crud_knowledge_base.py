@@ -23,13 +23,14 @@ def get_courses_for_ui(db: Session, user: User | None = None) -> Sequence[Knowle
     does NOT perform a JOIN with a membership table. It simply executes a
     direct SELECT * FROM knowledge_bases ordered by created_at desc.
     """
-    stmt = select(KnowledgeBase)
-    if "is_active" in KnowledgeBase.__table__.columns:
-        stmt = stmt.where(KnowledgeBase.is_active.is_(True))
-    elif "is_published" in KnowledgeBase.__table__.columns:
-        stmt = stmt.where(KnowledgeBase.is_published.is_(True))
-
-    stmt = stmt.order_by(KnowledgeBase.created_at.desc())
+    stmt = (
+        select(KnowledgeBase)
+        .where(
+            KnowledgeBase.is_active.is_(True),
+            KnowledgeBase.is_student_visible.is_(True),
+        )
+        .order_by(KnowledgeBase.created_at.desc())
+    )
     return db.execute(stmt).scalars().all()
 
 

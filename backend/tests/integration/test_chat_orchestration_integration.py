@@ -109,6 +109,7 @@ def test_unauthorized_kb_access_returns_404(api_client: TestClient, db_session: 
         name="Private Exam Key",
         description="Confidential exam questions",
         created_by_id=admin_a.id,
+        is_student_visible=False,
     )
     db_session.add(kb)
     db_session.commit()

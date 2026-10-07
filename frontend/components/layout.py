@@ -171,163 +171,302 @@ def _handle_logout() -> None:
     ui.navigate.to("/login")
 
 
-def _render_navbar(active_route: str) -> None:
-    """Render the application navigation header and modern collapsible sidebar."""
-    user = state.current_user
+def _render_student_navbar(active_route: str, user: UserDTO) -> None:
+    """Render single, refined top navigation bar for students with mobile overlay drawer."""
+    initials = _get_user_initials(user.full_name)
+    student_nav = [
+        ("Home", "/dashboard", "home"),
+        ("Courses", "/knowledge-bases", "menu_book"),
+        ("Ask Assistant", "/chat", "chat"),
+        ("Profile", "/profile", "account_circle"),
+    ]
 
-    if user:
-        is_admin = user.role == "ADMIN"
-        sidebar_sections = get_sidebar_sections(user)
-        is_main = getattr(user, "admin_role", None) == "MAIN_ADMIN"
-        role_label = ("MAIN ADMIN" if is_main else "FACULTY ADMIN") if is_admin else "STUDENT"
-        initials = _get_user_initials(user.full_name)
-
-        # Persistent Modern Left Sidebar (Clean Light Academic Rail)
-        with (
-            ui.left_drawer(value=True)
-            .props("side=left breakpoint=1024 width=260")
-            .classes(
-                "bg-white text-slate-800 p-0 flex flex-col justify-between z-20 border-r border-slate-200/90 shadow-none slim-sidebar-rail"
-            )
-        ) as sidebar_drawer:
-            # Top: Modern Institutional Branding
-            with ui.column().classes("w-full p-4 gap-4"):
-                with (
-                    ui.row()
-                    .classes(
-                        "w-full items-center gap-3 pb-3 border-b border-slate-100 cursor-pointer"
-                    )
-                    .on("click", lambda: ui.navigate.to("/dashboard"))
-                ):
-                    with ui.element("div").classes(
-                        "w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
-                    ):
-                        ui.icon("school", size="20px")
-                    with ui.column().classes("gap-0 min-w-0 leading-tight"):
-                        ui.label("RAG Assistant").classes(
-                            "font-bold text-slate-900 text-sm tracking-tight truncate"
-                        )
-                        portal_sub = "Administrator Portal" if is_admin else "Student Portal"
-                        ui.label(portal_sub).classes(
-                            "text-[10px] font-medium text-slate-500 truncate"
-                        )
-
-                # Categorized Navigation Sections
-                with ui.column().classes("w-full gap-3.5 my-1"):
-                    for section in sidebar_sections:
-                        with ui.column().classes("w-full gap-1"):
-                            with ui.row().classes("items-center gap-1.5 px-3 mb-0.5"):
-                                ui.label(section["title"].upper()).classes(
-                                    "text-[10px] font-bold text-slate-400 tracking-wider"
-                                )
-                            for label, route, icon in section["items"]:
-                                is_active = active_route == route or (
-                                    route != "/dashboard" and active_route.startswith(route)
-                                )
-                                btn_cls = "w-full justify-start text-xs py-2 px-3 rounded-xl transition-all gap-2.5 sidebar-link "
-                                if is_active:
-                                    btn_cls += "sidebar-link-active bg-blue-50 text-blue-700 font-semibold shadow-2xs border-l-[3px] border-blue-600"
-                                else:
-                                    btn_cls += (
-                                        "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
-                                    )
-                                ui.button(
-                                    label,
-                                    icon=icon,
-                                    on_click=lambda r=route: ui.navigate.to(r),
-                                ).props("flat no-caps dense").classes(btn_cls).tooltip(label)
-
-
-            # Bottom: User Account Footer
-            with ui.column().classes(
-                "w-full p-3 gap-2 border-t border-slate-100 bg-slate-50/70 shrink-0"
+    # Mobile Drawer: Only rendered on screens < 768px as an overlay when toggled
+    with (
+        ui.left_drawer(value=False)
+        .props("side=left breakpoint=768 width=260 overlay")
+        .classes(
+            "bg-white text-slate-800 p-0 flex flex-col justify-between z-40 border-r border-slate-200 shadow-xl md:hidden"
+        )
+    ) as mobile_drawer:
+        with ui.column().classes("w-full p-4 gap-4"):
+            with (
+                ui.row()
+                .classes("w-full items-center gap-3 pb-3 border-b border-slate-100 cursor-pointer")
+                .on("click", lambda: ui.navigate.to("/dashboard"))
             ):
-                with (
-                    ui.row()
-                    .classes(
-                        "items-center justify-between w-full p-2 rounded-xl hover:bg-white cursor-pointer transition-colors border border-transparent hover:border-slate-200/60"
-                    )
-                    .on("click", lambda: ui.navigate.to("/profile"))
+                with ui.element("div").classes(
+                    "w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
                 ):
-                    with ui.row().classes("items-center gap-2.5 min-w-0"):
-                        with ui.element("div").classes(
-                            "w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-2xs"
-                        ):
-                            ui.label(initials)
-                        with ui.column().classes("gap-0 min-w-0"):
-                            ui.label(user.full_name).classes(
-                                "text-xs font-semibold text-slate-800 truncate max-w-[125px]"
-                            )
-                            ui.label(user.email).classes(
-                                "text-[10px] text-slate-500 truncate max-w-[125px]"
-                            )
-                    ui.badge(role_label, color="blue-1").props("text-color=blue-8").classes(
-                        "text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-blue-200"
+                    ui.icon("school", size="20px")
+                with ui.column().classes("gap-0 min-w-0 leading-tight"):
+                    ui.label("RAG Assistant").classes(
+                        "font-bold text-slate-900 text-sm tracking-tight truncate"
+                    )
+                    ui.label("Student Portal").classes(
+                        "text-[10px] font-medium text-slate-500 truncate"
                     )
 
-                ui.button(
-                    "Sign Out",
-                    icon="logout",
-                    on_click=_handle_logout,
-                ).props("flat dense no-caps").classes(
-                    "w-full text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition-colors py-1 font-medium"
-                )
+            with ui.column().classes("w-full gap-1.5 my-2"):
+                for label, route, icon in student_nav:
+                    is_active = (active_route == route) or (
+                        route != "/dashboard" and active_route.startswith(route)
+                    )
+                    cls = "w-full justify-start text-xs py-2 px-3 rounded-lg font-semibold transition-colors "
+                    if is_active:
+                        cls += "bg-blue-50 text-blue-800 border-l-[3px] border-blue-600"
+                    else:
+                        cls += "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                    ui.button(
+                        label,
+                        icon=icon,
+                        on_click=lambda r=route: [mobile_drawer.toggle(), ui.navigate.to(r)],
+                    ).props("flat no-caps dense").classes(cls)
 
-        # Top Bar (Clean, Minimalist White Surface)
-        with ui.header().classes(
-            "w-full bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-6 py-2.5 items-center justify-between border-b border-slate-200/80 shadow-2xs z-30"
+        with ui.column().classes(
+            "w-full p-4 gap-2 border-t border-slate-100 bg-slate-50/70 shrink-0"
         ):
-            with ui.row().classes("items-center gap-3"):
-                ui.button(icon="menu", on_click=sidebar_drawer.toggle).props(
-                    "flat round dense"
-                ).classes("text-slate-600 hover:text-slate-900").tooltip("Toggle Menu")
-                with (
-                    ui.row()
-                    .classes("items-center gap-2 cursor-pointer")
-                    .on("click", lambda: ui.navigate.to("/dashboard"))
+            with (
+                ui.row()
+                .classes(
+                    "items-center justify-between w-full p-2 rounded-lg hover:bg-white cursor-pointer transition-colors border border-transparent hover:border-slate-200/60"
+                )
+                .on("click", lambda: ui.navigate.to("/profile"))
+            ):
+                with ui.row().classes("items-center gap-2.5 min-w-0"):
+                    with ui.element("div").classes(
+                        "w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-2xs"
+                    ):
+                        ui.label(initials)
+                    with ui.column().classes("gap-0 min-w-0"):
+                        ui.label(user.full_name).classes(
+                            "text-xs font-semibold text-slate-800 truncate max-w-[125px]"
+                        )
+                        ui.label(user.email).classes(
+                            "text-[10px] text-slate-500 truncate max-w-[125px]"
+                        )
+            ui.button(
+                "Sign Out",
+                icon="logout",
+                on_click=_handle_logout,
+            ).props("flat dense no-caps").classes(
+                "w-full text-xs text-rose-600 hover:bg-rose-50 rounded-lg transition-colors py-1.5 font-semibold"
+            )
+
+    # Top Application Bar: Single desktop navigation system
+    with ui.header().classes(
+        "w-full bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-8 py-2.5 items-center justify-between border-b border-slate-200/90 shadow-2xs z-30"
+    ):
+        # Left: Brand Logo & Mobile Toggle
+        with ui.row().classes("items-center gap-3"):
+            ui.button(icon="menu", on_click=mobile_drawer.toggle).props(
+                "flat round dense"
+            ).classes("md:hidden text-slate-700 hover:text-slate-900").tooltip("Toggle Menu")
+            with (
+                ui.row()
+                .classes("items-center gap-2.5 cursor-pointer no-underline")
+                .on("click", lambda: ui.navigate.to("/dashboard"))
+            ):
+                with ui.element("div").classes(
+                    "w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
                 ):
-                    ui.icon("school", size="sm").classes("text-blue-600 md:hidden")
+                    ui.icon("school", size="18px")
+                with ui.column().classes("gap-0 leading-tight"):
                     ui.label("RAG Assistant").classes(
                         "text-sm sm:text-base font-bold tracking-tight text-slate-900"
                     )
-                ui.badge("Grounded RAG", color="blue-1").props("text-color=blue-9").classes(
-                    "text-[10px] font-bold px-2 py-0.5 hidden sm:inline-flex border border-blue-200"
+                    ui.label("Student Portal").classes(
+                        "text-[10px] font-semibold text-slate-500 hidden sm:block"
+                    )
+
+        # Center: Desktop Navigation Links (ONE navigation system, clean and prominent)
+        with ui.row().classes("hidden md:flex items-center gap-1.5"):
+            for label, route, icon in student_nav:
+                is_active = (active_route == route) or (
+                    route != "/dashboard" and active_route.startswith(route)
+                )
+                link_cls = (
+                    "px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer no-underline "
+                )
+                if is_active:
+                    link_cls += "bg-blue-50 text-blue-900 font-bold border border-blue-200/80 shadow-2xs"
+                else:
+                    link_cls += "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                with ui.link(target=route).classes(link_cls):
+                    ui.icon(icon, size="16px").classes(
+                        "text-blue-700" if is_active else "text-slate-500"
+                    )
+                    ui.label(label)
+
+        # Right: User Access & Sign Out
+        with ui.row().classes("items-center gap-2 sm:gap-3"):
+            with (
+                ui.row()
+                .classes(
+                    "items-center gap-2 py-1 px-2.5 rounded-full hover:bg-slate-100 cursor-pointer transition-colors border border-transparent hover:border-slate-200"
+                )
+                .on("click", lambda: ui.navigate.to("/profile"))
+            ):
+                with ui.element("div").classes(
+                    "w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-2xs"
+                ):
+                    ui.label(initials)
+                ui.label(user.full_name).classes(
+                    "hidden lg:inline text-xs font-semibold text-slate-700 truncate max-w-[130px]"
                 )
 
-            with ui.row().classes("items-center gap-2.5"):
-                if state.active_kb:
-                    with (
-                        ui.row()
-                        .classes(
-                            "items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-blue-800 cursor-pointer hover:bg-blue-100 transition-colors"
-                        )
-                        .tooltip("Selected Course")
-                        .on("click", lambda: ui.navigate.to(f"/chat?kb_id={state.active_kb.id}"))
-                    ):
-                        ui.icon("bookmark", size="14px").classes("text-blue-600")
-                        ui.label(state.active_kb.name).classes("max-w-[140px] truncate")
+            ui.button(
+                "Sign Out",
+                icon="logout",
+                on_click=_handle_logout,
+            ).props("flat dense no-caps").classes(
+                "text-xs font-semibold text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded-lg"
+            ).tooltip("Sign Out")
 
-                with (
-                    ui.row()
-                    .classes(
-                        "items-center gap-2 bg-slate-100 hover:bg-slate-200/80 rounded-full px-2.5 py-1 cursor-pointer transition-colors"
-                    )
-                    .on("click", lambda: ui.navigate.to("/profile"))
+
+def _render_admin_navbar(active_route: str, user: UserDTO) -> None:
+    """Render admin navigation with collapsible sidebar rail."""
+    sidebar_sections = get_sidebar_sections(user)
+    is_main = getattr(user, "admin_role", None) == "MAIN_ADMIN"
+    role_label = "MAIN ADMIN" if is_main else "FACULTY ADMIN"
+    initials = _get_user_initials(user.full_name)
+
+    with (
+        ui.left_drawer(value=True)
+        .props("side=left breakpoint=1024 width=260")
+        .classes(
+            "bg-white text-slate-800 p-0 flex flex-col justify-between z-20 border-r border-slate-200/90 shadow-none slim-sidebar-rail"
+        )
+    ) as sidebar_drawer:
+        with ui.column().classes("w-full p-4 gap-4"):
+            with (
+                ui.row()
+                .classes("w-full items-center gap-3 pb-3 border-b border-slate-100 cursor-pointer")
+                .on("click", lambda: ui.navigate.to("/dashboard"))
+            ):
+                with ui.element("div").classes(
+                    "w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
                 ):
+                    ui.icon("school", size="20px")
+                with ui.column().classes("gap-0 min-w-0 leading-tight"):
+                    ui.label("RAG Assistant").classes(
+                        "font-bold text-slate-900 text-sm tracking-tight truncate"
+                    )
+                    ui.label("Administrator Portal").classes(
+                        "text-[10px] font-medium text-slate-500 truncate"
+                    )
+
+            with ui.column().classes("w-full gap-3.5 my-1"):
+                for section in sidebar_sections:
+                    with ui.column().classes("w-full gap-1"):
+                        with ui.row().classes("items-center gap-1.5 px-3 mb-0.5"):
+                            ui.label(section["title"].upper()).classes(
+                                "text-[10px] font-bold text-slate-400 tracking-wider"
+                            )
+                        for label, route, icon in section["items"]:
+                            is_active = active_route == route or (
+                                route != "/dashboard" and active_route.startswith(route)
+                            )
+                            btn_cls = "w-full justify-start text-xs py-2 px-3 rounded-xl transition-all gap-2.5 sidebar-link "
+                            if is_active:
+                                btn_cls += "sidebar-link-active bg-blue-50 text-blue-700 font-semibold shadow-2xs border-l-[3px] border-blue-600"
+                            else:
+                                btn_cls += (
+                                    "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                                )
+                            ui.button(
+                                label,
+                                icon=icon,
+                                on_click=lambda r=route: ui.navigate.to(r),
+                            ).props("flat no-caps dense").classes(btn_cls).tooltip(label)
+
+        with ui.column().classes(
+            "w-full p-3 gap-2 border-t border-slate-100 bg-slate-50/70 shrink-0"
+        ):
+            with (
+                ui.row()
+                .classes(
+                    "items-center justify-between w-full p-2 rounded-xl hover:bg-white cursor-pointer transition-colors border border-transparent hover:border-slate-200/60"
+                )
+                .on("click", lambda: ui.navigate.to("/profile"))
+            ):
+                with ui.row().classes("items-center gap-2.5 min-w-0"):
                     with ui.element("div").classes(
-                        "w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                        "w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-2xs"
                     ):
                         ui.label(initials)
-                    ui.label(user.full_name).classes(
-                        "hidden sm:inline text-xs font-semibold text-slate-700 truncate max-w-[120px]"
-                    )
-
-                ui.button(
-                    icon="logout",
-                    on_click=_handle_logout,
-                ).props("flat round dense").classes("text-slate-400 hover:text-rose-600").tooltip(
-                    "Sign Out"
+                    with ui.column().classes("gap-0 min-w-0"):
+                        ui.label(user.full_name).classes(
+                            "text-xs font-semibold text-slate-800 truncate max-w-[125px]"
+                        )
+                        ui.label(user.email).classes(
+                            "text-[10px] text-slate-500 truncate max-w-[125px]"
+                        )
+                ui.badge(role_label, color="blue-1").props("text-color=blue-8").classes(
+                    "text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-blue-200"
                 )
+
+            ui.button(
+                "Sign Out",
+                icon="logout",
+                on_click=_handle_logout,
+            ).props("flat dense no-caps").classes(
+                "w-full text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition-colors py-1 font-medium"
+            )
+
+    # Top Bar for Admin
+    with ui.header().classes(
+        "w-full bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-6 py-2.5 items-center justify-between border-b border-slate-200/80 shadow-2xs z-30"
+    ):
+        with ui.row().classes("items-center gap-3"):
+            ui.button(icon="menu", on_click=sidebar_drawer.toggle).props(
+                "flat round dense"
+            ).classes("text-slate-600 hover:text-slate-900").tooltip("Toggle Menu")
+            with (
+                ui.row()
+                .classes("items-center gap-2 cursor-pointer")
+                .on("click", lambda: ui.navigate.to("/dashboard"))
+            ):
+                ui.icon("school", size="sm").classes("text-blue-600 md:hidden")
+                ui.label("RAG Assistant").classes(
+                    "text-sm sm:text-base font-bold tracking-tight text-slate-900"
+                )
+            ui.badge("Grounded RAG", color="blue-1").props("text-color=blue-9").classes(
+                "text-[10px] font-bold px-2 py-0.5 hidden sm:inline-flex border border-blue-200"
+            )
+
+        with ui.row().classes("items-center gap-2.5"):
+            with (
+                ui.row()
+                .classes(
+                    "items-center gap-2 bg-slate-100 hover:bg-slate-200/80 rounded-full px-2.5 py-1 cursor-pointer transition-colors"
+                )
+                .on("click", lambda: ui.navigate.to("/profile"))
+            ):
+                with ui.element("div").classes(
+                    "w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                ):
+                    ui.label(initials)
+                ui.label(user.full_name).classes(
+                    "hidden sm:inline text-xs font-semibold text-slate-700 truncate max-w-[120px]"
+                )
+
+            ui.button(
+                icon="logout",
+                on_click=_handle_logout,
+            ).props("flat round dense").classes("text-slate-400 hover:text-rose-600").tooltip(
+                "Sign Out"
+            )
+
+
+def _render_navbar(active_route: str) -> None:
+    """Render appropriate navbar based on user authentication state and role."""
+    user = state.current_user
+    if user:
+        if user.role == "ADMIN":
+            _render_admin_navbar(active_route, user)
+        else:
+            _render_student_navbar(active_route, user)
     else:
         # Public Unauthenticated Header
         with ui.header().classes(
@@ -499,11 +638,13 @@ def page_layout(
     ):
         # Institutional Breadcrumb and Back Navigation Strip
         is_root_dashboard = active_route.split("?")[0].rstrip("/") in ("/dashboard", "")
-        if (
-            show_breadcrumb
-            and resolved_crumbs
-            and (not is_root_dashboard or len(resolved_crumbs) > 1)
-        ):
+        is_student = (user is not None) and (user.role == "STUDENT")
+        should_render_breadcrumbs = (
+            (breadcrumbs is not None and show_breadcrumb)
+            if is_student
+            else (show_breadcrumb and resolved_crumbs and (not is_root_dashboard or len(resolved_crumbs) > 1))
+        )
+        if should_render_breadcrumbs and resolved_crumbs:
             with ui.row().classes(
                 "w-full items-center justify-between text-xs py-1.5 px-3 bg-white border border-slate-200 rounded-lg shadow-2xs"
             ):
@@ -686,13 +827,13 @@ def auth_layout(
                         ):
                             ui.icon("school", size="14px")
                         ui.label("RAG Assistant").classes("text-sm font-bold text-slate-900")
-                        ui.label("•").classes("text-slate-300")
+                        ui.label("•").classes("text-slate-400")
                         ui.label("Multimodal RAG-Based University Knowledge Assistant").classes(
-                            "text-xs text-slate-500 font-medium"
+                            "text-xs text-slate-600 font-medium"
                         )
                     with ui.row().classes("items-center gap-2 flex-wrap"):
                         ui.badge("Multi-Format Text RAG", color="slate-2").props("text-color=slate-8").classes("text-[11px] font-medium px-2 py-0.5 border border-slate-200")
-                        ui.label("PDF • DOCX • TXT • Markdown • CSV").classes("text-xs text-slate-400 font-mono")
-                with ui.row().classes("w-full justify-between items-center pt-3 border-t border-slate-100 text-xs text-slate-400 gap-2 flex-wrap"):
+                        ui.label("PDF • DOCX • TXT • Markdown • CSV").classes("text-xs text-slate-600 font-mono")
+                with ui.row().classes("w-full justify-between items-center pt-3 border-t border-slate-100 text-xs text-slate-600 gap-2 flex-wrap"):
                     ui.label("© 2026 RAG Assistant • Institutional Academic Resource")
                     ui.label("Server-Side RBAC Enforced • Zero Plaintext Session Persistence")

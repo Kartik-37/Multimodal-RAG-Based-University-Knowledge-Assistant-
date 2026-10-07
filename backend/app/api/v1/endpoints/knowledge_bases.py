@@ -92,6 +92,8 @@ def create_knowledge_base(
     kb = KnowledgeBase(
         name=payload.name.strip(),
         description=payload.description.strip(),
+        is_active=payload.is_active,
+        is_student_visible=payload.is_student_visible,
         created_by_id=current_user.id,
     )
     db.add(kb)
@@ -255,6 +257,8 @@ def get_course_summaries(
                 name=kb.name,
                 description=kb.description,
                 created_at=kb.created_at,
+                is_active=kb.is_active,
+                is_student_visible=kb.is_student_visible,
                 total_documents=total,
                 active_documents=active,
                 inactive_documents=inactive,

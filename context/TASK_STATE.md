@@ -1060,3 +1060,46 @@ The original task history is preserved below. Its completed design decisions are
   - Student course access remains strictly membership-based (`KnowledgeBaseMember`).
   - Multimodal RAG and persistent chat history remain strictly deferred.
 
+2026-10-07 — Stage 2: Complete Student Experience Rebuild & Public-Page Polish (COMPLETE & VERIFIED):
+- **Stage Name:** Stage 2 — Complete Student Experience Rebuild & Public-Page Polish
+- **Starting Git Commit:** `a5d9d4c`
+- **Accomplishments:**
+  1. *Public Polish & Landing Enhancement (`/login`):*
+     - Upgraded low-contrast text elements (`text-slate-400`/`500` -> `text-slate-600`/`700`) across hero viewport, demonstration cards, gateway cards, registration guidelines, and footer notes to ensure strict WCAG AAA contrast against light surfaces.
+     - Cleaned up breadcrumb suppression on auth pages.
+  2. *Student Navigation Shell Unified (`frontend/components/layout.py`):*
+     - Eliminated dual-navigation redundancy: single top navigation bar on desktop, responsive drawer on mobile.
+     - Removed obsolete header BCA badge and cluttering breadcrumbs.
+  3. *Student Dashboard Rebuilt (`frontend/pages/dashboard_page.py`):*
+     - Transformed into an engaging study starting point with suggested inquiry prompt pills, quick course jumping, and active course overview cards.
+     - Eliminated large empty whitespace voids.
+  4. *Courses Library (`frontend/pages/knowledge_bases_page.py`):*
+     - Redesigned as an academic library with search filtering, course overview cards, material counters, and direct study actions ("Ask in Course", "View Materials").
+  5. *Conversational Chat Assistant (`frontend/pages/chat_page.py`):*
+     - Rebuilt conversational interface with bottom composer, default `ALL_COURSES` search scope, inline clickable citation pills `[1]`, and grounded evidence panel.
+     - Zero fake persistent chat history.
+  6. *Student Profile (`frontend/pages/profile_page.py`):*
+     - Rebuilt with academic identity details, enrolled course list, and clean security guidelines; stripped internal PostgreSQL session jargon.
+  7. *Multi-Format Source Viewer (`frontend/components/source_viewer.py`):*
+     - Supports inline PDF rendering (`#page=N`), DOCX, TXT, MD, CSV with safe content preview, evidence excerpts, and zero token query leakage.
+  8. *Security & RBAC Enforcement (`backend/app/api/deps.py`):*
+     - Strictly enforced membership-based student course authorization (`KnowledgeBaseMember`) combined with `is_active` and `is_student_visible` controls.
+     - Unauthorized/unassigned courses return HTTP 404 to avoid private course existence leakage.
+  9. *Alembic Migration & Schema Alignment:*
+     - Added `is_active` and `is_student_visible` columns to `knowledge_bases` table via migration `aebbc63863c7`.
+     - Formatted and typed cleanly with 0 ruff errors.
+- **Verification Results:**
+  - `backend/tests/security/test_student_access_policy.py`: 8/8 passed (100%).
+  - `backend/tests/security/`: 58/58 passed (100%).
+  - `backend/tests/integration/test_source_viewer.py`: 8/8 passed (100%).
+  - `backend/tests/integration/test_document_ingestion.py`: 13/13 passed (100%).
+  - Total non-real_ollama regression suite: 584/584 passed (100%).
+  - `ruff check .`: 100% clean (0 errors across entire workspace).
+  - Route smoke checks verified returning HTTP 200 for `/login`, `/student/login`, `/dashboard`, `/knowledge-bases`, `/chat`, and `/profile`. Browser automation tool Playwright driver installation 404 noted per Phase F guidelines.
+- **Boundaries Strictly Respected:**
+  - Hard stop: Administrator interfaces (`/documents`, `/indexing`, `/administrators`, `/activity`, `/system-health`) remained untouched.
+  - Multi-format text RAG truthfully documented (PDF, DOCX, TXT, MD, CSV); non-text multimodal features remain deferred.
+  - Zero token leakage; HttpOnly session cookies preserved.
+
+
+

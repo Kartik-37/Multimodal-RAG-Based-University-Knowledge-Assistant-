@@ -364,6 +364,9 @@ def test_student_membership_retrieval_authorization(
 
     kb_authorized = create_kb(db_session, admin, name="Enrolled Course")
     kb_private = create_kb(db_session, admin, name="Faculty Private")
+    kb_private.is_student_visible = False
+    db_session.commit()
+    db_session.refresh(kb_private)
 
     # Grant student membership to kb_authorized only
     membership = KnowledgeBaseMember(

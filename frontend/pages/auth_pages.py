@@ -91,7 +91,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                     ):
                         ui.icon("school" if is_student else "admin_panel_settings", size="16px")
                     ui.label("STUDENT GATEWAY" if is_student else "FACULTY & ADMINISTRATION").classes(
-                        "text-xs font-bold uppercase tracking-wider text-slate-500"
+                        "text-xs font-bold uppercase tracking-wider text-slate-700"
                     )
 
                 ui.label(
@@ -122,7 +122,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                                     ui.icon(icon, size="16px")
                                 with ui.column().classes("gap-0"):
                                     ui.label(title).classes("text-xs font-bold text-slate-800")
-                                    ui.label(desc).classes("text-xs text-slate-500 leading-relaxed")
+                                    ui.label(desc).classes("text-xs text-slate-600 leading-relaxed")
                     else:
                         admin_features = [
                             ("menu_book", "Course Curation", "Provision knowledge bases and assign student memberships."),
@@ -137,7 +137,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                                     ui.icon(icon, size="16px")
                                 with ui.column().classes("gap-0"):
                                     ui.label(title).classes("text-xs font-bold text-slate-800")
-                                    ui.label(desc).classes("text-xs text-slate-500 leading-relaxed")
+                                    ui.label(desc).classes("text-xs text-slate-600 leading-relaxed")
 
                 # Security / Policy Notice
                 with ui.element("div").classes(
@@ -156,7 +156,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                         "All student queries are bound strictly to assigned courses. Zero external data sharing."
                         if is_student
                         else "All administrative sessions and indexing actions are recorded and audited server-side."
-                    ).classes("text-xs text-slate-500 mt-1")
+                    ).classes("text-xs text-slate-600 mt-1")
 
             # Right Column: Focused Authentication Form
             with ui.column().classes("order-1 lg:order-2 lg:col-span-6 w-full"):
@@ -172,7 +172,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                             )
                             .props('aria-label="Back to portal selection"')
                         ):
-                            ui.icon("arrow_back", size="14px").classes("text-slate-500")
+                            ui.icon("arrow_back", size="14px").classes("text-slate-700")
                             ui.label("Back to home").classes("text-xs font-medium")
 
                         ui.badge(
@@ -281,7 +281,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
 
                     # Footer Cross-Portal Links
                     with ui.column().classes(
-                        "w-full items-center text-center mt-5 pt-4 border-t border-slate-100 gap-1.5 text-xs text-slate-500"
+                        "w-full items-center text-center mt-5 pt-4 border-t border-slate-100 gap-1.5 text-xs text-slate-700"
                     ):
                         if is_student:
                             with ui.row().classes("justify-center items-center gap-1.5 flex-wrap"):
@@ -301,7 +301,7 @@ def _render_login_form(portal: str, allowed_role: str) -> None:
                                     "text-blue-700 font-semibold hover:underline no-underline"
                                 )
                             ui.label("Administrative accounts are provisioned internally by IT.").classes(
-                                "text-[11px] text-slate-400 mt-1"
+                                "text-[11px] text-slate-600 mt-1"
                             )
 
 
@@ -359,7 +359,7 @@ def register_auth_pages() -> None:
                             "text-color=blue-9"
                         ).classes("text-xs font-bold px-2.5 py-1 border border-blue-200")
                         ui.label("Multi-Format Text RAG System").classes(
-                            "text-xs font-medium text-slate-500"
+                            "text-xs font-semibold text-slate-700"
                         )
 
                     # Primary Value Headline
@@ -421,7 +421,7 @@ def register_auth_pages() -> None:
                         "w-full p-3.5 bg-slate-50 border border-slate-200 rounded-lg mb-3"
                     ):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("help_outline", size="16px").classes("text-slate-500")
+                            ui.icon("help_outline", size="16px").classes("text-slate-700")
                             ui.label("Student Question:").classes("text-xs font-bold text-slate-700")
                         ui.label(
                             '"What is the policy for late assignment submissions in Advanced Algorithms (CS-301)?"'
@@ -455,7 +455,7 @@ def register_auth_pages() -> None:
                                     "text-xs font-bold text-slate-900 font-mono"
                                 )
                                 ui.label("• Page 4, Section 3.2 Evaluation Policies").classes(
-                                    "text-xs text-slate-500"
+                                    "text-xs text-slate-600 font-medium"
                                 )
                             ui.badge("Verified Grounding", color="green-1").props(
                                 "text-color=green-9"
@@ -571,7 +571,7 @@ def register_auth_pages() -> None:
                             ).props("no-caps").classes(
                                 "w-full py-2.5 font-medium text-sm rounded-lg !bg-blue-700 hover:!bg-blue-800 !text-white shadow-xs transition-colors"
                             )
-                            with ui.row().classes("w-full justify-center text-xs text-slate-500 gap-1.5"):
+                            with ui.row().classes("w-full justify-center text-xs text-slate-700 gap-1.5"):
                                 ui.label("Need a student account?")
                                 ui.link("Register as Student", "/register").classes(
                                     "text-blue-700 font-semibold hover:underline no-underline"
@@ -620,7 +620,7 @@ def register_auth_pages() -> None:
                                 "w-full py-2.5 font-medium text-sm rounded-lg !bg-slate-900 hover:!bg-slate-800 !text-white shadow-xs transition-colors"
                             )
                             ui.label("Accounts are provisioned by university administration.").classes(
-                                "text-xs text-slate-400 text-center"
+                                "text-xs text-slate-600 text-center"
                             )
 
             # ------------------------------------------------------------------
@@ -660,7 +660,7 @@ def register_auth_pages() -> None:
                 )
                 ui.label(
                     "Access your course materials or contact your department for enrollment."
-                ).classes("text-xs sm:text-sm text-slate-500 max-w-md")
+                ).classes("text-xs sm:text-sm text-slate-700 max-w-md")
 
                 with ui.row().classes("items-center justify-center gap-3 mt-2 flex-wrap"):
                     ui.button(
@@ -717,7 +717,7 @@ def register_auth_pages() -> None:
                         ):
                             ui.icon("school", size="16px")
                         ui.label("STUDENT ONBOARDING").classes(
-                            "text-xs font-bold uppercase tracking-wider text-slate-500"
+                            "text-xs font-bold uppercase tracking-wider text-slate-700"
                         )
 
                     ui.label("Create your university student account.").classes(
@@ -751,14 +751,14 @@ def register_auth_pages() -> None:
                             with ui.row().classes("items-start gap-3"):
                                 with ui.element("div").classes(
                                     "w-7 h-7 rounded-md bg-slate-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5"
-                                  ):
+                                ):
                                     ui.icon(icon, size="16px")
                                 with ui.column().classes("gap-0"):
                                     ui.label(title).classes("text-xs font-bold text-slate-800")
-                                    ui.label(desc).classes("text-xs text-slate-500 leading-relaxed")
+                                    ui.label(desc).classes("text-xs text-slate-600 leading-relaxed")
 
                     # Already Registered Link
-                    with ui.row().classes("items-center gap-1.5 pt-2 text-xs text-slate-600"):
+                    with ui.row().classes("items-center gap-1.5 pt-2 text-xs text-slate-700"):
                         ui.label("Already have an account?")
                         ui.link("Sign in to Student Portal →", "/student/login").classes(
                             "text-blue-700 font-semibold hover:underline no-underline"
@@ -777,7 +777,7 @@ def register_auth_pages() -> None:
                                 )
                                 .props('aria-label="Back to home"')
                             ):
-                                ui.icon("arrow_back", size="14px").classes("text-slate-500")
+                                ui.icon("arrow_back", size="14px").classes("text-slate-700")
                                 ui.label("Back to home").classes("text-xs font-medium")
 
                             ui.badge("Registration", color="blue-1").props("text-color=blue-9").classes(
@@ -824,12 +824,12 @@ def register_auth_pages() -> None:
                                     placeholder="At least 8 characters",
                                     password=True,
                                     password_toggle_button=True,
-                                )
+                                    )
                                 .props("outlined dense")
                                 .classes("w-full minimalist-input")
                             )
                             ui.label("Must be at least 8 characters long.").classes(
-                                "text-[11px] text-slate-400 mt-0.5"
+                                "text-[11px] text-slate-600 mt-0.5"
                             )
 
                         def handle_register() -> None:
@@ -894,14 +894,14 @@ def register_auth_pages() -> None:
                             "w-full items-center text-center mt-5 pt-4 border-t border-slate-100 gap-1.5"
                         ):
                             with ui.row().classes(
-                                "justify-center items-center text-xs text-slate-500 gap-1.5 flex-wrap"
+                                "justify-center items-center text-xs text-slate-700 gap-1.5 flex-wrap"
                             ):
                                 ui.label("Already have an account?")
                                 ui.link("Student Sign In", "/student/login").classes(
                                     "text-blue-700 font-semibold hover:underline no-underline"
                                 )
                             with ui.row().classes(
-                                "justify-center items-center text-xs text-slate-400 gap-1.5 flex-wrap mt-1"
+                                "justify-center items-center text-xs text-slate-600 gap-1.5 flex-wrap mt-1"
                             ):
                                 ui.label("Faculty or staff?")
                                 ui.link("Administrator Sign In", "/admin/login").classes(

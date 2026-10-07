@@ -329,6 +329,9 @@ def test_student_membership_lexical_authorization(
 
     kb_enrolled = create_kb(db_session, admin, name="Enrolled Class")
     kb_secret = create_kb(db_session, admin, name="Faculty Private Exam")
+    kb_secret.is_student_visible = False
+    db_session.commit()
+    db_session.refresh(kb_secret)
 
     # Grant student membership to kb_enrolled only
     membership = KnowledgeBaseMember(

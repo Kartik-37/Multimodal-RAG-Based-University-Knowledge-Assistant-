@@ -447,8 +447,16 @@ def test_student_without_membership_returns_404(
 ) -> None:
     """Student without membership in the KB receives 404 to avoid private existence leakage."""
     admin = create_user(db_session, "admin_private_hyb@univ.edu", role=UserRole.ADMIN)
-    student = create_user(db_session, "outsider_hyb@univ.edu", role=UserRole.STUDENT)
-    kb = create_kb(db_session, admin, name="Private KB")
+    student = create_user(db_session, "student_private_hyb@univ.edu", role=UserRole.STUDENT)
+    kb = KnowledgeBase(
+        name="Private KB",
+        description="Private test KB",
+        created_by_id=admin.id,
+        is_student_visible=False,
+    )
+    db_session.add(kb)
+    db_session.commit()
+    db_session.refresh(kb)
 
     api_client.post(
         "/api/v1/auth/login",

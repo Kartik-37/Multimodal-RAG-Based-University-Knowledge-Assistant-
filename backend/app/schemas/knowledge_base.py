@@ -15,6 +15,8 @@ class KnowledgeBaseCreate(BaseModel):
 
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=2000)
+    is_active: bool = Field(default=True)
+    is_student_visible: bool = Field(default=True)
 
 
 class KnowledgeBaseResponse(BaseModel):
@@ -25,6 +27,8 @@ class KnowledgeBaseResponse(BaseModel):
     id: uuid.UUID
     name: str
     description: str
+    is_active: bool = True
+    is_student_visible: bool = True
     created_by_id: uuid.UUID
     created_at: datetime
 
@@ -64,6 +68,8 @@ class CourseSummaryResponse(BaseModel):
     name: str
     description: str
     created_at: datetime
+    is_active: bool = True
+    is_student_visible: bool = True
     total_documents: int
     active_documents: int
     inactive_documents: int
