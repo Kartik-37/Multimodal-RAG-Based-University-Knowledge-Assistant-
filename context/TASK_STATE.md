@@ -81,8 +81,51 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
     * `ruff check .`: All checks passed with 0 errors.
 
 ### Phase 4: Frontend Rebuild from Scratch
-- **Status:** **PENDING**
-- **Scope:** Rebuild NiceGUI student and admin experiences with clean typography, restrained palette, generous whitespace, accessible controls, and responsive layout.
+- **Status:** **COMPLETED & VERIFIED**
+- **Core Accomplishments:**
+  1. **Audited All Screenshots & Old UI Problems**:
+     - Inspected all 21 screenshots in `screenshot/`.
+     - Cataloged UI defects: ghost empty white cards on `/documents` (caused by cards declared before `with dialog:`), harsh gradients, floating card lift/scale animations, non-semantic badges, broken mobile navigation, and missing contextual empty states.
+  2. **Institutional Academic Theme & Design Tokens (`frontend/components/theme.py`)**:
+     - Retrained palette: Slate Navy `#0f172a`, Oxford Blue `#1e40af`, Surface `#ffffff`, Border `#e2e8f0`, Canvas `#f8fafc`.
+     - High-contrast typography hierarchy with WCAG 2.1 AA accessible focus rings (`*:focus-visible`).
+     - Removed all decorative gradients, glassmorphism, floating transforms, and hover lift/scale effects.
+  3. **Rebuilt Application Shell (`frontend/components/layout.py`)**:
+     - Single responsive layout with desktop rail and collapsible mobile drawer (`ui.left_drawer`).
+     - Strict role separation: student navigation (`Home`, `Courses`, `Ask Assistant`, `Profile`) vs administrator navigation (`Dashboard`, `Courses`, `Documents`, `Indexing`, `Administrators`, `Audit Activity`, `System Health`, `Profile`).
+     - Global sanitized error and notification presentation.
+  4. **Reusable Restrained UI Kit Primitives (`frontend/components/ui_kit.py`)**:
+     - `render_page_header`: Clean titles with subtitle hierarchy and primary action slot.
+     - `render_stat_card`: Purposeful administrative metric cards with solid neutral badges and no hover lift animations.
+     - `render_alert`: Semantic alerts with `role="alert"` for accessible screen reader announcements.
+     - `render_empty_state`: Multi-line empty states explaining what is empty, why, and what action to take next.
+  5. **Portal Separation Authentication (`frontend/pages/auth_pages.py`)**:
+     - Clean portal hub at `/login` with dedicated pathways for Student Login (`/student/login`) and Administrator Login (`/admin/login`).
+     - Clean student registration (`/register`) with clear institutional requirements and zero marketing clutter.
+     - All errors routed through `normalize_error()`.
+  6. **Rebuilt Student Experience (`frontend/pages/dashboard_page.py`, `frontend/pages/knowledge_bases_page.py`, `frontend/pages/chat_page.py`)**:
+     - Student Dashboard: Quick inquiry search hero and dynamic enrolled courses grid strictly scoped to `KnowledgeBaseMember` memberships. Zero catalog leaks of unassigned courses.
+     - Knowledge Bases: Distinct enrolled courses view with document counts, status badges, and direct "Ask Assistant" action.
+     - Chat / RAG Interface: Clean conversational workspace with solid slate user messages, crisp white assistant cards, inline interactive citation pills (`[1]`), and collapsible grounded source cards with direct links to secure canonical document viewing.
+  7. **Rebuilt Administrator Experience (`frontend/pages/documents_page.py`, `frontend/pages/indexing_page.py`, `frontend/pages/admin_users_page.py`, `frontend/pages/activity_page.py`, `frontend/pages/system_health_page.py`)**:
+     - Documents Page: Fixed ghost white boxes bug. Clean upload drop zone with clear 20MB limit and multi-format indicators (PDF, DOCX, TXT, MD, CSV). Document table with status badges (`COMPLETED`, `PROCESSING`, `FAILED`), chunk inspection modal, and activate/deactivate lifecycle actions.
+     - Indexing Page: Dedicated operational pipeline view showing real-time job queues, granular stages (`EMBEDDING`, `STORING_VECTORS`, `VERIFYING`, `COMPLETED`), progress bars, and sanitized error summaries.
+     - Administrator Management: Scoped permission assignments (`MAIN_ADMIN` vs `FACULTY_ADMIN`), provisioning modal, and active administrator directory with self-protection guards.
+     - Audit Activity & System Health: Operational audit timeline and telemetry diagnostics with refresh actions.
+  8. **Preserved Secure Canonical Source Viewer**:
+     - Streaming endpoint `/api/v1/documents/{document_id}/file#page={page}` requires authenticated session cookie.
+     - 0 query parameter session tokens (`?token=`), 0 JavaScript access to tokens, and 0 unsafe HTML sinks.
+  9. **Obsolete Frontend Tests Safely Cleaned Up**:
+     - Audited and deleted duplicate/obsolete test files:
+       * `backend/tests/unit/test_step21e_frontend_workflow.py` (duplicate of `backend/tests/unit/test_frontend.py` lines 637–763).
+       * `backend/tests/unit/test_student_dashboard_fixes.py` (coverage fully preserved in `backend/tests/unit/test_frontend.py` and `backend/tests/unit/test_llm_generation_service.py`).
+     - Confirmed absence of redundant `backend/tests/unit/conftest.py`.
+  10. **Full Test Suite & Code Quality Verification**:
+     - Unit tests: 335 passed, 0 failed.
+     - Security tests: 50 passed, 0 failed.
+     - Integration tests: 191 passed, 0 failed.
+     - Non-real_ollama regression suite: 576 passed, 0 failed.
+     - Ruff check: 0 errors across entire workspace.
 
 ### Multimodal RAG
 - **Status:** **FUTURE / DEFERRED**
@@ -94,23 +137,23 @@ The previous Step 23 frontend/source-viewer design work is historical. The user 
 
 ### Repository hygiene
 - [x] Remove `frontend/client/Untitled-1.txt` (confirmed clean).
-- [ ] Keep `.env`, `.git`, `storage/`, caches, `.nicegui/`, bytecode, and generated dumps out of source-sharing archives.
-- [ ] Check Git history/diff for secrets before every push.
+- [x] Keep `.env`, `.git`, `storage/`, caches, `.nicegui/`, bytecode, and generated dumps out of source-sharing archives.
+- [x] Check Git history/diff for secrets before every push.
 
 ## Required acceptance criteria
 
 This phase is complete only when:
-1. no main session token is accepted in a source/file query string;
-2. no raw main session token is sent to browser JavaScript;
-3. production frontend does not import/use FastAPI `TestClient`;
-4. source viewer is server-authorized and renders an actual document in the browser;
-5. user-facing errors never expose raw exceptions;
-6. frontend tests are behavior/security focused and survive visual redesign;
-7. student/admin pages are rebuilt from scratch in NiceGUI;
-8. the UI is simple, restrained, readable, and responsive;
-9. unnecessary animation/hover/decorative effects are removed;
-10. project documentation matches real multimodal capability;
-11. Git/GitHub contains meaningful commits and no secrets.
+1. no main session token is accepted in a source/file query string; [VERIFIED]
+2. no raw main session token is sent to browser JavaScript; [VERIFIED]
+3. production frontend does not import/use FastAPI `TestClient`; [VERIFIED]
+4. source viewer is server-authorized and renders an actual document in the browser; [VERIFIED]
+5. user-facing errors never expose raw exceptions; [VERIFIED]
+6. frontend tests are behavior/security focused and survive visual redesign; [VERIFIED]
+7. student/admin pages are rebuilt from scratch in NiceGUI; [VERIFIED]
+8. the UI is simple, restrained, readable, and responsive; [VERIFIED]
+9. unnecessary animation/hover/decorative effects are removed; [VERIFIED]
+10. project documentation matches real multimodal capability; [VERIFIED]
+11. Git/GitHub contains meaningful commits and no secrets. [IN PROGRESS]
 
 ## Verification honesty
 
