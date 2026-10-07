@@ -31,8 +31,10 @@ from backend.app.services.llm.exceptions import (
     LLMTimeoutError,
 )
 from backend.app.services.llm.service import (
+    _SOURCE_REF_REGEX,
     SAFE_INSUFFICIENT_EVIDENCE_ANSWER,
     LLMGenerationService,
+    _sanitize_llm_answer,
     get_llm_generation_service,
 )
 
@@ -250,3 +252,55 @@ class TestLLMGenerationServiceUnit:
         inst2 = get_llm_generation_service()
         assert inst1 is inst2
         assert isinstance(inst1, LLMGenerationService)
+
+    def test_sanitize_llm_answer_strips_cot_and_extracts_concise_answer(self) -> None:
+        """Verify that rambling CoT monologue is stripped and concise factual answer is preserved."""
+        raw_rambling_cot = (
+            'We are given the user question: "what is act name"\n\n'
+            'We must look for the name of the act in the retrieved evidence.\n\n'
+            "Let's check each source:\n\n"
+            "* [source_1]: This is from KSU-Act-English.pdf, Page 12. It talks about powers of the Board. "
+            "It does not explicitly state the name of the act.\n\n"
+            '* [source_2]: This is from KSU-Act-English.pdf, Page 1. It states: "GUJARAT ACT NO. 22 OF 2021... '
+            'This Act may be called \\"Kaushalya the Skill University Act 2021\\""\n\n'
+            "* [source_3]: This is from KSU-Act-English.pdf, Page 16. It talks about funds and does not state the name.\n\n"
+            "* [source_4]: This is from KSU-Act-English.pdf, Page 7. It talks about officers of the University.\n\n"
+            'Therefore, the act name is explicitly stated in [source_2] as "Kaushalya the Skill University Act 2021".'
+        )
+
+        cleaned = _sanitize_llm_answer(raw_rambling_cot)
+
+        # 1. Preamble and internal monologue must be absent
+        assert "We are given the user question" not in cleaned
+        assert "We must look for the name" not in cleaned
+        assert "Let's check each source" not in cleaned
+        assert "* [source_1]" not in cleaned
+        assert "* [source_3]" not in cleaned
+        assert "* [source_4]" not in cleaned
+
+        # 2. Direct conclusion with the true answer must be preserved
+        assert "Kaushalya the Skill University Act 2021" in cleaned
+        assert "[source_2]" in cleaned
+
+        # 3. Only source_2 is referenced in the final output
+        referenced_sources = set(_SOURCE_REF_REGEX.findall(cleaned))
+        assert referenced_sources == {"source_2"}
+        assert "source_1" not in referenced_sources
+        assert "source_3" not in referenced_sources
+        assert "source_4" not in referenced_sources
+
+    def test_sanitize_llm_answer_handles_think_tags(self) -> None:
+        """Verify that reasoning within <think>...</think> tags is stripped completely."""
+        raw = (
+            "<think>\n"
+            "User wants to know the act name.\n"
+            "Checking chunks: chunk 1 no, chunk 2 yes.\n"
+            "</think>\n"
+            'This Act may be called "Kaushalya the Skill University Act 2021" [source_2].'
+        )
+
+        cleaned = _sanitize_llm_answer(raw)
+        assert "<think>" not in cleaned
+        assert "</think>" not in cleaned
+        assert "Checking chunks" not in cleaned
+        assert 'This Act may be called "Kaushalya the Skill University Act 2021" [source_2].' in cleaned
