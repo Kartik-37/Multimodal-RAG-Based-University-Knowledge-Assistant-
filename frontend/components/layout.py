@@ -561,32 +561,108 @@ def page_layout(
 
 @contextmanager
 def auth_layout(
-    max_width_class: str = "max-w-5xl",
+    max_width_class: str = "max-w-6xl",
+    page_type: str = "landing",
 ) -> Generator[None, None, None]:
     """
-    Dedicated minimal authentication layout for public sign-in and registration pages.
+    Dedicated authentication and public layout for sign-in, registration, and portal entry.
 
-    Provides a clean, institutional academic header and subtle footer without
-    redundant global navigation controls (such as 'Sign In' or 'Register' buttons)
-    that already represent the page's primary intent.
+    Provides a clean institutional academic header with contextual actions,
+    flexible container sizing, and an anchored institutional footer.
     """
-    # Minimal institutional top header
+    # Institutional top header
     with ui.header().classes(
-        "w-full bg-slate-900 text-white px-4 sm:px-8 py-3 items-center justify-between shadow-xs z-30"
+        "w-full bg-slate-900 text-white px-3 sm:px-8 py-2.5 sm:py-3.5 items-center justify-between border-b border-slate-800 shadow-xs z-30"
     ):
         with (
             ui.row()
-            .classes("items-center gap-2.5 cursor-pointer")
+            .classes("items-center gap-2.5 sm:gap-3 cursor-pointer no-underline")
             .on("click", lambda: ui.navigate.to("/login"))
         ):
-            ui.icon("school", size="sm").classes("text-blue-400")
-            ui.label("RAG Assistant").classes(
-                "text-base sm:text-lg font-bold tracking-tight text-white"
-            )
-        with ui.row().classes("items-center"):
-            ui.label("Academic Knowledge Platform").classes(
-                "text-xs font-medium text-slate-400 hidden sm:inline"
-            )
+            with ui.element("div").classes(
+                "w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-900/60 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold"
+            ):
+                ui.icon("school", size="17px")
+            with ui.column().classes("gap-0"):
+                ui.label("RAG Assistant").classes(
+                    "text-sm sm:text-lg font-bold tracking-tight text-white leading-tight"
+                )
+                ui.label("University Knowledge Assistant").classes(
+                    "text-[10px] font-medium text-slate-400 leading-none hidden sm:inline"
+                )
+
+        with ui.row().classes("items-center gap-1.5 sm:gap-3"):
+            if page_type == "landing":
+                with (
+                    ui.link("Sign In", "/student/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800"
+                    )
+                ):
+                    pass
+                with (
+                    ui.link("Faculty & Admin", "/admin/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden md:inline-block"
+                    )
+                ):
+                    pass
+                ui.button(
+                    "Register",
+                    on_click=lambda: ui.navigate.to("/register"),
+                ).props("no-caps dense").classes(
+                    "px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-lg !bg-blue-600 hover:!bg-blue-700 !text-white shadow-xs transition-colors"
+                )
+            elif page_type == "student":
+                with (
+                    ui.link("Home", "/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                    )
+                ):
+                    pass
+                with (
+                    ui.link("Admin Sign In", "/admin/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                    )
+                ):
+                    pass
+                ui.button(
+                    "Register",
+                    on_click=lambda: ui.navigate.to("/register"),
+                ).props("outline no-caps dense").classes(
+                    "px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-lg border-slate-700 !text-slate-200 hover:bg-slate-800"
+                )
+            elif page_type == "admin":
+                with (
+                    ui.link("Home", "/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                    )
+                ):
+                    pass
+                with (
+                    ui.link("Student Portal", "/student/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800"
+                    )
+                ):
+                    pass
+            elif page_type == "register":
+                with (
+                    ui.link("Home", "/login")
+                    .classes(
+                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                    )
+                ):
+                    pass
+                ui.button(
+                    "Student Sign In",
+                    on_click=lambda: ui.navigate.to("/student/login"),
+                ).props("outline no-caps dense").classes(
+                    "px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-lg border-slate-700 !text-slate-200 hover:bg-slate-800"
+                )
 
     # Main content flow with balanced vertical spacing and institutional footer
     with ui.column().classes(
@@ -595,12 +671,28 @@ def auth_layout(
         with (
             ui.column()
             .classes(
-                f"w-full {max_width_class} mx-auto main-page-container items-center flex-grow box-border"
+                f"w-full {max_width_class} mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-grow box-border"
             )
-            .style("padding: 2rem !important;")
         ):
             yield
-        with ui.row().classes(
-            "w-full justify-center text-center py-6 px-4 text-xs text-slate-400 border-t border-slate-200 mt-auto box-border"
+        with ui.element("footer").classes(
+            "w-full bg-white border-t border-slate-200 mt-auto box-border"
         ):
-            ui.label("© RAG Assistant • Institutional Academic Resource")
+            with ui.column().classes("w-full max-w-6xl mx-auto px-4 sm:px-8 py-6 gap-3"):
+                with ui.row().classes("w-full justify-between items-center gap-4 flex-wrap"):
+                    with ui.row().classes("items-center gap-2"):
+                        with ui.element("div").classes(
+                            "w-6 h-6 rounded bg-slate-900 text-white flex items-center justify-center"
+                        ):
+                            ui.icon("school", size="14px")
+                        ui.label("RAG Assistant").classes("text-sm font-bold text-slate-900")
+                        ui.label("•").classes("text-slate-300")
+                        ui.label("Multimodal RAG-Based University Knowledge Assistant").classes(
+                            "text-xs text-slate-500 font-medium"
+                        )
+                    with ui.row().classes("items-center gap-2 flex-wrap"):
+                        ui.badge("Multi-Format Text RAG", color="slate-2").props("text-color=slate-8").classes("text-[11px] font-medium px-2 py-0.5 border border-slate-200")
+                        ui.label("PDF • DOCX • TXT • Markdown • CSV").classes("text-xs text-slate-400 font-mono")
+                with ui.row().classes("w-full justify-between items-center pt-3 border-t border-slate-100 text-xs text-slate-400 gap-2 flex-wrap"):
+                    ui.label("© 2026 RAG Assistant • Institutional Academic Resource")
+                    ui.label("Server-Side RBAC Enforced • Zero Plaintext Session Persistence")
