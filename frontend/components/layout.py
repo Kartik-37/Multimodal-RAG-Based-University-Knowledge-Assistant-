@@ -200,7 +200,7 @@ def _render_navbar(active_route: str) -> None:
                     .on("click", lambda: ui.navigate.to("/dashboard"))
                 ):
                     with ui.element("div").classes(
-                        "w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs shrink-0"
+                        "w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
                     ):
                         ui.icon("school", size="20px")
                     with ui.column().classes("gap-0 min-w-0 leading-tight"):

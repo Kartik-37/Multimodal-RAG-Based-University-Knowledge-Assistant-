@@ -98,7 +98,7 @@ def render_stat_card(
     Render a factual summary metric card with Modern Academic Tech styling.
     """
     with ui.card().classes(
-        "academic-card flex-1 min-w-[200px] p-5 bg-white border border-slate-200/80 rounded-2xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+        "academic-card flex-1 min-w-[200px] p-5 bg-white border border-slate-200 rounded-lg shadow-2xs"
     ):
         with ui.row().classes("w-full items-center justify-between"):
             ui.label(title).classes(

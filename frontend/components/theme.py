@@ -131,47 +131,42 @@ html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
 .academic-card {
     background: #ffffff;
     border: 1px solid rgba(226, 232, 240, 0.9);
-    border-radius: 16px;
-    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.03), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 .academic-card:hover {
     border-color: #cbd5e1;
-    box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.06), 0 4px 8px -2px rgba(15, 23, 42, 0.03);
-    transform: translateY(-2px);
 }
 
 /* Modern Course Card Hover Effect */
 .modern-course-card {
-    border-radius: 16px !important;
-    border: 1px solid rgba(226, 232, 240, 0.85) !important;
-    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.02) !important;
-    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, border-color 0.22s ease !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(226, 232, 240, 0.9) !important;
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.02) !important;
+    transition: border-color 0.15s ease, background-color 0.15s ease !important;
 }
 .modern-course-card:hover {
-    transform: translateY(-3px) !important;
-    box-shadow: 0 14px 28px -4px rgba(15, 23, 42, 0.07), 0 4px 10px -2px rgba(15, 23, 42, 0.03) !important;
-    border-color: #93c5fd !important;
+    border-color: #94a3b8 !important;
 }
 
 /* Modern Collapsible Slim Sidebar Styling */
 .slim-sidebar-rail {
     background: #ffffff !important;
     border-right: 1px solid #e2e8f0 !important;
-    transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    transition: width 0.2s ease !important;
 }
 .sidebar-link {
-    border-radius: 10px !important;
-    transition: all 0.18s ease-in-out !important;
+    border-radius: 8px !important;
+    transition: background-color 0.15s ease, color 0.15s ease !important;
     font-weight: 500 !important;
 }
 .sidebar-link-active {
     background: #eff6ff !important;
     color: #1d4ed8 !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     font-weight: 600 !important;
     border-left: 3px solid #2563eb !important;
-    box-shadow: 0 1px 2px 0 rgba(37, 99, 235, 0.06) !important;
 }
 .sidebar-link:hover:not(.sidebar-link-active) {
     background: #f8fafc !important;
@@ -183,9 +178,9 @@ html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
     display: inline-flex !important;
     align-items: center !important;
     gap: 0.25rem !important;
-    padding: 0.15rem 0.55rem !important;
+    padding: 0.15rem 0.5rem !important;
     margin: 0 0.15rem !important;
-    border-radius: 6px !important;
+    border-radius: 4px !important;
     font-size: 0.75rem !important;
     font-weight: 700 !important;
     font-family: 'JetBrains Mono', monospace !important;
@@ -194,15 +189,12 @@ html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
     border: 1px solid #bfdbfe !important;
     cursor: pointer !important;
     text-decoration: none !important;
-    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
-    box-shadow: 0 1px 2px 0 rgba(37, 99, 235, 0.05) !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
 }
 .citation-pill:hover {
     background-color: #dbeafe !important;
     color: #1e40af !important;
     border-color: #60a5fa !important;
-    box-shadow: 0 2px 6px 0 rgba(37, 99, 235, 0.2) !important;
-    transform: translateY(-1px) scale(1.03) !important;
 }
 
 /* Visible Keyboard Focus Rings (WCAG 2.1 AA Target) */
