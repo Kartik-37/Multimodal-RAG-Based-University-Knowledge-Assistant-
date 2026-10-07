@@ -13,6 +13,7 @@ Reuses backend /knowledge-bases/system/health truthful telemetry.
 from nicegui import ui
 
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.components.layout import page_layout
 from frontend.components.ui_kit import render_alert, render_empty_state
 from frontend.state.app_state import state
@@ -55,7 +56,7 @@ def register_system_health_page() -> None:
                         health = api_client.get_system_health()
                     except Exception as err:
                         render_alert(
-                            f"Unable to reach system telemetry service: {err}", level="negative"
+                            normalize_error(err, context="system"), level="negative"
                         )
                         return
 
@@ -162,7 +163,7 @@ def register_system_health_page() -> None:
                             "Open Indexing Center",
                             icon="precision_manufacturing",
                             on_click=lambda: ui.navigate.to("/indexing"),
-                        ).props("outline color=indigo no-caps dense").classes(
+                        ).props("outline color=primary no-caps dense").classes(
                             "text-xs font-semibold px-4 py-2"
                         )
                         ui.button(

@@ -12,6 +12,7 @@ from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.status_badge import render_indexing_status_badge
 from frontend.components.ui_kit import render_alert, render_empty_state
@@ -57,7 +58,7 @@ def register_indexing_page() -> None:
                     try:
                         jobs = api_client.get_indexing_jobs()
                     except Exception as err:
-                        render_alert(f"Unable to load indexing jobs: {err}", level="negative")
+                        render_alert(normalize_error(err, context="indexing"), level="negative")
                         return
 
                     active_jobs = [j for j in jobs if j.status in ("QUEUED", "PROCESSING")]
@@ -293,7 +294,7 @@ def register_indexing_page() -> None:
                                                         )
                                                         refresh_view()
                                                     except ValueError as ex:
-                                                        ui.notify(str(ex), type="negative")
+                                                        ui.notify(normalize_error(ex, context="indexing"), type="negative")
 
                                                 ui.button(
                                                     "Retry Indexing",

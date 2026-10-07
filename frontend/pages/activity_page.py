@@ -15,6 +15,7 @@ from typing import Any
 from nicegui import ui
 
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.components.layout import page_layout
 from frontend.components.ui_kit import render_alert, render_empty_state
 from frontend.state.app_state import state
@@ -61,7 +62,7 @@ def register_activity_page() -> None:
                         events = api_client.get_activity_log()
                     except Exception as err:
                         render_alert(
-                            f"Unable to retrieve administrative activity log: {err}",
+                            normalize_error(err, context="activity"),
                             level="negative",
                         )
                         return
@@ -279,7 +280,7 @@ def register_activity_page() -> None:
                                                         "_", " "
                                                     ).title()
                                                     ui.badge(
-                                                        action_clean, color="indigo-900"
+                                                        action_clean, color="slate-800"
                                                     ).classes("text-[10px] font-semibold")
 
                                                 # Resource

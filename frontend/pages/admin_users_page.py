@@ -56,30 +56,30 @@ def register_admin_users_page() -> None:
             # ------------------------------------------------------------------
             with ui.row().classes("w-full gap-4 mb-4 flex-wrap"):
                 with ui.card().classes(
-                    "flex-1 min-w-[280px] p-4 bg-purple-50/70 border border-purple-200 rounded-lg shadow-xs"
+                    "flex-1 min-w-[280px] p-4 bg-slate-50 border border-slate-200 rounded-lg shadow-2xs"
                 ):
                     with ui.row().classes("items-center gap-2 mb-1"):
-                        ui.icon("verified_user", size="sm").classes("text-purple-700")
+                        ui.icon("verified_user", size="sm").classes("text-slate-800")
                         ui.label("Main Administrator").classes(
-                            "text-xs font-bold text-purple-900 uppercase tracking-wide"
+                            "text-xs font-bold text-slate-900 uppercase tracking-wide"
                         )
                     ui.label(
                         "Inherent full authority across all courses, documents, vector indexing, chat, "
                         "and administrator accounts. The system enforces that at least one active Main Admin always exists."
-                    ).classes("text-xs text-purple-800 leading-relaxed")
+                    ).classes("text-xs text-slate-600 leading-relaxed")
 
                 with ui.card().classes(
-                    "flex-1 min-w-[280px] p-4 bg-indigo-50/70 border border-indigo-200 rounded-lg shadow-xs"
+                    "flex-1 min-w-[280px] p-4 bg-slate-50 border border-slate-200 rounded-lg shadow-2xs"
                 ):
                     with ui.row().classes("items-center gap-2 mb-1"):
-                        ui.icon("manage_accounts", size="sm").classes("text-indigo-700")
+                        ui.icon("manage_accounts", size="sm").classes("text-slate-700")
                         ui.label("Faculty Administrator").classes(
-                            "text-xs font-bold text-indigo-900 uppercase tracking-wide"
+                            "text-xs font-bold text-slate-900 uppercase tracking-wide"
                         )
                     ui.label(
                         "Scoped authority. Restricted strictly to assigned university courses and "
                         "granular permissions (e.g. document upload, indexing, admin chat). Server-side authorization enforced."
-                    ).classes("text-xs text-indigo-800 leading-relaxed")
+                    ).classes("text-xs text-slate-600 leading-relaxed")
 
             # ------------------------------------------------------------------
             # Toggleable Provisioning Panel
@@ -110,7 +110,7 @@ def register_admin_users_page() -> None:
                             icon="person_add",
                             on_click=toggle_provision,
                         )
-                        .props("color=purple no-caps dense")
+                        .props("color=primary no-caps dense")
                         .classes("text-xs font-semibold px-3 py-1.5")
                     )
 
@@ -123,22 +123,22 @@ def register_admin_users_page() -> None:
 
             with provision_container:
                 with ui.card().classes(
-                    "w-full p-5 bg-white border border-purple-200 rounded-lg shadow-sm gap-4"
+                    "w-full p-5 bg-white border border-slate-200 rounded-lg shadow-sm gap-4"
                 ):
                     with ui.row().classes(
                         "items-center justify-between border-b border-slate-100 pb-2"
                     ):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("add_moderator", size="sm").classes("text-purple-600")
+                            ui.icon("add_moderator", size="sm").classes("text-slate-700")
                             ui.label("Provision New Administrator").classes(
                                 "text-sm font-bold text-slate-900"
                             )
-                        ui.badge("Server-Enforced RBAC", color="purple-700").classes("text-[10px]")
+                        ui.badge("Server-Enforced RBAC", color="slate-800").classes("text-[10px]")
 
                     # STEP 1: Basic Information
                     with ui.column().classes("w-full gap-2"):
                         with ui.row().classes("items-center gap-2"):
-                            ui.badge("1", color="purple-900").classes("text-[10px] rounded-full")
+                            ui.badge("1", color="slate-800").classes("text-[10px] rounded-full")
                             ui.label("Basic Information").classes(
                                 "text-xs font-bold text-slate-800 uppercase"
                             )
@@ -166,7 +166,7 @@ def register_admin_users_page() -> None:
                     # STEP 2: Role Hierarchy
                     with ui.column().classes("w-full gap-2 mt-1"):
                         with ui.row().classes("items-center gap-2"):
-                            ui.badge("2", color="purple-900").classes("text-[10px] rounded-full")
+                            ui.badge("2", color="slate-800").classes("text-[10px] rounded-full")
                             ui.label("Administrative Role").classes(
                                 "text-xs font-bold text-slate-800 uppercase"
                             )
@@ -195,7 +195,7 @@ def register_admin_users_page() -> None:
                         with course_scope_section:
                             with ui.row().classes("items-center justify-between w-full"):
                                 with ui.row().classes("items-center gap-2"):
-                                    ui.badge("3", color="purple-900").classes(
+                                    ui.badge("3", color="slate-800").classes(
                                         "text-[10px] rounded-full"
                                     )
                                     ui.label("Course Scope Assignment").classes(
@@ -244,14 +244,14 @@ def register_admin_users_page() -> None:
                         with perms_section:
                             with ui.row().classes("w-full justify-between items-center"):
                                 with ui.row().classes("items-center gap-2"):
-                                    ui.badge("4", color="purple-900").classes(
+                                    ui.badge("4", color="slate-800").classes(
                                         "text-[10px] rounded-full"
                                     )
                                     ui.label("Granular RBAC Permissions").classes(
                                         "text-xs font-bold text-slate-800 uppercase"
                                     )
                                     ui.badge(
-                                        f"{len(new_admin_perms)} / 16 Selected", color="purple-800"
+                                        f"{len(new_admin_perms)} / 16 Selected", color="slate-700"
                                     ).classes("text-[10px]")
 
                                 with ui.row().classes("gap-2"):
@@ -267,7 +267,7 @@ def register_admin_users_page() -> None:
                                         render_new_admin_perms_ui()
 
                                     ui.button("Select All", on_click=select_all).props(
-                                        "flat dense no-caps text-color=purple"
+                                        "flat dense no-caps text-color=primary"
                                     ).classes("text-xs")
                                     ui.button("Clear All", on_click=deselect_all).props(
                                         "flat dense no-caps text-color=slate"
@@ -316,7 +316,7 @@ def register_admin_users_page() -> None:
                         ).classes("text-xs")
                         submit_btn = (
                             ui.button("Create Administrator Account", icon="add_moderator")
-                            .props("color=purple no-caps dense")
+                            .props("color=primary no-caps dense")
                             .classes("px-4 py-2 text-xs font-semibold")
                         )
 
@@ -404,7 +404,7 @@ def register_admin_users_page() -> None:
                         "w-full justify-between items-center border-b border-slate-100 pb-2"
                     ):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("security", size="sm").classes("text-purple-600")
+                            ui.icon("security", size="sm").classes("text-slate-700")
                             with ui.column().classes("gap-0"):
                                 ui.label(
                                     f"Edit Permissions & Scope: {target_admin.full_name}"
@@ -474,7 +474,7 @@ def register_admin_users_page() -> None:
                                         render_dialog_perms()
 
                                     ui.button("Select All", on_click=dlg_select_all).props(
-                                        "flat dense no-caps text-color=purple"
+                                        "flat dense no-caps text-color=primary"
                                     ).classes("text-[11px]")
                                     ui.button("Clear All", on_click=dlg_deselect_all).props(
                                         "flat dense no-caps text-color=slate"
@@ -533,7 +533,7 @@ def register_admin_users_page() -> None:
                                 ui.notify(normalize_error(exc, context="admin"), type="negative")
 
                         ui.button("Save Permissions", icon="save", on_click=save_permissions).props(
-                            "color=purple dense no-caps"
+                            "color=primary dense no-caps"
                         )
 
                 dialog.open()
@@ -588,11 +588,11 @@ def register_admin_users_page() -> None:
                             )
                             ui.badge(
                                 f"{sum(1 for a in admins if a.admin_role == 'MAIN_ADMIN')} Main",
-                                color="purple-900",
+                                color="slate-800",
                             ).classes("text-[10px]")
                             ui.badge(
                                 f"{sum(1 for a in admins if a.admin_role == 'FACULTY_ADMIN')} Faculty",
-                                color="indigo-800",
+                                color="slate-700",
                             ).classes("text-[10px]")
                         ui.button(icon="refresh", on_click=refresh_admins).props(
                             "flat round dense"
@@ -646,9 +646,9 @@ def register_admin_users_page() -> None:
                                                     or "A"
                                                 )
                                                 avatar_bg = (
-                                                    "bg-purple-800"
+                                                    "bg-slate-900"
                                                     if adm.admin_role == "MAIN_ADMIN"
-                                                    else "bg-indigo-700"
+                                                    else "bg-slate-700"
                                                 )
                                                 with ui.element("div").classes(
                                                     f"w-7 h-7 rounded-full {avatar_bg} text-white flex items-center justify-center font-bold text-[10px] shrink-0"
@@ -670,12 +670,12 @@ def register_admin_users_page() -> None:
                                         # Role
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             if adm.admin_role == "MAIN_ADMIN":
-                                                ui.badge("MAIN ADMIN", color="purple-900").classes(
+                                                ui.badge("MAIN ADMIN", color="slate-800").classes(
                                                     "text-[10px] font-bold"
                                                 )
                                             else:
                                                 ui.badge(
-                                                    "FACULTY ADMIN", color="indigo-800"
+                                                    "FACULTY ADMIN", color="slate-700"
                                                 ).classes("text-[10px] font-bold")
 
                                         # Assigned Courses
@@ -683,7 +683,7 @@ def register_admin_users_page() -> None:
                                             if adm.admin_role == "MAIN_ADMIN":
                                                 ui.badge(
                                                     "All Courses",
-                                                    color="purple-100 text-purple-900",
+                                                    color="slate-100 text-slate-800",
                                                 ).classes("text-[10px]")
                                             elif adm.assigned_courses:
                                                 with ui.row().classes("gap-1 flex-wrap"):
@@ -705,7 +705,7 @@ def register_admin_users_page() -> None:
                                         with ui.element("td").classes("py-2.5 px-3"):
                                             if adm.admin_role == "MAIN_ADMIN":
                                                 ui.label("16 / 16 (Full Authority)").classes(
-                                                    "text-[11px] font-semibold text-purple-800"
+                                                    "text-[11px] font-semibold text-slate-700"
                                                 )
                                             else:
                                                 perm_count = len(adm.permissions or [])
@@ -721,7 +721,7 @@ def register_admin_users_page() -> None:
                                                                 open_permissions_dialog(a)
                                                             ),
                                                         ).props(
-                                                            "flat dense no-caps text-color=purple"
+                                                            "flat dense no-caps text-color=primary"
                                                         ).classes("text-[10px] p-0.5")
 
                                         # Status
@@ -757,7 +757,7 @@ def register_admin_users_page() -> None:
                                                                 )
                                                                 refresh_admins()
                                                             except ValueError as ex:
-                                                                ui.notify(str(ex), type="negative")
+                                                                ui.notify(normalize_error(ex, context="admin"), type="negative")
 
                                                         return lambda: show_confirm_action(
                                                             "Deactivate Administrator",
@@ -800,7 +800,7 @@ def register_admin_users_page() -> None:
                                                                 )
                                                                 refresh_admins()
                                                             except ValueError as ex:
-                                                                ui.notify(str(ex), type="negative")
+                                                                ui.notify(normalize_error(ex, context="admin"), type="negative")
 
                                                         return lambda: show_confirm_action(
                                                             "Reactivate Administrator",
@@ -828,7 +828,7 @@ def register_admin_users_page() -> None:
                                                             )
                                                             refresh_admins()
                                                         except ValueError as ex:
-                                                            ui.notify(str(ex), type="negative")
+                                                            ui.notify(normalize_error(ex, context="admin"), type="negative")
 
                                                     return lambda: show_confirm_action(
                                                         "Delete Administrator",
