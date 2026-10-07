@@ -1025,13 +1025,38 @@ The original task history is preserved below. Its completed design decisions are
      - `ruff format --check`: 100% clean (225 files already formatted).
      - Zero secret leaks, server-side RBAC strictly preserved.
 
-
-
-
-
-
-
-
-
-
+2026-10-07 — Stage 1: Complete Public Entry + Authentication Redesign (COMPLETE & VERIFIED):
+- **Stage Name:** Stage 1 — Complete Public Entry + Authentication Redesign
+- **Starting Git Commit:** `4575184`
+- **Accomplishments:**
+  1. *Public Entry (`/login`) Redesigned from Scratch:*
+     - Purposeful academic header with direct gateway links ("Student Sign In", "Faculty & Admin", "Create Account").
+     - Clear, honest hero section communicating what RAG Assistant does without empty whitespace or floating card boxes.
+     - Live grounded evidence demonstration card featuring a real student query, grounded assistant answer with inline citation `[1]`, and quoted syllabus excerpt.
+     - Four core academic value pillars: Course-Scoped Access, Verifiable Page Citations, Multi-Format Ingestion (PDF, DOCX, TXT, MD, CSV), and Institution-Governed Content.
+     - Dual gateway selection cards clearly delineating student learning vs faculty/administrative curation.
+     - Institutional trust and privacy standards banner highlighting server-side RBAC, local embedding security, and zero hallucination safeguards.
+     - Anchored bottom CTA and comprehensive institutional footer.
+  2. *Student Portal (`/student/login`) Split-Pane Layout:*
+     - Left pane: Student gateway context, citation guidance, course isolation principles, and registration link.
+     - Right pane: Focused, accessible sign-in card with email, toggle-password input, loading indicator, and sanitized error alerts.
+  3. *Administrator Portal (`/admin/login`) Split-Pane Layout:*
+     - Left pane: Administrative governance context, course curation lifecycle, and server-side audit notices.
+     - Right pane: Secure administrative sign-in card with server-side RBAC validation.
+  4. *Student Onboarding (`/register`) Split-Pane Layout:*
+     - Left pane: Institutional onboarding guidelines, email criteria, and password rules.
+     - Right pane: Clean student registration card with full name, university email, and password validation.
+  5. *Shared Public Layout & Theme (`frontend/components/layout.py`):*
+     - Rebuilt `auth_layout` with responsive contextual headers, open section container width, and anchored institutional footer.
+- **Verification Results:**
+  - `backend/tests/integration/test_step22a_auth_portals.py`: 20/20 passed (100%).
+  - `backend/tests/security/`: 50/50 passed (100%).
+  - `backend/tests/unit/`: 335/335 passed (100%).
+  - `backend/tests/integration/`: 191/191 passed (100%).
+  - `ruff check .`: 100% clean (0 errors across entire workspace).
+  - All four routes (`/login`, `/student/login`, `/admin/login`, `/register`) return HTTP 200 with complete payloads.
+- **Security Invariants Preserved:**
+  - 0 query-parameter tokens (`?token=`), 0 localStorage session storage, 0 JavaScript cookie manipulation, 0 raw exception disclosures.
+  - Student course access remains strictly membership-based (`KnowledgeBaseMember`).
+  - Multimodal RAG and persistent chat history remain strictly deferred.
 
