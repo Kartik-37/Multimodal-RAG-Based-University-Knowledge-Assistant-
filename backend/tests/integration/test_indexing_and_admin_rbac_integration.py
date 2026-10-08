@@ -1,5 +1,5 @@
 """
-Step 21D Functional Integrity Integration Tests.
+Functional Integrity Integration Tests for Indexing and Admin RBAC.
 
 Validates the full functional integrity matrix:
 1. Real vector indexing pipeline lifecycle:

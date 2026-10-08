@@ -54,7 +54,7 @@ Must include all of these:
 11. backend `deps.py` contains zero NiceGUI dependencies or storage fallbacks;
 12. production frontend client does not import or instantiate `TestClient`;
 13. registration failure and API error paths never expose raw Python exception details;
-14. student course access strictly enforces membership isolation (`KnowledgeBaseMember`).
+14. student course access enforces authoritative catalog policy (active/student-visible courses open by default, restricted courses require membership, inactive courses blocked with 404).
 
 ## Frontend API client tests
 

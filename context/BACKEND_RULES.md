@@ -57,10 +57,11 @@ Prefer authorization-aware database/service queries.
 
 ### Authoritative student course access rule
 
-Student course access in this project is **strictly membership-based**:
-- A student user can only query, browse, and stream documents from courses where they are an active, assigned member (`KnowledgeBaseMember`).
-- Students with zero course memberships see zero courses. Courses created by administrators are not automatically visible or queryable by students.
-- Unassigned course documents return HTTP 404/403 to prevent information disclosure.
+Student course access in this project is governed by the **authoritative catalog policy**:
+- All courses marked `is_active=True` and `is_student_visible=True` are automatically available to authenticated students without requiring manual enrollment.
+- Courses marked `is_active=False` are strictly excluded from all student access.
+- Restricted or private courses (`is_student_visible=False`) strictly require explicit membership assignment (`KnowledgeBaseMember`).
+- Unassigned restricted course documents return HTTP 404 to prevent private course existence leakage.
 - Faculty Admins have scoped access bounded to courses they created or belong to.
 - Main Admins possess global administrative authority across all courses and documents.
 

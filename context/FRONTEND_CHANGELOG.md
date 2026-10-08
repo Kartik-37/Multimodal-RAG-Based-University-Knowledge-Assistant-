@@ -4,6 +4,44 @@ This changelog records all design, structural, and architectural changes to the 
 
 ---
 
+## 2026-10-08 — Stage 3A: Frontend Design System Reset & Test Contracts Reset (COMPLETED & VERIFIED)
+
+- **Date:** 2026-10-08
+- **Stage:** Stage 3A — Design System Reset & Test Contracts Reset
+- **Files Created:**
+  - `context/FRONTEND_DESIGN_SYSTEM.md`: Authoritative design system specification (Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, Plus Jakarta Sans / Source Serif 4 typography, single student navigation, default `ALL_COURSES` chat scope, forbidden visual patterns).
+  - `backend/tests/frontend/__init__.py`
+  - `backend/tests/frontend/unit/__init__.py`
+  - `backend/tests/frontend/unit/test_api_client_contracts.py` (migrated from milestone test)
+  - `backend/tests/frontend/unit/test_navigation_contracts.py`
+  - `backend/tests/frontend/unit/test_course_access_contracts.py`
+  - `backend/tests/frontend/unit/test_student_dashboard_contracts.py`
+  - `backend/tests/frontend/unit/test_student_chat_contracts.py`
+  - `backend/tests/frontend/unit/test_source_viewer_contracts.py`
+  - `backend/tests/frontend/integration/__init__.py`
+  - `backend/tests/frontend/integration/test_student_journey.py`
+  - `backend/tests/frontend/integration/test_auth_portals_journey.py` (migrated from milestone test)
+- **Files Renamed / Modified:**
+  - `backend/tests/integration/test_step21d_functional_integrity.py` -> renamed to `backend/tests/integration/test_indexing_and_admin_rbac_integration.py`
+  - `backend/tests/integration/test_source_viewer.py`: Updated private course test fixture to explicitly set `is_student_visible=False`
+  - `backend/app/api/deps.py`: Updated student catalog authorization (`get_authorized_knowledge_bases` & `get_authorized_knowledge_base`) to make active + student-visible courses available by default without requiring manual enrollment
+  - `backend/tests/security/test_student_access_policy.py`: Verified all 9 security cases
+- **Files Deleted:**
+  - `backend/tests/unit/test_step21e_api_client_integrity.py`
+  - `backend/tests/integration/test_step21e_workflow_integrity.py`
+  - `backend/tests/integration/test_step22a_auth_portals.py`
+- **Rejection of Previous Design:**
+  - The previous slate/blue SaaS dashboard was explicitly rejected by the user for feeling generic, empty, cheap, repetitive, and AI-generated.
+  - The new visual direction is an editorial academic / atlas-inspired interface grounded in Ivory, Gold, and Deep Atlas Navy.
+- **Verification:**
+  - `pytest backend/tests/frontend/ -v`: 71/71 passed.
+  - `pytest backend/tests/integration/test_indexing_and_admin_rbac_integration.py -v`: 5/5 passed.
+  - `pytest backend/tests/integration/test_source_viewer.py -v`: 8/8 passed.
+  - `pytest backend/tests/security/test_student_access_policy.py -v`: 9/9 passed.
+  - Zero stale milestone tests collected in `pytest --collect-only -q`.
+
+---
+
 ## 2026-10-07 — Stage 1: Public Entry & Authentication Redesign (COMPLETED & VERIFIED)
 
 - **Date:** 2026-10-07

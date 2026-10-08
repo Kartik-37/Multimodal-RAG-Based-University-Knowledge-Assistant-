@@ -142,8 +142,7 @@ Do not render every chunk of a large document at once. Bound, paginate, or show 
 
 - **No raw token persistence:** Raw session tokens must NEVER be stored in `app.storage.user["auth_session_token"]`, browser `localStorage`, or client-side JavaScript.
 - **Session isolation:** The frontend uses an in-memory session client mapping (`_session_clients[session_id]`) keyed by Starlette session ID.
-- **HttpOnly cookie sync:** `SessionCookieSyncMiddleware` synchronizes session cookies to native browser HTTP responses so inline document viewing requests attach credentials automatically.
-- **Student course authorization:** Student course access is strictly membership-based (`KnowledgeBaseMember`). Unassigned courses are not displayed or queryable.
+- **Student course authorization:** Student course access is governed by the authoritative catalog policy (`context/FRONTEND_DESIGN_SYSTEM.md`): active, student-visible courses are accessible automatically; restricted courses require membership (`KnowledgeBaseMember`); inactive or unauthorized courses return 404.
 
 ## Error states & centralized normalization
 

@@ -2,11 +2,25 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase — 2026-10-05
+## Current authoritative phase — 2026-10-08
 
-**FINAL AUDIT — SECURITY HARDENING + FRONTEND REBUILD**
+**STAGE 3 — DESIGN SYSTEM RESET + STUDENT EXPERIENCE REBUILD**
 
-The previous Step 23 frontend/source-viewer design work is historical. The user explicitly requested a complete frontend redesign and a fresh frontend test suite, so the old design is **superseded** for implementation purposes.
+### Stage 3A: Frontend Design System Reset & Test Contracts Reset
+- **Status:** **COMPLETED & VERIFIED**
+- **Accomplishments:**
+  - Authored authoritative `context/FRONTEND_DESIGN_SYSTEM.md`: Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, editorial typography scale, single student navigation, default `ALL_COURSES` chat scope.
+  - Reconciled `AGENTS.md`, `PROJECT_CONTEXT.md`, `context/BACKEND_RULES.md`, `context/FRONTEND_RULES.md`, `context/RAG_SPECIFICATION.md`, and `context/TESTING_AND_SECURITY.md`.
+  - Implemented authoritative student catalog access in `backend/app/api/deps.py`: active and student-visible courses are accessible to students by default without manual enrollment; restricted courses (`is_student_visible=False`) require explicit membership (`KnowledgeBaseMember`); inactive courses return 404.
+  - Verified `backend/tests/security/test_student_access_policy.py`: 9/9 passed.
+  - Reset stale milestone test suite:
+    * Created `backend/tests/frontend/unit/` (`test_api_client_contracts.py`, `test_navigation_contracts.py`, `test_course_access_contracts.py`, `test_student_dashboard_contracts.py`, `test_student_chat_contracts.py`, `test_source_viewer_contracts.py`).
+    * Created `backend/tests/frontend/integration/` (`test_student_journey.py`, `test_auth_portals_journey.py`).
+    * Renamed `test_step21d_functional_integrity.py` to `backend/tests/integration/test_indexing_and_admin_rbac_integration.py`.
+    * Removed stale milestone test files (`test_step21e_api_client_integrity.py`, `test_step21e_workflow_integrity.py`, `test_step22a_auth_portals.py`).
+  - Verification: 71/71 tests passed in `backend/tests/frontend/`, 5/5 in `test_indexing_and_admin_rbac_integration.py`, 8/8 in `test_source_viewer.py`. Zero stale tests collected.
+
+---
 
 ## Master Phase Status (2026-10-05 Rebuild)
 

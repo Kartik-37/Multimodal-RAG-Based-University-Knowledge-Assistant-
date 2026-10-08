@@ -88,19 +88,16 @@ def _login_student(api_client: TestClient, email: str = "student@university.edu"
 
 
 # ==============================================================================
-# CASE A & CASE B: Student sees active student-visible courses when enrolled
+# CASE A & CASE B: Student sees active student-visible courses by default
 # ==============================================================================
 def test_case_a_and_b_student_sees_active_student_visible_courses(
     api_client: TestClient, db_session: Session
 ) -> None:
     admin = _create_user(db_session, "admin@university.edu", UserRole.ADMIN)
-    student = _create_user(db_session, "student@university.edu", UserRole.STUDENT)
+    _create_user(db_session, "student@university.edu", UserRole.STUDENT)
 
     course_a = _create_course(db_session, admin, "Course A: Data Structures", is_active=True, is_student_visible=True)
     course_b = _create_course(db_session, admin, "Course B: Operating Systems", is_active=True, is_student_visible=True)
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=course_a.id, user_id=student.id))
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=course_b.id, user_id=student.id))
-    db_session.commit()
 
     _login_student(api_client)
 
@@ -140,19 +137,16 @@ def test_case_c_inactive_course_is_not_visible(
 
 
 # ==============================================================================
-# CASE D: Non-student-visible course is NOT visible
+# CASE D: Non-student-visible course is NOT visible to non-members
 # ==============================================================================
 def test_case_d_non_student_visible_course_is_not_visible(
     api_client: TestClient, db_session: Session
 ) -> None:
     admin = _create_user(db_session, "admin@university.edu", UserRole.ADMIN)
-    student = _create_user(db_session, "student@university.edu", UserRole.STUDENT)
+    _create_user(db_session, "student@university.edu", UserRole.STUDENT)
 
     visible_course = _create_course(db_session, admin, "Visible Course", is_active=True, is_student_visible=True)
     hidden_course = _create_course(db_session, admin, "Internal Staff Notes", is_active=True, is_student_visible=False)
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=visible_course.id, user_id=student.id))
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=hidden_course.id, user_id=student.id))
-    db_session.commit()
 
     _login_student(api_client)
 
@@ -203,15 +197,36 @@ def test_case_f_all_courses_chat_searches_only_authorized_student_visible_course
     student = _create_user(db_session, "student@university.edu", UserRole.STUDENT)
 
     course_a = _create_course(db_session, admin, "Course A", is_active=True, is_student_visible=True)
-    course_h = _create_course(db_session, admin, "Course Hidden", is_active=True, is_student_visible=False)
-    course_i = _create_course(db_session, admin, "Course Inactive", is_active=False, is_student_visible=True)
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=course_a.id, user_id=student.id))
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=course_h.id, user_id=student.id))
-    db_session.add(KnowledgeBaseMember(knowledge_base_id=course_i.id, user_id=student.id))
-    db_session.commit()
+    _create_course(db_session, admin, "Course Hidden", is_active=True, is_student_visible=False)
+    _create_course(db_session, admin, "Course Inactive", is_active=False, is_student_visible=True)
 
     auth_ids = get_authorized_knowledge_base_ids(current_user=student, db=db_session)
     assert auth_ids == [course_a.id]
+
+
+# ==============================================================================
+# CASE J: Student with explicit membership CAN access restricted course
+# ==============================================================================
+def test_case_j_student_with_membership_can_access_restricted_course(
+    api_client: TestClient, db_session: Session
+) -> None:
+    admin = _create_user(db_session, "admin@university.edu", UserRole.ADMIN)
+    student = _create_user(db_session, "student@university.edu", UserRole.STUDENT)
+
+    restricted_course = _create_course(db_session, admin, "Honors Seminar (Restricted)", is_active=True, is_student_visible=False)
+    db_session.add(KnowledgeBaseMember(knowledge_base_id=restricted_course.id, user_id=student.id))
+    db_session.commit()
+
+    _login_student(api_client)
+
+    resp = api_client.get("/api/v1/knowledge-bases")
+    assert resp.status_code == 200
+    ids = {item["id"] for item in resp.json()}
+    assert str(restricted_course.id) in ids
+
+    # Direct access succeeds
+    get_resp = api_client.get(f"/api/v1/knowledge-bases/{restricted_course.id}")
+    assert get_resp.status_code == 200
 
 
 # ==============================================================================

@@ -35,10 +35,12 @@ The current implemented system is **production-grade multi-format TEXT RAG** sup
 Do not advertise multimodal retrieval or claim vision capabilities in the UI, API, or documentation until the non-text modality pipeline is genuinely implemented in that future phase.
 
 ### Authoritative student course authorization in RAG
-All retrieval (lexical, vector, and hybrid) strictly enforces student membership:
-- Students can only retrieve evidence and query courses where they are an active, assigned member (`KnowledgeBaseMember`).
-- Scoped queries (`ALL_COURSES`, `COURSE`, `DOCUMENT`) apply database-level filtering so foreign course chunks never leak.
-- Unassigned course queries return HTTP 404/403.
+All retrieval (lexical, vector, and hybrid) strictly enforces the authoritative course policy:
+- Students can retrieve evidence and query all active, student-visible courses without prior manual enrollment.
+- Restricted/private courses (`is_student_visible=False`) require explicit membership (`KnowledgeBaseMember`).
+- Inactive courses are strictly excluded from all retrieval operations.
+- Scoped queries (`ALL_COURSES`, `COURSE`, `DOCUMENT`) apply database-level filtering so unauthorized course chunks never leak.
+- Unauthorized course queries return HTTP 404/403.
 
 ## Ingestion
 

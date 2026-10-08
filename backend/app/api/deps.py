@@ -239,19 +239,26 @@ def get_authorized_knowledge_bases(
     role_str = str(role_val).upper() if role_val is not None else ""
 
     if role_str == "STUDENT" or role_val == UserRole.STUDENT:
-        # Student visibility is strictly membership-based via KnowledgeBaseMember.
-        # Inactive or hidden courses are strictly excluded.
+        # Authoritative catalog policy:
+        # - Any course that is active and student_visible is accessible to all students.
+        # - Any active restricted course where the student has explicit membership is accessible.
+        # - Inactive courses are strictly excluded.
         stmt = (
             select(KnowledgeBase)
-            .join(
+            .outerjoin(
                 KnowledgeBaseMember,
-                KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                and_(
+                    KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
+                    KnowledgeBaseMember.user_id == user_id_val,
+                ),
             )
             .where(
                 and_(
-                    KnowledgeBaseMember.user_id == user_id_val,
                     KnowledgeBase.is_active.is_(True),
-                    KnowledgeBase.is_student_visible.is_(True),
+                    or_(
+                        KnowledgeBase.is_student_visible.is_(True),
+                        KnowledgeBaseMember.user_id == user_id_val,
+                    ),
                 )
             )
             .distinct()
@@ -362,10 +369,10 @@ def get_authorized_knowledge_base(
     role_str = str(role_val).upper() if role_val is not None else ""
 
     if role_str == "STUDENT" or role_val == UserRole.STUDENT:
-        # Student access: strictly requires membership in KnowledgeBaseMember
+        # Student access: active student-visible courses by default, or active restricted courses with membership
         stmt = (
             select(KnowledgeBase)
-            .join(
+            .outerjoin(
                 KnowledgeBaseMember,
                 and_(
                     KnowledgeBase.id == KnowledgeBaseMember.knowledge_base_id,
@@ -376,7 +383,10 @@ def get_authorized_knowledge_base(
                 and_(
                     KnowledgeBase.id == kb_id,
                     KnowledgeBase.is_active.is_(True),
-                    KnowledgeBase.is_student_visible.is_(True),
+                    or_(
+                        KnowledgeBase.is_student_visible.is_(True),
+                        KnowledgeBaseMember.user_id == current_user.id,
+                    ),
                 )
             )
         )

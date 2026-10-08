@@ -150,7 +150,7 @@ class TestSourceViewerIntegration:
 
         kb_resp = admin_client.post(
             "/api/v1/knowledge-bases",
-            json={"name": f"Enrolled Course {uuid.uuid4().hex[:6]}"},
+            json={"name": f"Private Course {uuid.uuid4().hex[:6]}", "is_student_visible": False},
         )
         kb_id = kb_resp.json()["id"]
 

@@ -1,7 +1,7 @@
 """
-Comprehensive Integration Tests for Step 22A: Authentication & Entry Experience.
+Comprehensive Integration Tests for Authentication & Entry Journey.
 
-Validates the 20 critical requirements:
+Validates the critical authentication flow requirements:
 1. /login portal page loads.
 2. /student/login loads.
 3. /admin/login loads.

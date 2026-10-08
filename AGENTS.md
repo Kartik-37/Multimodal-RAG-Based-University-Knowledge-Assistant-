@@ -10,13 +10,14 @@ The user's latest explicit requirements are authoritative for the frontend rebui
 
 Read, in order:
 1. `PROJECT_CONTEXT.md`
-2. `context/ARCHITECTURE.md`
-3. `context/RAG_SPECIFICATION.md`
-4. `context/BACKEND_RULES.md`
-5. `context/FRONTEND_RULES.md`
-6. `context/TESTING_AND_SECURITY.md`
-7. `context/IMPLEMENTATION_PLAN.md`
-8. `context/TASK_STATE.md`
+2. `context/FRONTEND_DESIGN_SYSTEM.md`
+3. `context/ARCHITECTURE.md`
+4. `context/RAG_SPECIFICATION.md`
+5. `context/BACKEND_RULES.md`
+6. `context/FRONTEND_RULES.md`
+7. `context/TESTING_AND_SECURITY.md`
+8. `context/IMPLEMENTATION_PLAN.md`
+9. `context/TASK_STATE.md`
 
 Then inspect the actual repository and the screenshot folder.
 
@@ -143,11 +144,18 @@ If a check cannot run because the environment lacks PostgreSQL/pgvector/Ollama/b
 - Keep API/database logic out of NiceGUI visual components.
 - Keep backend authorization framework-independent: `backend/app/api/deps.py` must NEVER import `nicegui` or access NiceGUI storage internals (`storage._users`).
 - Enforce authorization in backend service/query layers.
-- Enforce strict student course authorization: student access is **strictly membership-based** (`KnowledgeBaseMember`). Students cannot view or query unassigned courses.
+- Enforce authoritative student course authorization: all ACTIVE and STUDENT_VISIBLE courses are automatically available to students without prior enrollment. Inactive courses are strictly excluded. Restricted/private courses (`is_student_visible=False`) require explicit membership (`KnowledgeBaseMember`). Unassigned restricted courses return HTTP 404 to avoid private existence leakage.
 - Never trust client document IDs, course IDs, file paths, role values, or filters.
 - Use bounded payloads and timeouts.
 - Never leak stack traces, SQL, filesystem paths, hostnames, ports, tokens, or raw provider exceptions to clients. Route all user-facing errors through `normalize_error()`.
 - Never log tokens or private document contents.
+
+## Frontend Design & Testing Authority
+
+- The frontend presentation layer is strictly governed by `context/FRONTEND_DESIGN_SYSTEM.md` (Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`).
+- Stale presentation tests must NEVER override or constrain the current approved design system.
+- Tests protect behavior, authorization, and security contracts, not frozen visual implementation details (exact CSS classes, DOM nesting, card arrangements, or animations).
+- Future agents MUST read `context/FRONTEND_DESIGN_SYSTEM.md` before implementing or modifying frontend code.
 
 ## Current RAG scope & multimodal truthfulness
 

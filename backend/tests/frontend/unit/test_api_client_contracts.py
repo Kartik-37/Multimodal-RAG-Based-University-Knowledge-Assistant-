@@ -1,4 +1,8 @@
-"""Step 21E frontend API contract tests."""
+"""Frontend API client contract tests.
+
+Validates that HTTP responses, error handling, and parameter serialization
+strictly uphold interface and security contracts.
+"""
 
 from unittest.mock import MagicMock
 
@@ -32,6 +36,7 @@ def _error_response(status_code: int, detail: str) -> MagicMock:
 def test_api_client_does_not_turn_http_errors_into_empty_lists(
     method_name: str, url: str, kwargs: dict
 ) -> None:
+    """HTTP errors must raise exceptions rather than returning silently empty lists."""
     client = FrontendAPIClient()
     client._http = MagicMock()
     client._http.get.return_value = _error_response(403, "Forbidden")
@@ -41,6 +46,7 @@ def test_api_client_does_not_turn_http_errors_into_empty_lists(
 
 
 def test_api_client_chat_request_preserves_explicit_scope() -> None:
+    """Chat requests must preserve explicit scope parameters and UUID identifiers."""
     client = FrontendAPIClient()
     client._http = MagicMock()
 

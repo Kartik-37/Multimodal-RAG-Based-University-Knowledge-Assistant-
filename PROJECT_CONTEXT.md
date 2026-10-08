@@ -39,11 +39,11 @@ The project is governed by a strict phased plan.
   - *Resolved:* Backend `deps.py` completely decoupled from NiceGUI internals (`nicegui.app`, `nicegui_app.storage._users`).
   - *Resolved:* All user-facing exceptions sanitized via centralized `normalize_error()`.
   - *Resolved:* Source viewer embeds same-origin authenticated document streaming (`GET /api/v1/documents/{id}/file`); no tokens in URLs, no JavaScript `document.cookie` injection.
-  - *Resolved:* Student course access confirmed and verified as **strictly membership-based** (`KnowledgeBaseMember`).
+  - *Resolved:* Student course access confirmed as **authoritative catalog policy**: all active, student-visible courses are automatically available without prior enrollment; restricted courses require membership (`KnowledgeBaseMember`).
   - *Resolved:* Untracked scratch files removed; working tree clean.
 - **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED & VERIFIED**.
 - **Phase 3: Test Suite Rewrite from Scratch** — **PENDING** (Phase 3 will delete/recreate stale presentation tests around behavior/contracts).
-- **Phase 4: Frontend Rebuild from Scratch** — **PENDING** (NiceGUI rebuild with restrained, clean aesthetic).
+- **Phase 4: Frontend Rebuild from Scratch** — **IN PROGRESS** (Strictly governed by `context/FRONTEND_DESIGN_SYSTEM.md` using Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`).
 - **Multimodal RAG** — **FUTURE / DEFERRED** (Current system is multi-format text RAG).
 - **Persistent Chat History** — **FUTURE / DEFERRED** (Process-memory `AppState._chat_history` is not persistent).
 
@@ -147,7 +147,7 @@ Do not load an entire large chunk corpus into the browser merely to provide a fa
 - Never accept a raw session token in a document/file URL query parameter (`?token=` is rejected with 401).
 - Never persist raw session tokens in NiceGUI `app.storage.user` or client-side storage.
 - Backend authorization (`deps.py`) is framework-independent from NiceGUI (`nicegui.app` and `storage._users` are prohibited).
-- Student course access is **strictly membership-based** (`KnowledgeBaseMember`); students cannot view or query unassigned courses.
+- Student course access is governed by the authoritative catalog policy: all active, student-visible courses are accessible by default without prior enrollment; restricted/private courses (`is_student_visible=False`) strictly require `KnowledgeBaseMember` membership; unauthorized courses return HTTP 404.
 - Never put secrets/tokens in HTML attributes, log messages, source snippets, analytics events, or browser-local persistent state unnecessarily.
 - Use server-side authorization for every document/file/chunk operation.
 - Source viewer access must enforce the same document authorization as API access.
