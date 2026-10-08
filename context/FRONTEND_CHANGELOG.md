@@ -4,10 +4,27 @@ This changelog records all design, structural, and architectural changes to the 
 
 ---
 
-## 2026-10-08 — Stage 3A: Frontend Design System Reset & Test Contracts Reset (COMPLETED & VERIFIED)
+## 2026-10-08 — Stage 3: Design System Reset + Student Experience Rebuild (COMPLETED & VERIFIED)
 
 - **Date:** 2026-10-08
-- **Stage:** Stage 3A — Design System Reset & Test Contracts Reset
+- **Stage:** Stage 3 — Design System Reset + Student Experience Rebuild
+- **Files Rebuilt / Created:**
+  - `context/FRONTEND_DESIGN_SYSTEM.md`: Authoritative design system specification (Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, Plus Jakarta Sans / Source Serif 4 typography, single student navigation, default `ALL_COURSES` chat scope, forbidden visual patterns).
+  - `frontend/components/theme.py`: Palette tokens set to Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, Quasar theme variables, accessible focus rings, and citation pill styles.
+  - `frontend/components/ui_kit.py`: Restrained editorial headers, empty states, semantic alerts, stat cards, and rules.
+  - `frontend/components/layout.py`: Single top bar for students (`Home`, `Ask Assistant`, `Courses`, `Profile`), breadcrumbs suppressed on standard student pages, zero duplicate sidebars, zero static BCA badges.
+  - `frontend/pages/auth_pages.py`: Editorial landing page, live grounded evidence demo card, dual gateways, trust guarantees, student login, admin login, and registration.
+  - `frontend/pages/dashboard_page.py`: Personalized greeting, integrated assistant composer with prompt inspiration chips, 3 quick action strips, course atlas cards with document counts and direct actions.
+  - `frontend/pages/knowledge_bases_page.py`: Search filter, course cards with material counts, direct "Ask Questions" action, and "View Materials" dialog.
+  - `frontend/pages/chat_page.py`: Default search scope `ALL_COURSES`, conversation stream with clean reading width, bottom composer, distinct gold citation markers `[1]` with hover tooltips, and verified sources cards.
+  - `frontend/components/source_viewer.py`: Native PDF object/iframe embedding with page fragment `#page=N` support, side-by-side evidence passage banner, extracted text chunks fallback tab, strict HttpOnly cookie authentication, zero query token leakage.
+  - `frontend/pages/profile_page.py`: Academic identity, institutional email, student role badge, active session indicator, accessible course list, and sign out action.
+- **Test Contracts Reset & Verification:**
+  - `backend/tests/frontend/`: 71/71 tests passed across unit and integration suites.
+  - `backend/tests/security/`: 59/59 tests passed.
+  - Total test suite: 625/625 tests passed across `backend/tests/ -m "not real_ollama"`.
+  - Code Quality: `ruff check` passed with 0 errors across frontend and backend.
+  - Local Server Smoke: All public HTTP routes (`/`, `/login`, `/student/login`, `/admin/login`, `/register`) return HTTP 200 OK.
 - **Files Created:**
   - `context/FRONTEND_DESIGN_SYSTEM.md`: Authoritative design system specification (Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, Plus Jakarta Sans / Source Serif 4 typography, single student navigation, default `ALL_COURSES` chat scope, forbidden visual patterns).
   - `backend/tests/frontend/__init__.py`

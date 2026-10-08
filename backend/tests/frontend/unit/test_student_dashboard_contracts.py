@@ -9,8 +9,8 @@ Validates that:
 
 import pytest
 
-from frontend.security.access_control import can_access_route
 from frontend.client.models import UserDTO
+from frontend.security.access_control import can_access_route
 
 
 class TestStudentDashboardContracts:

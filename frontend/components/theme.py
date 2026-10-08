@@ -1,324 +1,283 @@
-"""
-Design System and Theme Tokens for NiceGUI Presentation Layer.
+"""Design System and Theme Tokens for NiceGUI Presentation Layer.
 
-Establishes a restrained, professional visual language tailored for a university
-knowledge assistant. Targets WCAG 2.1 AA engineering design criteria for color
-contrast, visible focus indicators, and semantic hierarchy (as an engineering
-design target, not a claimed certification).
+Establishes an editorial academic, atlas-inspired visual language grounded in:
+- Ivory: #E8E0D2 (primary canvas & page background)
+- Gold: #B89A5A (refined rules, accents, active indicators, and citation markers)
+- Deep Atlas Navy: #0E1D61 (primary typography, major chrome, and prominent actions)
+
+Typography:
+- Primary UI & Body: Plus Jakarta Sans
+- Editorial Headings & Display: Source Serif 4
+- Code & Citations: JetBrains Mono
 """
 
 from nicegui import ui
 
 # ------------------------------------------------------------------------------
-# Academic Color Palette Tokens: Oxford Blue & Academic Slate Theme
+# 1. Authoritative Palette Tokens (Ivory / Gold / Deep Atlas Navy)
 # ------------------------------------------------------------------------------
-# Oxford Blue Spectrum
-COLOR_OXFORD_BLUE = "#002147"  # Oxford Blue primary brand color
-COLOR_INSTITUTIONAL_NAVY_DARK = "#001833"  # Deep institutional navy
-COLOR_INSTITUTIONAL_NAVY = "#002147"  # Primary institutional Oxford Blue
-COLOR_INSTITUTIONAL_NAVY_SURFACE = "#0b2b54"  # Oxford Blue secondary surface
-COLOR_NAVY_PRIMARY = "#002147"  # Oxford Blue for primary actions
-COLOR_NAVY_INTERACTIVE = "#003366"  # Interactive accent & focus ring
-COLOR_NAVY_HOVER = "#001a38"  # Hover state for interactive Oxford Blue elements
+COLOR_IVORY = "#E8E0D2"
+COLOR_GOLD = "#B89A5A"
+COLOR_GOLD_HOVER = "#9E8347"
+COLOR_GOLD_LIGHT = "#F3EBDD"
+COLOR_DEEP_NAVY = "#0E1D61"
+COLOR_DEEP_NAVY_HOVER = "#1B2D7C"
+COLOR_DEEP_NAVY_MUTED = "#3A4B7C"
 
-# Academic Slate Spectrum
-COLOR_ACADEMIC_SLATE_900 = "#0f172a"  # High-contrast typography & headings
-COLOR_ACADEMIC_SLATE_800 = "#1e293b"  # Secondary chrome & prominent subheaders
-COLOR_ACADEMIC_SLATE_700 = "#334155"  # Card titles & emphasized text
-COLOR_ACADEMIC_SLATE_600 = "#475569"  # Standard body text & secondary labels
-COLOR_ACADEMIC_SLATE_500 = "#64748b"  # Muted metadata, timestamps & captions
-COLOR_ACADEMIC_SLATE_400 = "#94a3b8"  # Subtle icon accents & disabled state
-COLOR_ACADEMIC_SLATE_300 = "#cbd5e1"  # Active borders & prominent dividers
-COLOR_ACADEMIC_SLATE_200 = "#e2e8f0"  # Standard subtle card borders
-COLOR_ACADEMIC_SLATE_100 = "#f1f5f9"  # Chip/badge background & muted containers
-COLOR_ACADEMIC_SLATE_50 = "#F8F9FA"  # Light Off-White page background
+# Semantic Surface & Chrome Tokens
+COLOR_CANVAS = "#E8E0D2"  # Primary page/canvas background
+COLOR_SURFACE = "#F5F0E8"  # Soft warm parchment surface
+COLOR_SURFACE_LIGHT = "#FFFFFF"  # Pure crisp surface
+COLOR_SURFACE_ELEVATED = "#EDE6DA"  # Elevated warm surface
+COLOR_SURFACE_NAVY = "#0E1D61"  # Dark navy container / header surface
 
-# Backward-compatible Token Aliases
-COLOR_BRAND_NAVY = COLOR_INSTITUTIONAL_NAVY_DARK
-COLOR_BRAND_SLATE = COLOR_ACADEMIC_SLATE_800
-COLOR_BRAND_BLUE = COLOR_OXFORD_BLUE
-COLOR_BRAND_LIGHT_BLUE = COLOR_NAVY_INTERACTIVE
-COLOR_CANVAS = "#F8F9FA"  # Light Off-White background to reduce eye strain
-COLOR_SURFACE = "#ffffff"
-COLOR_BORDER = COLOR_ACADEMIC_SLATE_200
-COLOR_BORDER_STRONG = COLOR_ACADEMIC_SLATE_300
-COLOR_TEXT_PRIMARY = COLOR_ACADEMIC_SLATE_900
-COLOR_TEXT_SECONDARY = COLOR_ACADEMIC_SLATE_600
-COLOR_TEXT_MUTED = COLOR_ACADEMIC_SLATE_500
+# Borders & Separators
+COLOR_BORDER = "#D8CFBF"  # Subtle warm divider
+COLOR_BORDER_STRONG = "#B89A5A"  # Gold accent rule
+COLOR_BORDER_LIGHT = "#E2DAD0"
 
-# Semantic Status Tokens (Color + Icon + Text pair)
-COLOR_SUCCESS_BG = "#dcfce7"
-COLOR_SUCCESS_TEXT = "#166534"
-COLOR_WARNING_BG = "#fef3c7"
-COLOR_WARNING_TEXT = "#92400e"
-COLOR_DANGER_BG = "#fee2e2"
-COLOR_DANGER_TEXT = "#991b1b"
-COLOR_INFO_BG = "#dbeafe"
-COLOR_INFO_TEXT = "#002147"
+# Typography Tokens
+COLOR_TEXT_PRIMARY = "#0E1D61"  # Deep Atlas Navy for headings & high readability
+COLOR_TEXT_SECONDARY = "#3A4B7C"  # Refined supporting text
+COLOR_TEXT_MUTED = "#6B7B9E"  # Subtle captions & timestamps
+COLOR_TEXT_INVERTED = "#FAF6F0"  # Text on navy surfaces
+COLOR_TEXT_GOLD = "#9E8347"  # Emphasized gold text with adequate contrast
+
+# Status & Feedback Tokens (harmonized with warm palette)
+COLOR_SUCCESS_BG = "#E2F0D9"
+COLOR_SUCCESS_TEXT = "#2B580C"
+COLOR_WARNING_BG = "#FFF2CC"
+COLOR_WARNING_TEXT = "#805B00"
+COLOR_DANGER_BG = "#FDE8E8"
+COLOR_DANGER_TEXT = "#9B2226"
+COLOR_INFO_BG = "#EAEFFC"
+COLOR_INFO_TEXT = "#0E1D61"
+
+# Backward-Compatible Aliases
+COLOR_BRAND_NAVY = COLOR_DEEP_NAVY
+COLOR_BRAND_SLATE = COLOR_DEEP_NAVY_MUTED
+COLOR_BRAND_BLUE = COLOR_DEEP_NAVY
+COLOR_BRAND_LIGHT_BLUE = COLOR_DEEP_NAVY_HOVER
+COLOR_OXFORD_BLUE = COLOR_DEEP_NAVY
+COLOR_INSTITUTIONAL_NAVY = COLOR_DEEP_NAVY
+COLOR_NAVY_PRIMARY = COLOR_DEEP_NAVY
+COLOR_NAVY_INTERACTIVE = COLOR_DEEP_NAVY_HOVER
+COLOR_NAVY_HOVER = COLOR_DEEP_NAVY_HOVER
+COLOR_ACADEMIC_SLATE_900 = COLOR_TEXT_PRIMARY
+COLOR_ACADEMIC_SLATE_800 = COLOR_TEXT_PRIMARY
+COLOR_ACADEMIC_SLATE_700 = COLOR_TEXT_SECONDARY
+COLOR_ACADEMIC_SLATE_600 = COLOR_TEXT_SECONDARY
+COLOR_ACADEMIC_SLATE_500 = COLOR_TEXT_MUTED
+COLOR_ACADEMIC_SLATE_400 = "#8E9BB5"
+COLOR_ACADEMIC_SLATE_300 = COLOR_BORDER
+COLOR_ACADEMIC_SLATE_200 = COLOR_BORDER
+COLOR_ACADEMIC_SLATE_100 = COLOR_SURFACE
+COLOR_ACADEMIC_SLATE_50 = COLOR_CANVAS
 
 # ------------------------------------------------------------------------------
-# Global CSS Stylesheet
+# 2. Global CSS Stylesheet
 # ------------------------------------------------------------------------------
 GLOBAL_THEME_CSS = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* Modern Academic Tech Typography */
-.font-sans, .font-inter, html, body {
-    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-}
-.font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
-}
-
-/* Quasar Theme Variables: Modern Academic Obsidian & Vibrant Sapphire */
+/* Editorial Academic Typography Tokens */
 :root {
-    --q-primary: #0f172a;
-    --q-secondary: #2563eb;
-    --q-accent: #3b82f6;
-    --q-dark: #020617;
-    --q-positive: #10b981;
-    --q-negative: #ef4444;
-    --q-info: #2563eb;
-    --q-warning: #f59e0b;
+    --color-ivory: #E8E0D2;
+    --color-gold: #B89A5A;
+    --color-gold-hover: #9E8347;
+    --color-gold-light: #F3EBDD;
+    --color-atlas-navy: #0E1D61;
+    --color-atlas-navy-muted: #3A4B7C;
+    --color-surface-parchment: #F5F0E8;
+    --color-border-warm: #D8CFBF;
+
+    /* Quasar Palette Overrides */
+    --q-primary: #0E1D61;
+    --q-secondary: #B89A5A;
+    --q-accent: #B89A5A;
+    --q-dark: #0E1D61;
+    --q-positive: #2B580C;
+    --q-negative: #9B2226;
+    --q-info: #0E1D61;
+    --q-warning: #805B00;
 }
 
-/* Base typography and crisp Modern Academic Canvas */
+/* Global Font Configuration */
 html, body, .q-page-container, .q-layout, .q-page, #app, .nicegui-content {
-    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: #f8fafc !important;
-    color: #0f172a;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    background-color: #E8E0D2 !important;
+    color: #0E1D61 !important;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Consistent Main Page Container with Generous Padding */
+.font-editorial, .font-serif, h1, .display-heading {
+    font-family: 'Source Serif 4', Georgia, Cambria, serif !important;
+}
+
+.font-sans {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+}
+
+.font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
+}
+
+/* Page Container Hierarchy */
 .main-page-container {
     padding: 2rem !important;
-    max-width: 1540px;
+    max-width: 1440px;
     margin: 0 auto;
     box-sizing: border-box !important;
 }
 
-/* Minimalist Modern Inputs and Selects */
+/* Editorial Card & Surfaces (Restrained, Flat, Zero Card-Lift Gimmicks) */
+.academic-card, .editorial-card {
+    background-color: #FAF6F0 !important;
+    border: 1px solid #D8CFBF !important;
+    border-radius: 8px !important;
+    box-shadow: 0 1px 3px 0 rgba(14, 29, 97, 0.04) !important;
+    transition: border-color 0.15s ease !important;
+}
+
+.academic-card:hover, .editorial-card:hover {
+    border-color: #B89A5A !important;
+}
+
+.q-card {
+    background-color: #FAF6F0 !important;
+    border: 1px solid #D8CFBF !important;
+    border-radius: 8px !important;
+    box-shadow: 0 1px 3px 0 rgba(14, 29, 97, 0.04) !important;
+}
+
+/* Atlas Field-Notes Fine Rule Motifs */
+.gold-rule {
+    border-top: 1px solid #B89A5A !important;
+}
+.warm-rule {
+    border-top: 1px solid #D8CFBF !important;
+}
+
+/* Editorial Inputs & Form Controls */
 .minimalist-input .q-field__control,
 .minimalist-select .q-field__control {
-    border-radius: 10px !important;
-    background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03) !important;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    border-radius: 6px !important;
+    background-color: #FAF6F0 !important;
+    border: 1px solid #D8CFBF !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
     min-height: 42px !important;
 }
+
 .minimalist-input .q-field__control:hover,
 .minimalist-select .q-field__control:hover {
-    border-color: #94a3b8 !important;
+    border-color: #B89A5A !important;
 }
+
 .minimalist-input .q-field__control:focus-within,
 .minimalist-select .q-field__control:focus-within {
-    border-color: #2563eb !important;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
+    border-color: #0E1D61 !important;
+    box-shadow: 0 0 0 2px rgba(14, 29, 97, 0.15) !important;
 }
+
 .minimalist-input .q-field__native,
 .minimalist-select .q-field__native {
-    font-size: 0.875rem !important;
-    color: #0f172a !important;
+    font-size: 0.9rem !important;
+    color: #0E1D61 !important;
     font-weight: 500 !important;
 }
 
-/* Modern Academic Card Primitives */
-.academic-card {
-    background: #ffffff;
-    border: 1px solid rgba(226, 232, 240, 0.95);
-    border-radius: 12px;
-    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.academic-card:hover {
-    border-color: #cbd5e1;
-}
-
-/* Modern High-Contrast Typography Utilities */
-.academic-text-heading {
-    color: #0f172a !important;
-    font-weight: 700 !important;
-    letter-spacing: -0.02em !important;
-}
-.academic-text-subheading {
-    color: #1e293b !important;
-    font-weight: 600 !important;
-}
-.academic-text-body {
-    color: #334155 !important;
-    line-height: 1.6 !important;
-}
-.academic-text-muted {
-    color: #475569 !important;
-    font-weight: 500 !important;
-}
-
-/* Modern Course Card */
-.modern-course-card {
-    background: #ffffff !important;
-    border-radius: 12px !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04) !important;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
-}
-.modern-course-card:hover {
-    border-color: #94a3b8 !important;
-    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.06) !important;
-}
-
-/* Modern Collapsible Slim Sidebar Styling */
-.slim-sidebar-rail {
-    background: #ffffff !important;
-    border-right: 1px solid #e2e8f0 !important;
-    transition: width 0.2s ease !important;
-}
-.sidebar-link {
-    border-radius: 8px !important;
-    transition: background-color 0.15s ease, color 0.15s ease !important;
-    font-weight: 500 !important;
-}
-.sidebar-link-active {
-    background: #eff6ff !important;
-    color: #1d4ed8 !important;
-    border-radius: 8px !important;
-    font-weight: 600 !important;
-    border-left: 3px solid #2563eb !important;
-}
-.sidebar-link:hover:not(.sidebar-link-active) {
-    background: #f8fafc !important;
-    color: #0f172a !important;
-}
-
-/* Sleek Citation Pills */
+/* Citations & Evidence Treatment (Clear, Gold Accent, Academic) */
 .citation-pill {
     display: inline-flex !important;
     align-items: center !important;
     gap: 0.25rem !important;
-    padding: 0.15rem 0.5rem !important;
+    padding: 0.15rem 0.45rem !important;
     margin: 0 0.15rem !important;
     border-radius: 4px !important;
     font-size: 0.75rem !important;
     font-weight: 700 !important;
     font-family: 'JetBrains Mono', monospace !important;
-    color: #1d4ed8 !important;
-    background-color: #eff6ff !important;
-    border: 1px solid #bfdbfe !important;
+    color: #0E1D61 !important;
+    background-color: #F3EBDD !important;
+    border: 1px solid #B89A5A !important;
     cursor: pointer !important;
     text-decoration: none !important;
-    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
+    transition: background-color 0.15s ease, color 0.15s ease !important;
 }
+
 .citation-pill:hover {
-    background-color: #dbeafe !important;
-    color: #1e40af !important;
-    border-color: #60a5fa !important;
+    background-color: #B89A5A !important;
+    color: #FFFFFF !important;
 }
 
-/* Visible Keyboard Focus Rings (WCAG 2.1 AA Target) */
+/* Accessible Keyboard Focus (Deep Atlas Navy Ring) */
 *:focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid #0E1D61 !important;
     outline-offset: 2px !important;
-    border-radius: 6px;
+    border-radius: 4px;
 }
+
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid #0E1D61 !important;
     outline-offset: 2px !important;
 }
 
-/* Standardized Subtle Card Borders and Shadows */
-.q-card {
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03) !important;
-    border-radius: 0.5rem;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-/* Refined Subtle Shadow Utility Overrides */
-.shadow-2xs, .shadow-xs {
-    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03) !important;
-}
-.shadow-sm {
-    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03) !important;
-}
-.shadow-md {
-    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03) !important;
-}
-.shadow-lg {
-    box-shadow: 0 8px 16px -3px rgba(15, 23, 42, 0.06), 0 3px 6px -2px rgba(15, 23, 42, 0.03) !important;
-}
-.shadow-xl, .shadow-2xl {
-    box-shadow: 0 12px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -3px rgba(15, 23, 42, 0.04) !important;
-}
-
-/* Subtle Card Interactive Hover Transitions */
-.card-hover:hover, .q-card.hover-lift:hover {
-    border-color: #cbd5e1 !important;
-    box-shadow: 0 4px 8px -2px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04) !important;
-}
-
-/* Modal Dialog Cards: Subtle elevation instead of harsh drop-shadows */
-.q-dialog .q-card {
-    box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -3px rgba(15, 23, 42, 0.06) !important;
-    border: 1px solid #cbd5e1 !important;
-}
-
-/* Custom restrained academic scrollbars */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-::-webkit-scrollbar-track {
-    background: #f1f5f9;
-}
-::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-}
-
-/* Markdown rendered text readability */
+/* Markdown Rendering with High Readability */
 .safe-markdown {
-    line-height: 1.65;
-    font-size: 0.9375rem;
-    color: #1e293b;
+    line-height: 1.7;
+    font-size: 0.95rem;
+    color: #0E1D61;
     word-break: break-word;
 }
-.safe-markdown p {
-    margin-bottom: 0.75rem;
+
+.safe-markdown h1, .safe-markdown h2, .safe-markdown h3, .safe-markdown h4 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    color: #0E1D61;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
 }
+
+.safe-markdown p {
+    margin-bottom: 0.85rem;
+}
+
 .safe-markdown p:last-child {
     margin-bottom: 0;
 }
+
 .safe-markdown ul, .safe-markdown ol {
-    margin-left: 1.25rem;
-    margin-bottom: 0.75rem;
+    margin-left: 1.35rem;
+    margin-bottom: 0.85rem;
 }
+
 .safe-markdown li {
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.35rem;
 }
+
 .safe-markdown code {
-    background-color: #f1f5f9;
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.25rem;
-    font-size: 0.8125rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    border: 1px solid #e2e8f0;
+    background-color: #F3EBDD;
+    color: #0E1D61;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.825rem;
+    font-family: 'JetBrains Mono', monospace;
+    border: 1px solid #D8CFBF;
 }
+
 .safe-markdown pre {
-    background-color: #0b1528;
-    color: #f8fafc;
-    padding: 0.75rem 1rem;
-    border-radius: 0.375rem;
+    background-color: #0E1D61;
+    color: #FAF6F0;
+    padding: 0.85rem 1.15rem;
+    border-radius: 6px;
     overflow-x: auto;
-    margin-bottom: 0.75rem;
-    border: 1px solid #1e293b;
+    margin-bottom: 0.85rem;
+    border: 1px solid #B89A5A;
 }
+
 .safe-markdown pre code {
     background-color: transparent;
     border: none;
@@ -326,49 +285,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     padding: 0;
 }
 
-/* Responsive table container */
-.responsive-table-wrapper {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+/* Clean Restrained Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #E8E0D2;
+}
+::-webkit-scrollbar-thumb {
+    background: #D8CFBF;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #B89A5A;
 }
 
-/* Breadcrumb Navigation Trail Component */
-.academic-breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-    color: #64748b;
-}
-.academic-breadcrumb a {
-    color: #475569;
-    text-decoration: none;
-    transition: color 0.15s ease;
-}
-.academic-breadcrumb a:hover {
-    color: #2563eb;
-    text-decoration: underline;
-}
-.academic-breadcrumb .active-crumb {
-    color: #0f172a;
-    font-weight: 600;
-}
-
-/* Screen reader only utility class */
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-/* Suppress disruptive Quasar/NiceGUI reconnection popup overlay across entire app */
+/* Suppress disruptive Quasar/NiceGUI reconnection popup overlay */
 .nicegui-reconnect-alert,
 .nicegui-reconnect,
 #reconnection_modal,
@@ -380,13 +313,16 @@ div[class*="reconnect"] {
     visibility: hidden !important;
 }
 
-/* Source Viewer Side Drawer Full Height & Zero Empty Space */
+/* Source Viewer Side Drawer */
 .source-viewer-card {
     height: 100vh !important;
     max-height: 100vh !important;
     display: flex !important;
     flex-direction: column !important;
+    background-color: #FAF6F0 !important;
+    border-left: 1px solid #D8CFBF !important;
 }
+
 .source-viewer-card .q-tab-panels,
 .source-viewer-card .q-tab-panels > .q-panel,
 .source-viewer-card .q-tab-panel {
@@ -397,26 +333,22 @@ div[class*="reconnect"] {
     padding: 0 !important;
     overflow: hidden !important;
 }
-.source-viewer-card .nicegui-html {
-    width: 100% !important;
-    height: calc(100vh - 170px) !important;
-    flex: 1 1 auto !important;
-    display: flex !important;
-}
+
 .source-viewer-card iframe,
 .source-viewer-card object,
 .source-viewer-card embed {
     width: 100% !important;
-    height: calc(100vh - 170px) !important;
+    height: calc(100vh - 160px) !important;
     min-height: 520px !important;
     flex: 1 1 auto !important;
     border: none !important;
     display: block !important;
+    background: #FFFFFF !important;
 }
 </style>
 """
 
 
 def init_theme() -> None:
-    """Inject global design system styling and institutional palette into NiceGUI."""
+    """Inject global design system styling and editorial palette into NiceGUI."""
     ui.add_head_html(GLOBAL_THEME_CSS, shared=True)

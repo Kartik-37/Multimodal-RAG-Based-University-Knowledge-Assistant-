@@ -1,8 +1,11 @@
-"""
-Reusable UI Primitives and Accessible Components.
+"""Reusable UI Primitives and Accessible Components.
 
-Provides standardized visual building blocks for page headers, empty states,
-semantic alerts, and summary metrics across all NiceGUI presentation screens.
+Provides editorial academic building blocks:
+- Page headers with Source Serif 4 typography
+- Purposeful empty states without generic illustrations
+- Semantic alerts with accessible contrast
+- Truthful stat/summary cards
+- Fine rules and section dividers
 """
 
 from collections.abc import Callable
@@ -16,19 +19,16 @@ def render_page_header(
     subtitle: str = "",
     actions_fn: Callable[[], None] | None = None,
 ) -> None:
-    """
-    Render a consistent semantic page header with title, optional subtitle,
-    and right-aligned action buttons.
-    """
-    with ui.row().classes(
-        "w-full justify-between items-start gap-4 pb-2 border-b border-slate-200"
-    ):
+    """Render an editorial page header with Source Serif 4 title and optional action controls."""
+    with ui.row().classes("w-full justify-between items-start gap-4 pb-3 border-b border-[#D8CFBF]"):
         with ui.column().classes("gap-1"):
-            ui.label(title).classes("text-2xl font-bold tracking-tight text-slate-900")
+            ui.label(title).classes(
+                "text-2xl sm:text-3xl font-bold tracking-tight text-[#0E1D61] font-editorial"
+            )
             if subtitle:
-                ui.label(subtitle).classes("text-sm text-slate-600 max-w-2xl")
+                ui.label(subtitle).classes("text-sm text-[#3A4B7C] max-w-2xl leading-relaxed")
         if actions_fn:
-            with ui.row().classes("items-center gap-2 self-center"):
+            with ui.row().classes("items-center gap-2.5 self-center"):
                 actions_fn()
 
 
@@ -40,22 +40,21 @@ def render_empty_state(
     on_action: Callable[[], None] | None = None,
     action_icon: str = "arrow_forward",
 ) -> None:
-    """
-    Render an accessible empty state with clear iconography, explanatory guidance,
-    and an optional primary call-to-action button.
-    """
+    """Render an accessible empty state with purposeful guidance."""
     with ui.card().classes(
-        "w-full p-10 items-center justify-center text-center bg-white border border-dashed border-slate-300 rounded-lg shadow-sm"
+        "w-full p-8 sm:p-12 items-center justify-center text-center bg-[#FAF6F0] border border-[#D8CFBF] rounded-lg shadow-none"
     ):
-        ui.icon(icon, size="3rem").classes("text-slate-400 mb-2")
-        ui.label(title).classes("text-lg font-bold text-slate-800")
-        ui.label(description).classes("text-sm text-slate-600 max-w-md mt-1 mb-4")
+        ui.icon(icon, size="2.5rem").classes("text-[#B89A5A] mb-2")
+        ui.label(title).classes("text-lg font-bold text-[#0E1D61] font-editorial")
+        ui.label(description).classes("text-sm text-[#3A4B7C] max-w-md mt-1 mb-4 leading-relaxed")
         if action_label and on_action:
             ui.button(
                 action_label,
                 icon=action_icon,
                 on_click=on_action,
-            ).props("color=primary").classes("px-4 py-2 text-sm font-medium")
+            ).props("no-caps").classes(
+                "px-4 py-2 text-sm font-semibold !bg-[#0E1D61] hover:!bg-[#1B2D7C] !text-[#FAF6F0] rounded-md transition-colors"
+            )
 
 
 def render_alert(
@@ -63,21 +62,19 @@ def render_alert(
     level: Literal["info", "warning", "negative", "positive"] = "info",
     title: str = "",
 ) -> None:
-    """
-    Render a high-contrast semantic alert container with role='alert'.
-    """
+    """Render a high-contrast semantic alert container with role='alert'."""
     color_map = {
-        "info": ("bg-blue-50", "border-blue-200", "text-blue-800", "info"),
-        "warning": ("bg-amber-50", "border-amber-200", "text-amber-800", "warning"),
-        "negative": ("bg-rose-50", "border-rose-200", "text-rose-800", "error"),
-        "positive": ("bg-emerald-50", "border-emerald-200", "text-emerald-800", "check_circle"),
+        "info": ("bg-[#EAEFFC]", "border-[#0E1D61]", "text-[#0E1D61]", "info"),
+        "warning": ("bg-[#FFF2CC]", "border-[#B89A5A]", "text-[#805B00]", "warning"),
+        "negative": ("bg-[#FDE8E8]", "border-[#9B2226]", "text-[#9B2226]", "error"),
+        "positive": ("bg-[#E2F0D9]", "border-[#2B580C]", "text-[#2B580C]", "check_circle"),
     }
     bg_cls, border_cls, text_cls, default_icon = color_map.get(level, color_map["info"])
 
     with (
         ui.card()
         .props('role="alert"')
-        .classes(f"w-full p-3 {bg_cls} border {border_cls} rounded-md shadow-xs")
+        .classes(f"w-full p-3 {bg_cls} border {border_cls} rounded-md shadow-none")
     ):
         with ui.row().classes("items-start gap-2.5"):
             ui.icon(default_icon, size="sm").classes(f"{text_cls} mt-0.5")
@@ -92,24 +89,15 @@ def render_stat_card(
     value: str | int,
     subtitle: str = "",
     icon: str = "analytics",
-    icon_color: str = "blue-600",
+    icon_color: str = "text-[#B89A5A]",
 ) -> None:
-    """
-    Render a factual summary metric card with Modern Academic Tech styling.
-    """
+    """Render a factual summary metric card with editorial styling."""
     with ui.card().classes(
-        "academic-card flex-1 min-w-[200px] p-5 bg-white border border-slate-200 rounded-lg shadow-2xs"
+        "p-4 sm:p-5 bg-[#FAF6F0] border border-[#D8CFBF] rounded-lg shadow-none flex flex-col justify-between"
     ):
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label(title).classes(
-                "text-xs font-semibold tracking-wider text-slate-400 uppercase font-mono"
-            )
-            with ui.element("div").classes(
-                "w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center"
-            ):
-                ui.icon(icon, size="18px").classes(f"text-{icon_color}")
-        ui.label(str(value)).classes(
-            "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-2 font-mono"
-        )
+        with ui.row().classes("w-full justify-between items-center mb-1"):
+            ui.label(title).classes("text-xs font-bold uppercase tracking-wider text-[#3A4B7C]")
+            ui.icon(icon, size="1.25rem").classes(icon_color)
+        ui.label(str(value)).classes("text-2xl sm:text-3xl font-bold text-[#0E1D61] font-editorial")
         if subtitle:
-            ui.label(subtitle).classes("text-xs text-slate-500 mt-1 font-sans")
+            ui.label(subtitle).classes("text-xs text-[#6B7B9E] mt-1")

@@ -7,10 +7,8 @@ Validates that:
 - Citations preserve source mapping without exposing sensitive credentials.
 """
 
-import pytest
 
 from frontend.client.citations import (
-    SemanticCitationRef,
     extract_resolved_citations,
     replace_citation_markers,
 )

@@ -176,8 +176,8 @@ def _render_student_navbar(active_route: str, user: UserDTO) -> None:
     initials = _get_user_initials(user.full_name)
     student_nav = [
         ("Home", "/dashboard", "home"),
-        ("Courses", "/knowledge-bases", "menu_book"),
         ("Ask Assistant", "/chat", "chat"),
+        ("Courses", "/knowledge-bases", "menu_book"),
         ("Profile", "/profile", "account_circle"),
     ]
 
@@ -186,25 +186,25 @@ def _render_student_navbar(active_route: str, user: UserDTO) -> None:
         ui.left_drawer(value=False)
         .props("side=left breakpoint=768 width=260 overlay")
         .classes(
-            "bg-white text-slate-800 p-0 flex flex-col justify-between z-40 border-r border-slate-200 shadow-xl md:hidden"
+            "bg-[#FAF6F0] text-[#0E1D61] p-0 flex flex-col justify-between z-40 border-r border-[#D8CFBF] shadow-none md:hidden"
         )
     ) as mobile_drawer:
         with ui.column().classes("w-full p-4 gap-4"):
             with (
                 ui.row()
-                .classes("w-full items-center gap-3 pb-3 border-b border-slate-100 cursor-pointer")
+                .classes("w-full items-center gap-3 pb-3 border-b border-[#D8CFBF] cursor-pointer")
                 .on("click", lambda: ui.navigate.to("/dashboard"))
             ):
                 with ui.element("div").classes(
-                    "w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
+                    "w-9 h-9 rounded-lg bg-[#0E1D61] flex items-center justify-center text-[#B89A5A] shrink-0"
                 ):
                     ui.icon("school", size="20px")
                 with ui.column().classes("gap-0 min-w-0 leading-tight"):
                     ui.label("RAG Assistant").classes(
-                        "font-bold text-slate-900 text-sm tracking-tight truncate"
+                        "font-bold text-[#0E1D61] text-sm tracking-tight truncate font-editorial"
                     )
-                    ui.label("Student Portal").classes(
-                        "text-[10px] font-medium text-slate-500 truncate"
+                    ui.label("Student Workspace").classes(
+                        "text-[10px] font-medium text-[#3A4B7C] truncate"
                     )
 
             with ui.column().classes("w-full gap-1.5 my-2"):
@@ -212,11 +212,11 @@ def _render_student_navbar(active_route: str, user: UserDTO) -> None:
                     is_active = (active_route == route) or (
                         route != "/dashboard" and active_route.startswith(route)
                     )
-                    cls = "w-full justify-start text-xs py-2 px-3 rounded-lg font-semibold transition-colors "
+                    cls = "w-full justify-start text-xs py-2 px-3 rounded-md font-semibold transition-colors "
                     if is_active:
-                        cls += "bg-blue-50 text-blue-800 border-l-[3px] border-blue-600"
+                        cls += "!bg-[#F3EBDD] !text-[#0E1D61] border border-[#B89A5A]"
                     else:
-                        cls += "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                        cls += "text-[#3A4B7C] hover:bg-[#F5F0E8] hover:text-[#0E1D61] font-medium"
                     ui.button(
                         label,
                         icon=icon,
@@ -224,77 +224,77 @@ def _render_student_navbar(active_route: str, user: UserDTO) -> None:
                     ).props("flat no-caps dense").classes(cls)
 
         with ui.column().classes(
-            "w-full p-4 gap-2 border-t border-slate-100 bg-slate-50/70 shrink-0"
+            "w-full p-4 gap-2 border-t border-[#D8CFBF] bg-[#F5F0E8] shrink-0"
         ):
             with (
                 ui.row()
                 .classes(
-                    "items-center justify-between w-full p-2 rounded-lg hover:bg-white cursor-pointer transition-colors border border-transparent hover:border-slate-200/60"
+                    "items-center justify-between w-full p-2 rounded-md hover:bg-[#FAF6F0] cursor-pointer transition-colors border border-transparent hover:border-[#D8CFBF]"
                 )
                 .on("click", lambda: ui.navigate.to("/profile"))
             ):
                 with ui.row().classes("items-center gap-2.5 min-w-0"):
                     with ui.element("div").classes(
-                        "w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-2xs"
+                        "w-7 h-7 rounded-full bg-[#0E1D61] border border-[#B89A5A] flex items-center justify-center text-[11px] font-bold text-[#FAF6F0] shrink-0"
                     ):
                         ui.label(initials)
                     with ui.column().classes("gap-0 min-w-0"):
                         ui.label(user.full_name).classes(
-                            "text-xs font-semibold text-slate-800 truncate max-w-[125px]"
+                            "text-xs font-semibold text-[#0E1D61] truncate max-w-[125px]"
                         )
                         ui.label(user.email).classes(
-                            "text-[10px] text-slate-500 truncate max-w-[125px]"
+                            "text-[10px] text-[#6B7B9E] truncate max-w-[125px]"
                         )
             ui.button(
                 "Sign Out",
                 icon="logout",
                 on_click=_handle_logout,
             ).props("flat dense no-caps").classes(
-                "w-full text-xs text-rose-600 hover:bg-rose-50 rounded-lg transition-colors py-1.5 font-semibold"
+                "w-full text-xs text-[#9B2226] hover:bg-[#FDE8E8] rounded-md transition-colors py-1.5 font-semibold"
             )
 
     # Top Application Bar: Single desktop navigation system
     with ui.header().classes(
-        "w-full bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-8 py-2.5 items-center justify-between border-b border-slate-200/90 shadow-2xs z-30"
+        "w-full bg-[#FAF6F0] text-[#0E1D61] px-4 sm:px-8 py-2.5 items-center justify-between border-b border-[#D8CFBF] shadow-none z-30"
     ):
         # Left: Brand Logo & Mobile Toggle
         with ui.row().classes("items-center gap-3"):
             ui.button(icon="menu", on_click=mobile_drawer.toggle).props(
                 "flat round dense"
-            ).classes("md:hidden text-slate-700 hover:text-slate-900").tooltip("Toggle Menu")
+            ).classes("md:hidden text-[#0E1D61] hover:text-[#1B2D7C]").tooltip("Toggle Menu")
             with (
                 ui.row()
                 .classes("items-center gap-2.5 cursor-pointer no-underline")
                 .on("click", lambda: ui.navigate.to("/dashboard"))
             ):
                 with ui.element("div").classes(
-                    "w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
+                    "w-8 h-8 rounded-md bg-[#0E1D61] flex items-center justify-center text-[#B89A5A] shrink-0"
                 ):
                     ui.icon("school", size="18px")
                 with ui.column().classes("gap-0 leading-tight"):
                     ui.label("RAG Assistant").classes(
-                        "text-sm sm:text-base font-bold tracking-tight text-slate-900"
+                        "text-sm sm:text-base font-bold tracking-tight text-[#0E1D61] font-editorial"
                     )
-                    ui.label("Student Portal").classes(
-                        "text-[10px] font-semibold text-slate-500 hidden sm:block"
+                    ui.label("Student Workspace").classes(
+                        "text-[10px] font-medium text-[#3A4B7C] hidden sm:block"
                     )
 
         # Center: Desktop Navigation Links (ONE navigation system, clean and prominent)
-        with ui.row().classes("hidden md:flex items-center gap-1.5"):
+        with ui.row().classes("hidden md:flex items-center gap-2"):
             for label, route, icon in student_nav:
                 is_active = (active_route == route) or (
                     route != "/dashboard" and active_route.startswith(route)
                 )
                 link_cls = (
-                    "px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer no-underline "
+                    "px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer no-underline "
                 )
                 if is_active:
-                    link_cls += "bg-blue-50 text-blue-900 font-bold border border-blue-200/80 shadow-2xs"
+                    link_cls += "bg-[#F3EBDD] text-[#0E1D61] font-bold border border-[#B89A5A]"
                 else:
-                    link_cls += "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    link_cls += "text-[#3A4B7C] hover:text-[#0E1D61] hover:bg-[#F5F0E8]"
                 with ui.link(target=route).classes(link_cls):
                     ui.icon(icon, size="16px").classes(
-                        "text-blue-700" if is_active else "text-slate-500"
+                        "text-[#B89A5A]" if is_active else "text-[#6B7B9E]"
                     )
                     ui.label(label)
 
@@ -303,16 +303,16 @@ def _render_student_navbar(active_route: str, user: UserDTO) -> None:
             with (
                 ui.row()
                 .classes(
-                    "items-center gap-2 py-1 px-2.5 rounded-full hover:bg-slate-100 cursor-pointer transition-colors border border-transparent hover:border-slate-200"
+                    "items-center gap-2 py-1 px-2.5 rounded-full hover:bg-[#F5F0E8] cursor-pointer transition-colors border border-transparent hover:border-[#D8CFBF]"
                 )
                 .on("click", lambda: ui.navigate.to("/profile"))
             ):
                 with ui.element("div").classes(
-                    "w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-2xs"
+                    "w-7 h-7 rounded-full bg-[#0E1D61] border border-[#B89A5A] flex items-center justify-center text-[11px] font-bold text-[#FAF6F0] shrink-0"
                 ):
                     ui.label(initials)
                 ui.label(user.full_name).classes(
-                    "hidden lg:inline text-xs font-semibold text-slate-700 truncate max-w-[130px]"
+                    "hidden lg:inline text-xs font-semibold text-[#0E1D61] truncate max-w-[130px]"
                 )
 
             ui.button(
@@ -320,7 +320,7 @@ def _render_student_navbar(active_route: str, user: UserDTO) -> None:
                 icon="logout",
                 on_click=_handle_logout,
             ).props("flat dense no-caps").classes(
-                "text-xs font-semibold text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded-lg"
+                "text-xs font-semibold text-[#9B2226] hover:bg-[#FDE8E8] px-2.5 py-1 rounded-md"
             ).tooltip("Sign Out")
 
 
@@ -470,29 +470,29 @@ def _render_navbar(active_route: str) -> None:
     else:
         # Public Unauthenticated Header
         with ui.header().classes(
-            "w-full bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-6 py-3 items-center justify-between border-b border-slate-200/80 shadow-2xs z-30"
+            "w-full bg-[#FAF6F0] text-[#0E1D61] px-4 sm:px-8 py-3 items-center justify-between border-b border-[#D8CFBF] shadow-none z-30"
         ):
             with (
                 ui.row()
-                .classes("items-center gap-2.5 cursor-pointer")
+                .classes("items-center gap-2.5 cursor-pointer no-underline")
                 .on("click", lambda: ui.navigate.to("/login"))
             ):
                 with ui.element("div").classes(
-                    "w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white"
+                    "w-8 h-8 rounded-md bg-[#0E1D61] flex items-center justify-center text-[#B89A5A]"
                 ):
                     ui.icon("school", size="18px")
                 ui.label("RAG Assistant").classes(
-                    "text-base font-bold tracking-tight text-slate-900"
+                    "text-base font-bold tracking-tight text-[#0E1D61] font-editorial"
                 )
 
             with ui.row().classes("items-center gap-2"):
                 ui.button("Sign In", icon="login", on_click=lambda: ui.navigate.to("/login")).props(
                     "flat dense no-caps"
-                ).classes("text-xs text-blue-700 font-semibold")
+                ).classes("text-xs text-[#0E1D61] hover:text-[#1B2D7C] font-semibold")
                 ui.button(
                     "Register", icon="person_add", on_click=lambda: ui.navigate.to("/register")
                 ).props("no-caps dense").classes(
-                    "text-xs bg-blue-600 text-white font-semibold px-3 py-1.5 rounded-lg"
+                    "text-xs !bg-[#0E1D61] hover:!bg-[#1B2D7C] !text-[#FAF6F0] font-semibold px-3 py-1.5 rounded-md"
                 )
 
 
@@ -646,7 +646,7 @@ def page_layout(
         )
         if should_render_breadcrumbs and resolved_crumbs:
             with ui.row().classes(
-                "w-full items-center justify-between text-xs py-1.5 px-3 bg-white border border-slate-200 rounded-lg shadow-2xs"
+                "w-full items-center justify-between text-xs py-1.5 px-3 bg-[#FAF6F0] border border-[#D8CFBF] rounded-md shadow-none"
             ):
                 with ui.row().classes("items-center gap-2 flex-wrap min-w-0"):
                     if show_back and resolved_back:
@@ -655,9 +655,9 @@ def page_layout(
                             icon="arrow_back",
                             on_click=lambda r=resolved_back: ui.navigate.to(r),
                         ).props("flat dense no-caps").classes(
-                            "text-xs font-semibold text-slate-700 hover:text-blue-900 px-2 py-0.5 rounded hover:bg-slate-100 transition-colors"
+                            "text-xs font-semibold text-[#0E1D61] hover:text-[#1B2D7C] px-2 py-0.5 rounded hover:bg-[#F5F0E8] transition-colors"
                         )
-                        ui.label("/").classes("text-slate-300 font-light select-none")
+                        ui.label("/").classes("text-[#D8CFBF] font-light select-none")
 
                     # Breadcrumb trail
                     with ui.row().classes("items-center gap-1.5 flex-wrap min-w-0"):
@@ -665,7 +665,7 @@ def page_layout(
                             is_last = idx == len(resolved_crumbs) - 1
                             if idx > 0:
                                 ui.icon("chevron_right", size="14px").classes(
-                                    "text-slate-400 select-none"
+                                    "text-[#D8CFBF] select-none"
                                 )
 
                             if crumb_url and not is_last:
@@ -673,29 +673,29 @@ def page_layout(
                                     crumb_title,
                                     crumb_url,
                                 ).classes(
-                                    "text-slate-500 hover:text-[#002147] font-medium hover:underline transition-colors"
+                                    "text-[#3A4B7C] hover:text-[#0E1D61] font-medium hover:underline transition-colors"
                                 )
                             else:
                                 ui.label(crumb_title).classes(
-                                    "text-slate-900 font-bold truncate max-w-[220px] sm:max-w-none"
+                                    "text-[#0E1D61] font-bold truncate max-w-[220px] sm:max-w-none"
                                 )
 
                 if not is_root_dashboard and show_back:
                     with ui.link(
                         target="/dashboard",
                     ).classes(
-                        "text-slate-400 hover:text-slate-700 items-center gap-1 hidden sm:flex text-[11px] font-medium transition-colors"
+                        "text-[#6B7B9E] hover:text-[#0E1D61] items-center gap-1 hidden sm:flex text-[11px] font-medium transition-colors"
                     ):
                         ui.icon("home", size="14px")
                         ui.label("Dashboard")
 
         if title:
-            with ui.column().classes("gap-0.5"):
+            with ui.column().classes("gap-1"):
                 ui.label(title).classes(
-                    "text-2xl font-bold tracking-tight text-slate-900 font-inter"
-                ).style("font-family: 'Inter', -apple-system, sans-serif;")
+                    "text-2xl sm:text-3xl font-bold tracking-tight text-[#0E1D61] font-editorial"
+                )
                 if subtitle:
-                    ui.label(subtitle).classes("text-sm text-slate-600 max-w-3xl")
+                    ui.label(subtitle).classes("text-sm text-[#3A4B7C] max-w-3xl leading-relaxed")
 
         yield
 
@@ -708,12 +708,12 @@ def auth_layout(
     """
     Dedicated authentication and public layout for sign-in, registration, and portal entry.
 
-    Provides a clean institutional academic header with contextual actions,
+    Provides a clean editorial academic header with contextual actions,
     flexible container sizing, and an anchored institutional footer.
     """
-    # Institutional top header
+    # Editorial academic top header
     with ui.header().classes(
-        "w-full bg-slate-900 text-white px-3 sm:px-8 py-2.5 sm:py-3.5 items-center justify-between border-b border-slate-800 shadow-xs z-30"
+        "w-full bg-[#0E1D61] text-[#FAF6F0] px-4 sm:px-8 py-3 items-center justify-between border-b border-[#0E1D61] shadow-none z-30"
     ):
         with (
             ui.row()
@@ -721,15 +721,15 @@ def auth_layout(
             .on("click", lambda: ui.navigate.to("/login"))
         ):
             with ui.element("div").classes(
-                "w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-900/60 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold"
+                "w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-[#1B2D7C] text-[#B89A5A] flex items-center justify-center font-bold"
             ):
-                ui.icon("school", size="17px")
+                ui.icon("school", size="18px")
             with ui.column().classes("gap-0"):
                 ui.label("RAG Assistant").classes(
-                    "text-sm sm:text-lg font-bold tracking-tight text-white leading-tight"
+                    "text-sm sm:text-lg font-bold tracking-tight text-[#FAF6F0] leading-tight font-editorial"
                 )
                 ui.label("University Knowledge Assistant").classes(
-                    "text-[10px] font-medium text-slate-400 leading-none hidden sm:inline"
+                    "text-[10px] font-semibold text-[#B89A5A] leading-none hidden sm:inline"
                 )
 
         with ui.row().classes("items-center gap-1.5 sm:gap-3"):
@@ -737,14 +737,14 @@ def auth_layout(
                 with (
                     ui.link("Sign In", "/student/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C]"
                     )
                 ):
                     pass
                 with (
                     ui.link("Faculty & Admin", "/admin/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden md:inline-block"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden md:inline-block"
                     )
                 ):
                     pass
@@ -752,20 +752,20 @@ def auth_layout(
                     "Register",
                     on_click=lambda: ui.navigate.to("/register"),
                 ).props("no-caps dense").classes(
-                    "px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-lg !bg-blue-600 hover:!bg-blue-700 !text-white shadow-xs transition-colors"
+                    "px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md !bg-[#B89A5A] hover:!bg-[#9E8347] !text-[#0E1D61] shadow-none transition-colors"
                 )
             elif page_type == "student":
                 with (
                     ui.link("Home", "/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
                     )
                 ):
                     pass
                 with (
                     ui.link("Admin Sign In", "/admin/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
                     )
                 ):
                     pass
@@ -773,20 +773,20 @@ def auth_layout(
                     "Register",
                     on_click=lambda: ui.navigate.to("/register"),
                 ).props("outline no-caps dense").classes(
-                    "px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-lg border-slate-700 !text-slate-200 hover:bg-slate-800"
+                    "px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-md border border-[#B89A5A] !text-[#FAF6F0] hover:bg-[#1B2D7C]"
                 )
             elif page_type == "admin":
                 with (
                     ui.link("Home", "/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
                     )
                 ):
                     pass
                 with (
                     ui.link("Student Portal", "/student/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C]"
                     )
                 ):
                     pass
@@ -794,7 +794,7 @@ def auth_layout(
                 with (
                     ui.link("Home", "/login")
                     .classes(
-                        "text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors no-underline px-2 sm:px-2.5 py-1.5 rounded-md hover:bg-slate-800 hidden sm:inline-block"
+                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
                     )
                 ):
                     pass
@@ -802,12 +802,12 @@ def auth_layout(
                     "Student Sign In",
                     on_click=lambda: ui.navigate.to("/student/login"),
                 ).props("outline no-caps dense").classes(
-                    "px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-lg border-slate-700 !text-slate-200 hover:bg-slate-800"
+                    "px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-md border border-[#B89A5A] !text-[#FAF6F0] hover:bg-[#1B2D7C]"
                 )
 
     # Main content flow with balanced vertical spacing and institutional footer
     with ui.column().classes(
-        "w-full min-h-[calc(100vh-60px)] flex flex-col justify-between overflow-x-hidden"
+        "w-full min-h-[calc(100vh-60px)] flex flex-col justify-between overflow-x-hidden bg-[#E8E0D2]"
     ):
         with (
             ui.column()
@@ -817,23 +817,23 @@ def auth_layout(
         ):
             yield
         with ui.element("footer").classes(
-            "w-full bg-white border-t border-slate-200 mt-auto box-border"
+            "w-full bg-[#FAF6F0] border-t border-[#D8CFBF] mt-auto box-border"
         ):
             with ui.column().classes("w-full max-w-6xl mx-auto px-4 sm:px-8 py-6 gap-3"):
                 with ui.row().classes("w-full justify-between items-center gap-4 flex-wrap"):
                     with ui.row().classes("items-center gap-2"):
                         with ui.element("div").classes(
-                            "w-6 h-6 rounded bg-slate-900 text-white flex items-center justify-center"
+                            "w-6 h-6 rounded bg-[#0E1D61] text-[#B89A5A] flex items-center justify-center"
                         ):
                             ui.icon("school", size="14px")
-                        ui.label("RAG Assistant").classes("text-sm font-bold text-slate-900")
-                        ui.label("•").classes("text-slate-400")
+                        ui.label("RAG Assistant").classes("text-sm font-bold text-[#0E1D61] font-editorial")
+                        ui.label("•").classes("text-[#D8CFBF]")
                         ui.label("Multimodal RAG-Based University Knowledge Assistant").classes(
-                            "text-xs text-slate-600 font-medium"
+                            "text-xs text-[#3A4B7C] font-medium"
                         )
                     with ui.row().classes("items-center gap-2 flex-wrap"):
-                        ui.badge("Multi-Format Text RAG", color="slate-2").props("text-color=slate-8").classes("text-[11px] font-medium px-2 py-0.5 border border-slate-200")
-                        ui.label("PDF • DOCX • TXT • Markdown • CSV").classes("text-xs text-slate-600 font-mono")
-                with ui.row().classes("w-full justify-between items-center pt-3 border-t border-slate-100 text-xs text-slate-600 gap-2 flex-wrap"):
+                        ui.badge("Multi-Format Text RAG", color="amber-1").props("text-color=brown-9").classes("text-[11px] font-semibold px-2 py-0.5 border border-[#B89A5A]")
+                        ui.label("PDF • DOCX • TXT • Markdown • CSV").classes("text-xs text-[#3A4B7C] font-mono")
+                with ui.row().classes("w-full justify-between items-center pt-3 border-t border-[#D8CFBF] text-xs text-[#6B7B9E] gap-2 flex-wrap"):
                     ui.label("© 2026 RAG Assistant • Institutional Academic Resource")
                     ui.label("Server-Side RBAC Enforced • Zero Plaintext Session Persistence")

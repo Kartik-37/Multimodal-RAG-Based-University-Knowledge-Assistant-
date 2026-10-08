@@ -3,7 +3,7 @@ Courses & Knowledge Bases Presentation Page.
 
 Provides clean academic course management and browsing:
 - STUDENTS: Enrolled course directory with document counts, material inspection, and direct Q&A access.
-  Strictly membership-based: students see only their assigned courses.
+  Strictly membership-based: students see active published courses and assigned courses.
 - ADMINISTRATORS: Course provisioning, material management links, and diagnostic chat access.
 """
 
@@ -48,28 +48,28 @@ def register_knowledge_bases_page() -> None:
             with (
                 create_dialog,
                 ui.card().classes(
-                    "w-full max-w-md p-6 bg-white border border-slate-200 rounded-xl shadow-lg"
+                    "w-full max-w-md p-6 bg-white border border-[#E2D9CC] rounded-2xl shadow-xl"
                 ),
             ):
-                with ui.row().classes("w-full items-center justify-between pb-3 border-b border-slate-100"):
-                    with ui.row().classes("items-center gap-2"):
+                with ui.row().classes("w-full items-center justify-between pb-3 border-b border-[#F5EFEB]"):
+                    with ui.row().classes("items-center gap-2.5"):
                         with ui.element("div").classes(
-                            "w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold"
+                            "w-8 h-8 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold border border-[#E2D9CC]"
                         ):
                             ui.icon("school", size="18px")
-                        ui.label("Create New Course").classes("text-base font-bold text-slate-900")
+                        ui.label("Create New Course").classes("text-base font-bold text-[#0E1D61] font-serif")
                     ui.button(icon="close", on_click=create_dialog.close).props(
                         "flat round dense"
-                    ).classes("text-slate-400 hover:text-slate-700")
+                    ).classes("text-[#718096] hover:text-[#1C1917]")
 
                 ui.label(
                     "Provision a new university course repository for syllabi, lecture notes, and reference documents."
-                ).classes("text-xs text-slate-600 mt-2 mb-4 leading-relaxed")
+                ).classes("text-xs text-[#4A5568] mt-2 mb-4 leading-relaxed")
 
                 dialog_error = ui.column().classes("w-full mb-2")
 
                 with ui.column().classes("w-full gap-1.5 mb-3.5"):
-                    ui.label("Course Name *").classes("text-xs font-semibold text-slate-700")
+                    ui.label("Course Name *").classes("text-xs font-semibold text-[#1C1917]")
                     name_input = (
                         ui.input(placeholder="e.g. BCA-301 Computer Architecture")
                         .props("outlined dense")
@@ -77,7 +77,7 @@ def register_knowledge_bases_page() -> None:
                     )
 
                 with ui.column().classes("w-full gap-1.5 mb-5"):
-                    ui.label("Description").classes("text-xs font-semibold text-slate-700")
+                    ui.label("Description").classes("text-xs font-semibold text-[#1C1917]")
                     desc_input = (
                         ui.textarea(
                             placeholder="Brief overview of course syllabus, subject matter, or semester."
@@ -110,15 +110,15 @@ def register_knowledge_bases_page() -> None:
                     finally:
                         create_btn.props(remove="loading disable")
 
-                with ui.row().classes("w-full justify-end gap-2 pt-3 border-t border-slate-100"):
+                with ui.row().classes("w-full justify-end gap-2 pt-3 border-t border-[#F5EFEB]"):
                     ui.button("Cancel", on_click=create_dialog.close).props(
                         "flat dense no-caps"
-                    ).classes("text-xs text-slate-600")
+                    ).classes("text-xs text-[#718096]")
                     create_btn = (
                         ui.button("Create Course", icon="add", on_click=handle_create)
                         .props("no-caps dense")
                         .classes(
-                            "text-xs px-4 py-2 !bg-blue-700 hover:!bg-blue-800 !text-white rounded-lg shadow-xs transition-colors"
+                            "text-xs px-4 py-2 !bg-[#0E1D61] hover:!bg-[#15277A] !text-white rounded-lg shadow-sm transition-colors"
                         )
                     )
 
@@ -139,7 +139,7 @@ def register_knowledge_bases_page() -> None:
                             icon="add",
                             on_click=create_dialog.open,
                         ).props("no-caps dense").classes(
-                            "text-xs font-medium px-3.5 py-2 !bg-blue-700 hover:!bg-blue-800 !text-white rounded-lg shadow-xs transition-colors"
+                            "text-xs font-medium px-3.5 py-2 !bg-[#0E1D61] hover:!bg-[#15277A] !text-white rounded-lg shadow-xs transition-colors"
                         )
 
             # ------------------------------------------------------------------
@@ -157,10 +157,7 @@ def register_knowledge_bases_page() -> None:
 
                 if not all_courses:
                     try:
-                        if is_student:
-                            all_courses = api_client.get_knowledge_bases()
-                        else:
-                            all_courses = api_client.get_knowledge_bases()
+                        all_courses = api_client.get_knowledge_bases()
                     except ValueError as err:
                         with courses_grid:
                             with ui.column().classes("col-span-full w-full"):
@@ -192,7 +189,7 @@ def register_knowledge_bases_page() -> None:
                                     f"No courses match '{clean_q}'. Try a different search term."
                                     if clean_q
                                     else (
-                                        "You are not assigned to any courses. Please contact your instructor to be enrolled."
+                                        "No courses are currently available. Please check back when faculty publish materials."
                                         if is_student
                                         else "No course knowledge bases exist yet. Use 'Create Course' to provision one."
                                     )
@@ -202,27 +199,27 @@ def register_knowledge_bases_page() -> None:
 
                     for course in filtered:
                         with ui.card().classes(
-                            "academic-card p-5 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col justify-between"
+                            "academic-card p-5 bg-white border border-[#E2D9CC] rounded-xl shadow-xs flex flex-col justify-between hover:border-[#B89A5A] transition-colors"
                         ):
                             with ui.column().classes("gap-2.5 w-full"):
                                 with ui.row().classes("items-center justify-between w-full"):
                                     ui.label(course.name).classes(
-                                        "text-sm font-bold text-slate-900 tracking-tight truncate flex-1"
+                                        "text-sm font-bold text-[#0E1D61] font-serif tracking-tight truncate flex-1"
                                     )
                                     ui.badge(
                                         f"{course.document_count} doc(s)",
                                         color="slate-1",
                                     ).props("text-color=slate-7").classes(
-                                        "text-[10px] font-mono font-semibold px-2 py-0.5 border border-slate-200 shrink-0"
+                                        "text-[10px] font-mono font-semibold px-2 py-0.5 border border-[#E2D9CC] shrink-0"
                                     )
 
                                 ui.label(
                                     course.description
                                     or "Official university course materials and verified documents."
-                                ).classes("text-xs text-slate-600 line-clamp-2 leading-relaxed")
+                                ).classes("text-xs text-[#4A5568] line-clamp-2 leading-relaxed")
 
                             with ui.row().classes(
-                                "w-full justify-between items-center pt-3 border-t border-slate-100 mt-4"
+                                "w-full justify-between items-center pt-3 border-t border-[#F5EFEB] mt-4"
                             ):
                                 if is_student:
                                     ui.button(
@@ -232,7 +229,7 @@ def register_knowledge_bases_page() -> None:
                                             f"/chat?kb_id={c_id}"
                                         ),
                                     ).props("no-caps dense").classes(
-                                        "text-xs font-medium px-3.5 py-1.5 !bg-blue-700 hover:!bg-blue-800 !text-white rounded-lg shadow-xs transition-colors"
+                                        "text-xs font-semibold px-3.5 py-1.5 !bg-[#0E1D61] hover:!bg-[#15277A] !text-white rounded-lg shadow-xs transition-colors"
                                     )
 
                                     def make_view_docs_handler(c_id=course.id, c_name=course.name):
@@ -244,23 +241,23 @@ def register_knowledge_bases_page() -> None:
                                             with (
                                                 ui.dialog() as docs_dlg,
                                                 ui.card().classes(
-                                                    "w-full max-w-md p-6 bg-white border border-slate-200 rounded-xl shadow-xl"
+                                                    "w-full max-w-md p-6 bg-white border border-[#E2D9CC] rounded-2xl shadow-xl"
                                                 ),
                                             ):
                                                 with ui.row().classes(
-                                                    "w-full items-center justify-between pb-3 border-b border-slate-100"
+                                                    "w-full items-center justify-between pb-3 border-b border-[#F5EFEB]"
                                                 ):
                                                     ui.label(f"{c_name} — Materials").classes(
-                                                        "text-sm font-bold text-slate-900"
+                                                        "text-sm font-bold text-[#0E1D61] font-serif"
                                                     )
                                                     ui.button(
                                                         icon="close", on_click=docs_dlg.close
                                                     ).props("flat round dense").classes(
-                                                        "text-slate-400 hover:text-slate-700"
+                                                        "text-[#718096] hover:text-[#1C1917]"
                                                     )
                                                 if not docs:
                                                     ui.label("No documents uploaded yet.").classes(
-                                                        "text-xs text-slate-500 py-4"
+                                                        "text-xs text-[#718096] py-4"
                                                     )
                                                 else:
                                                     with ui.column().classes(
@@ -270,7 +267,7 @@ def register_knowledge_bases_page() -> None:
                                                             with (
                                                                 ui.row()
                                                                 .classes(
-                                                                    "w-full items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs cursor-pointer hover:bg-blue-50 transition-colors"
+                                                                    "w-full items-center justify-between p-2.5 rounded-lg bg-[#FAF6F0] border border-[#E2D9CC] text-xs cursor-pointer hover:bg-[#F5EFEB] transition-colors"
                                                                 )
                                                                 .on(
                                                                     "click",
@@ -293,12 +290,12 @@ def register_knowledge_bases_page() -> None:
                                                                         if d.filename.lower().endswith(".pdf")
                                                                         else "description",
                                                                         size="16px",
-                                                                    ).classes("text-blue-700")
+                                                                    ).classes("text-[#0E1D61]")
                                                                     ui.label(d.filename).classes(
-                                                                        "font-medium text-slate-800 truncate"
+                                                                        "font-medium text-[#1C1917] truncate font-sans"
                                                                     )
                                                                 ui.icon("visibility", size="14px").classes(
-                                                                    "text-slate-400"
+                                                                    "text-[#B89A5A]"
                                                                 )
                                             docs_dlg.open()
 
@@ -309,7 +306,7 @@ def register_knowledge_bases_page() -> None:
                                         icon="description",
                                         on_click=make_view_docs_handler(),
                                     ).props("flat dense no-caps").classes(
-                                        "text-xs text-slate-600 hover:text-slate-900 px-2 py-1"
+                                        "text-xs font-semibold text-[#4A5568] hover:text-[#0E1D61] px-2 py-1"
                                     )
                                 else:
                                     # Administrator actions
@@ -320,7 +317,7 @@ def register_knowledge_bases_page() -> None:
                                             f"/documents?kb_id={c_id}"
                                         ),
                                     ).props("no-caps dense").classes(
-                                        "text-xs font-medium px-3.5 py-1.5 !bg-blue-700 hover:!bg-blue-800 !text-white rounded-lg shadow-xs transition-colors"
+                                        "text-xs font-medium px-3.5 py-1.5 !bg-[#0E1D61] hover:!bg-[#15277A] !text-white rounded-lg shadow-xs transition-colors"
                                     )
                                     ui.button(
                                         "Chat",
@@ -329,7 +326,7 @@ def register_knowledge_bases_page() -> None:
                                             f"/chat?kb_id={c_id}"
                                         ),
                                     ).props("flat dense no-caps").classes(
-                                        "text-xs text-slate-700 hover:text-blue-700 px-2 py-1 font-medium"
+                                        "text-xs text-[#4A5568] hover:text-[#0E1D61] px-2 py-1 font-medium"
                                     )
 
             search_input.on_value_change(lambda e: load_and_render_courses(e.value or ""))

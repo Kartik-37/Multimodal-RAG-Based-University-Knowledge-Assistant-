@@ -76,9 +76,20 @@ def provision_user(
     return user
 
 
-def provision_kb(db: Session, owner: User, name: str = "Test Knowledge Base") -> KnowledgeBase:
+def provision_kb(
+    db: Session,
+    owner: User,
+    name: str = "Test Knowledge Base",
+    *,
+    is_student_visible: bool = True,
+) -> KnowledgeBase:
     """Helper to create a knowledge base."""
-    kb = KnowledgeBase(name=name, description="Test description", created_by_id=owner.id)
+    kb = KnowledgeBase(
+        name=name,
+        description="Test description",
+        created_by_id=owner.id,
+        is_student_visible=is_student_visible,
+    )
     db.add(kb)
     db.commit()
     db.refresh(kb)
@@ -460,7 +471,7 @@ def test_student_read_only_access_rules(api_client: TestClient, db_session: Sess
         db_session, "student_outsider@univ.edu", role=UserRole.STUDENT
     )
 
-    kb = provision_kb(db_session, admin)
+    kb = provision_kb(db_session, admin, is_student_visible=False)
 
     # Grant membership to enrolled student
     membership = KnowledgeBaseMember(knowledge_base_id=kb.id, user_id=student_enrolled.id)

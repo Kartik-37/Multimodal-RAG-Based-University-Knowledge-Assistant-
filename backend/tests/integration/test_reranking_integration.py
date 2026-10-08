@@ -126,9 +126,20 @@ def create_user(
     return user
 
 
-def create_kb(db: Session, owner: User, name: str = "Rerank Test KB") -> KnowledgeBase:
+def create_kb(
+    db: Session,
+    owner: User,
+    name: str = "Rerank Test KB",
+    *,
+    is_student_visible: bool = True,
+) -> KnowledgeBase:
     """Provision a knowledge base in PostgreSQL."""
-    kb = KnowledgeBase(name=name, description="Test description", created_by_id=owner.id)
+    kb = KnowledgeBase(
+        name=name,
+        description="Test description",
+        created_by_id=owner.id,
+        is_student_visible=is_student_visible,
+    )
     db.add(kb)
     db.commit()
     db.refresh(kb)
@@ -378,7 +389,7 @@ def test_api_rerank_unauthorized_student_returns_404(
     """Unauthorized student receives 404 (preventing KB existence leakage)."""
     admin = create_user(db_session, "admin_owner_kb@univ.edu", role=UserRole.ADMIN)
     student = create_user(db_session, "student_unauth@univ.edu", role=UserRole.STUDENT)
-    kb = create_kb(db_session, admin)
+    kb = create_kb(db_session, admin, is_student_visible=False)
 
     api_client.post(
         "/api/v1/auth/login",

@@ -6,19 +6,34 @@ This file is maintained by Antigravity.
 
 **STAGE 3 — DESIGN SYSTEM RESET + STUDENT EXPERIENCE REBUILD**
 
-### Stage 3A: Frontend Design System Reset & Test Contracts Reset
-- **Status:** **COMPLETED & VERIFIED**
+### Status: COMPLETED & VERIFIED
 - **Accomplishments:**
-  - Authored authoritative `context/FRONTEND_DESIGN_SYSTEM.md`: Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, editorial typography scale, single student navigation, default `ALL_COURSES` chat scope.
-  - Reconciled `AGENTS.md`, `PROJECT_CONTEXT.md`, `context/BACKEND_RULES.md`, `context/FRONTEND_RULES.md`, `context/RAG_SPECIFICATION.md`, and `context/TESTING_AND_SECURITY.md`.
-  - Implemented authoritative student catalog access in `backend/app/api/deps.py`: active and student-visible courses are accessible to students by default without manual enrollment; restricted courses (`is_student_visible=False`) require explicit membership (`KnowledgeBaseMember`); inactive courses return 404.
-  - Verified `backend/tests/security/test_student_access_policy.py`: 9/9 passed.
-  - Reset stale milestone test suite:
-    * Created `backend/tests/frontend/unit/` (`test_api_client_contracts.py`, `test_navigation_contracts.py`, `test_course_access_contracts.py`, `test_student_dashboard_contracts.py`, `test_student_chat_contracts.py`, `test_source_viewer_contracts.py`).
-    * Created `backend/tests/frontend/integration/` (`test_student_journey.py`, `test_auth_portals_journey.py`).
-    * Renamed `test_step21d_functional_integrity.py` to `backend/tests/integration/test_indexing_and_admin_rbac_integration.py`.
-    * Removed stale milestone test files (`test_step21e_api_client_integrity.py`, `test_step21e_workflow_integrity.py`, `test_step22a_auth_portals.py`).
-  - Verification: 71/71 tests passed in `backend/tests/frontend/`, 5/5 in `test_indexing_and_admin_rbac_integration.py`, 8/8 in `test_source_viewer.py`. Zero stale tests collected.
+  - **Stage 3A (Contracts & Documentation Reset):**
+    * Authored authoritative `context/FRONTEND_DESIGN_SYSTEM.md`: Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`, editorial typography scale, single student navigation, default `ALL_COURSES` chat scope.
+    * Reconciled `AGENTS.md`, `PROJECT_CONTEXT.md`, `context/BACKEND_RULES.md`, `context/FRONTEND_RULES.md`, `context/RAG_SPECIFICATION.md`, and `context/TESTING_AND_SECURITY.md`.
+    * Implemented authoritative student catalog access in `backend/app/api/deps.py`: active and student-visible courses are accessible to students by default without manual enrollment; restricted courses (`is_student_visible=False`) require explicit membership (`KnowledgeBaseMember`); inactive courses return 404.
+    * Reset stale milestone test suites, creating 71 behavioral and security tests in `backend/tests/frontend/` and deleting all obsolete milestone tests.
+  - **Stage 3B (Design System Tokens & Theme):**
+    * Rebuilt `frontend/components/theme.py` with palette tokens: Deep Atlas Navy `#0E1D61`, Gold `#B89A5A`, Warm Parchment Ivory `#FAF6F0`, and Charcoal text `#1C1917`. Set typography to Source Serif 4, Plus Jakarta Sans, and JetBrains Mono.
+    * Rebuilt `frontend/components/ui_kit.py` with restrained editorial headers, empty states, stat cards, and alerts.
+  - **Stage 3C & 3D (Shell Navigation & Public Entry Rebuild):**
+    * Rebuilt `frontend/components/layout.py`: single top-nav for students (`Home`, `Ask Assistant`, `Courses`, `Profile`), zero duplicate sidebars, zero static BCA badges.
+    * Rebuilt `frontend/pages/auth_pages.py`: editorial landing page, live grounded evidence demo card, student academic gateway, faculty admin gateway, and student registration.
+  - **Stage 3E (Student Dashboard & Course Library Rebuild):**
+    * Rebuilt `frontend/pages/dashboard_page.py`: personalized greeting, integrated assistant composer with prompt inspiration chips, 3 quick action strips, course atlas cards with document counts and direct actions.
+    * Rebuilt `frontend/pages/knowledge_bases_page.py`: search filter, course cards with material counts, direct "Ask Questions" action, and "View Materials" dialog.
+  - **Stage 3F (Conversational Chat Rebuild):**
+    * Rebuilt `frontend/pages/chat_page.py`: default search scope `ALL_COURSES`, conversation stream with clean reading width, bottom composer, distinct gold citation markers `[1]` with hover tooltips, and verified sources cards.
+  - **Stage 3G (Source Viewer Repair & Redesign):**
+    * Rebuilt `frontend/components/source_viewer.py`: native PDF object/iframe embedding with page fragment `#page=N` support, side-by-side evidence passage banner, extracted text chunks fallback tab, strict HttpOnly cookie authentication, zero query token leakage.
+  - **Stage 3H (Student Profile Rebuild):**
+    * Rebuilt `frontend/pages/profile_page.py`: academic identity, institutional email, student role badge, active session indicator, accessible course list, and sign out action.
+  - **Stage 3I (Verification & Quality Gate):**
+    * Unit & Frontend Tests: 71/71 passed in `backend/tests/frontend/`.
+    * Security Tests: 59/59 passed in `backend/tests/security/`.
+    * Total Test Suite: 625/625 tests passed across `backend/tests/ -m "not real_ollama"`.
+    * Code Quality: `ruff check` passed with 0 errors across frontend and backend.
+    * Local Server Smoke: All public HTTP routes (`/`, `/login`, `/student/login`, `/admin/login`, `/register`) return HTTP 200 OK.
 
 ---
 

@@ -14,7 +14,6 @@ import pytest
 from frontend.client.models import UserDTO
 from frontend.security.access_control import PUBLIC_ROUTES, can_access_route
 
-
 STUDENT_NAVIGATION_ROUTES = [
     "/dashboard",
     "/knowledge-bases",

@@ -47,8 +47,8 @@ def format_citation_links(text: str, citations: list[CitationDTO]) -> str:
             f'<a href="#" data-citation-index="{idx}" '
             f'title="{title_text}" '
             f'class="citation-pill inline-flex items-center px-1.5 py-0.5 mx-0.5 text-[11px] font-bold font-mono '
-            f"text-blue-700 bg-blue-100 hover:bg-blue-200 hover:text-blue-950 rounded cursor-pointer "
-            f'no-underline border border-blue-300 transition-colors shadow-2xs">[{idx}]</a>'
+            f'text-[#B89A5A] bg-[#FAF6F0] hover:bg-[#F5EFEB] hover:text-[#9A7E40] rounded cursor-pointer '
+            f'no-underline border border-[#E2D9CC] transition-colors shadow-2xs">[{idx}]</a>'
         )
 
     return replace_citation_markers(text, citations, _render_pill)
@@ -81,15 +81,15 @@ def register_chat_page() -> None:
 
             if is_admin and not can_admin_chat:
                 with ui.card().classes(
-                    "w-full max-w-2xl mx-auto p-6 bg-white border border-rose-200 rounded-lg shadow-xs"
+                    "w-full max-w-2xl mx-auto p-6 bg-white border border-rose-200 rounded-xl shadow-xs"
                 ):
                     ui.icon("lock", size="2.5rem").classes("text-rose-500 mb-2")
                     ui.label("Admin Chat Not Authorized").classes(
-                        "text-lg font-bold text-slate-900"
+                        "text-lg font-bold text-[#1C1917] font-serif"
                     )
                     ui.label(
                         "Your administrative account does not have permission for Admin Chat. Please contact the Main Administrator."
-                    ).classes("text-sm text-slate-600")
+                    ).classes("text-sm text-[#4A5568]")
                 return
 
             # Fetch available knowledge bases for course selector.
@@ -164,7 +164,7 @@ def register_chat_page() -> None:
 
             # Compact, Secondary Search Scope / Status Bar
             with ui.row().classes(
-                "w-full items-center justify-between pb-3 mb-2 border-b border-slate-200/80 gap-3 flex-wrap"
+                "w-full items-center justify-between pb-3 mb-2 border-b border-[#E2D9CC] gap-3 flex-wrap"
             ):
                 scope_controls_row = ui.row().classes("items-center gap-2.5 flex-wrap")
                 scope_error_container = ui.column().classes("w-full")
@@ -279,16 +279,16 @@ def register_chat_page() -> None:
                             render_controls()
 
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Scope:").classes("text-xs font-semibold text-slate-700")
+                            ui.label("Scope:").classes("text-xs font-semibold text-[#1C1917]")
                             ui.select(
                                 options=student_scope_options,
                                 value=active_scope["kb_id"] if active_scope["scope"] == "COURSE" else "ALL_COURSES",
                                 on_change=on_student_scope_change,
-                            ).props("outlined dense options-dense").classes("text-xs min-w-[210px] minimalist-select")
+                            ).props("outlined dense options-dense").classes("text-xs min-w-[220px] minimalist-select")
 
-                        with ui.row().classes("items-center gap-1.5 hidden sm:flex text-slate-500 text-xs font-medium ml-2"):
-                            ui.icon("verified", size="14px").classes("text-emerald-600")
-                            ui.label("Grounded in official course materials")
+                        with ui.row().classes("items-center gap-1.5 hidden sm:flex text-[#718096] text-xs font-medium ml-2 font-mono"):
+                            ui.icon("verified", size="14px").classes("text-[#B89A5A]")
+                            ui.label("Grounded in verified course materials")
 
                         with ui.row().classes("ml-auto items-center"):
                             ui.button(
@@ -301,9 +301,9 @@ def register_chat_page() -> None:
                     else:
                         # ADMIN NAVIGATION: Multi-level diagnostic search scope
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("filter_alt", size="sm").classes("text-blue-700")
+                            ui.icon("filter_alt", size="sm").classes("text-[#0E1D61]")
                             ui.label("Search Scope:").classes(
-                                "text-xs font-bold text-slate-700 uppercase tracking-wider"
+                                "text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
                             )
 
                             scope_options = {
@@ -399,14 +399,14 @@ def register_chat_page() -> None:
                                     ui.button("Diagnostics", icon="bug_report")
                                     .props("outline dense no-caps icon-right=arrow_drop_down")
                                     .classes(
-                                        "text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
+                                        "text-xs text-[#1C1917] border-[#E2D9CC] hover:bg-[#FAF6F0]"
                                     )
                                 ):
                                     with ui.menu().classes(
-                                        "p-2 bg-white border border-slate-200 shadow-lg rounded-lg"
+                                        "p-2 bg-white border border-[#E2D9CC] shadow-lg rounded-xl"
                                     ) as debug_menu:
                                         ui.label("RAG Diagnostics").classes(
-                                            "text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1"
+                                            "text-[10px] font-bold text-[#718096] uppercase tracking-wider px-2 py-1 font-mono"
                                         )
                                         with ui.column().classes("gap-1 w-full min-w-[180px]"):
                                             ui.button(
@@ -417,7 +417,7 @@ def register_chat_page() -> None:
                                                     open_vector_retrieval_dialog(k, n),
                                                 ],
                                             ).props("flat dense no-caps align=left").classes(
-                                                "w-full text-xs text-blue-700 justify-start hover:bg-blue-50"
+                                                "w-full text-xs text-[#0E1D61] justify-start hover:bg-[#FAF6F0]"
                                             )
                                             ui.button(
                                                 "Lexical FTS",
@@ -427,7 +427,7 @@ def register_chat_page() -> None:
                                                     open_lexical_retrieval_dialog(k, n),
                                                 ],
                                             ).props("flat dense no-caps align=left").classes(
-                                                "w-full text-xs text-slate-700 justify-start hover:bg-slate-50"
+                                                "w-full text-xs text-[#1C1917] justify-start hover:bg-[#FAF6F0]"
                                             )
                                             ui.button(
                                                 "Hybrid RRF",
@@ -437,7 +437,7 @@ def register_chat_page() -> None:
                                                     open_hybrid_retrieval_dialog(k, n),
                                                 ],
                                             ).props("flat dense no-caps align=left").classes(
-                                                "w-full text-xs text-indigo-700 justify-start hover:bg-indigo-50"
+                                                "w-full text-xs text-[#B89A5A] justify-start hover:bg-[#FAF6F0]"
                                             )
                                             ui.button(
                                                 "Reranker",
@@ -447,7 +447,7 @@ def register_chat_page() -> None:
                                                     open_rerank_inspection_dialog(k, n),
                                                 ],
                                             ).props("flat dense no-caps align=left").classes(
-                                                "w-full text-xs text-slate-700 justify-start hover:bg-slate-50"
+                                                "w-full text-xs text-[#1C1917] justify-start hover:bg-[#FAF6F0]"
                                             )
 
                             ui.button(
@@ -466,18 +466,18 @@ def register_chat_page() -> None:
             evidence_dialog = ui.dialog().props("position=right")
             with evidence_dialog:
                 with ui.card().classes(
-                    "w-[94vw] md:w-[540px] max-w-full h-full p-4 bg-white flex flex-col rounded-none md:rounded-l-2xl border-l border-slate-200"
+                    "w-[94vw] md:w-[540px] max-w-full h-full p-4 bg-white flex flex-col rounded-none md:rounded-l-2xl border-l border-[#E2D9CC]"
                 ):
-                    with ui.row().classes("w-full items-center justify-between pb-3 border-b border-slate-100 mb-2"):
+                    with ui.row().classes("w-full items-center justify-between pb-3 border-b border-[#F5EFEB] mb-2"):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("find_in_page", size="sm").classes("text-blue-700")
-                            ui.label("Evidence & Provenance").classes("text-sm font-bold text-slate-800")
-                        ui.button(icon="close", on_click=evidence_dialog.close).props("flat round dense")
+                            ui.icon("find_in_page", size="sm").classes("text-[#0E1D61]")
+                            ui.label("Evidence & Provenance").classes("text-sm font-bold text-[#0E1D61] font-serif")
+                        ui.button(icon="close", on_click=evidence_dialog.close).props("flat round dense").classes("text-[#718096]")
                     evidence_container = ui.column().classes("w-full flex-1 overflow-y-auto")
 
             # Main Chat Area: Integrated, Breathing Conversation Stream
             with ui.column().classes("w-full max-w-4xl mx-auto gap-4 mt-1"):
-                # Conversation Stream: No giant border card
+                # Conversation Stream: Comfortable reading container
                 message_container = ui.column().classes(
                     "w-full min-h-[440px] max-h-[68vh] overflow-y-auto p-1 sm:p-3 gap-6 box-border"
                 )
@@ -489,7 +489,7 @@ def register_chat_page() -> None:
                     else "Ask a question to test retrieval, reranking, and citation synthesis..."
                 )
                 with ui.card().classes(
-                    "w-full p-3 bg-white border border-slate-200/95 rounded-2xl shadow-xs focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-colors"
+                    "w-full p-3 bg-white border border-[#E2D9CC] rounded-2xl shadow-xs focus-within:border-[#0E1D61] focus-within:ring-2 focus-within:ring-[#E2D9CC] transition-colors"
                 ):
                     with ui.row().classes("w-full items-center gap-2"):
                         input_box = (
@@ -503,11 +503,11 @@ def register_chat_page() -> None:
                             ui.button(icon="send")
                             .props("dense")
                             .classes(
-                                "w-10 h-10 rounded-xl !bg-blue-700 hover:!bg-blue-800 text-white shadow-xs shrink-0 flex items-center justify-center transition-colors"
+                                "w-10 h-10 rounded-xl !bg-[#0E1D61] hover:!bg-[#15277A] text-white shadow-xs shrink-0 flex items-center justify-center transition-colors"
                             )
                         ).tooltip("Send question (Enter)")
                     ui.label("Answers are synthesized strictly from official course materials with verified citations.").classes(
-                        "text-[11px] text-slate-400 font-medium px-1 mt-1 select-none"
+                        "text-[11px] text-[#718096] font-medium px-1 mt-1 select-none font-mono"
                     )
 
             async def send_message(question_text: str) -> None:
@@ -668,19 +668,19 @@ def register_chat_page() -> None:
                             "w-full py-12 items-center justify-center text-center max-w-xl mx-auto"
                         ):
                             with ui.element("div").classes(
-                                "w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold mb-3 border border-blue-200 shadow-2xs"
+                                "w-14 h-14 rounded-2xl bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold mb-3 border border-[#E2D9CC] shadow-xs"
                             ):
-                                ui.icon("school", size="24px")
+                                ui.icon("school", size="26px")
                             ui.label("What would you like to explore?").classes(
-                                "text-xl font-extrabold text-slate-900 tracking-tight"
+                                "text-2xl font-extrabold text-[#0E1D61] tracking-tight font-serif"
                             )
                             ui.label(
                                 "Ask about your course syllabi, grading policies, examination formats, or lecture materials. "
                                 "Every answer is verified against official documents with page citations."
-                            ).classes("text-xs sm:text-sm text-slate-600 mt-1 mb-6 leading-relaxed")
+                            ).classes("text-xs sm:text-sm text-[#4A5568] mt-1 mb-6 leading-relaxed")
 
                             ui.label("Suggested starting questions").classes(
-                                "text-xs font-bold text-slate-400 tracking-wider mb-2.5 uppercase font-mono"
+                                "text-xs font-bold text-[#718096] tracking-wider mb-2.5 uppercase font-mono"
                             )
                             with ui.row().classes("gap-2 flex-wrap justify-center w-full"):
                                 starter_prompts = [
@@ -693,37 +693,37 @@ def register_chat_page() -> None:
                                     with (
                                         ui.row()
                                         .classes(
-                                            "items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs font-medium text-slate-700 hover:text-blue-900 cursor-pointer shadow-2xs transition-colors"
+                                            "items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-[#FAF6F0] border border-[#E2D9CC] hover:border-[#B89A5A] text-xs font-medium text-[#1C1917] hover:text-[#0E1D61] cursor-pointer shadow-xs transition-colors"
                                         )
                                         .on("click", lambda p=prompt: send_message(p))
                                     ):
-                                        ui.icon("arrow_outward", size="13px").classes("text-slate-400")
+                                        ui.icon("arrow_outward", size="13px").classes("text-[#B89A5A]")
                                         ui.label(prompt)
                     else:
                         for msg in state.chat_history:
                             if msg.role == "user":
                                 with ui.row().classes("w-full justify-end items-end gap-2.5"):
                                     with ui.element("div").classes(
-                                        "max-w-2xl bg-slate-900 text-white px-4 py-3 rounded-xl rounded-tr-xs shadow-xs text-sm leading-relaxed font-sans select-text"
+                                        "max-w-2xl bg-[#0E1D61] text-white px-4 py-3 rounded-2xl rounded-tr-xs shadow-xs text-sm leading-relaxed font-sans select-text"
                                     ):
                                         ui.label(msg.content).classes("text-white leading-relaxed font-medium")
                             else:
                                 with ui.row().classes("w-full justify-start items-start gap-2.5"):
                                     with ui.element("div").classes(
-                                        "w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold shrink-0 mt-1 border border-blue-200"
+                                        "w-8 h-8 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold shrink-0 mt-1 border border-[#E2D9CC]"
                                     ):
                                         ui.icon("school", size="18px")
                                     with ui.card().classes(
-                                        "w-full max-w-3xl bg-white border border-slate-200 p-5 rounded-xl shadow-xs gap-3"
+                                        "w-full max-w-3xl bg-white border border-[#E2D9CC] p-5 rounded-2xl shadow-xs gap-3"
                                     ):
                                         with ui.row().classes("w-full justify-between items-center mb-0.5"):
-                                            ui.label("RAG Assistant").classes("text-xs font-bold text-slate-900")
+                                            ui.label("Knowledge Assistant").classes("text-xs font-bold text-[#0E1D61] font-serif")
                                             if msg.total_pipeline_ms:
                                                 ui.badge(
                                                     f"{msg.total_pipeline_ms:.0f}ms",
                                                     color="slate-1",
                                                 ).props("text-color=slate-7").classes(
-                                                    "text-[10px] font-mono border border-slate-200 px-1.5 py-0.5"
+                                                    "text-[10px] font-mono border border-[#E2D9CC] px-1.5 py-0.5"
                                                 )
 
                                         formatted_content = format_citation_links(
@@ -731,24 +731,24 @@ def register_chat_page() -> None:
                                         )
                                         clean_content = sanitize_markdown_text(formatted_content)
                                         ui.markdown(clean_content).classes(
-                                            "safe-markdown text-sm leading-relaxed text-slate-800"
+                                            "safe-markdown text-sm leading-relaxed text-[#1C1917]"
                                         )
 
                                         # Grounding Citations Bar
                                         if msg.citations:
-                                            with ui.column().classes("w-full mt-3 pt-3 border-t border-slate-100 gap-2"):
+                                            with ui.column().classes("w-full mt-3 pt-3 border-t border-[#F5EFEB] gap-2"):
                                                 with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
                                                     with ui.row().classes("items-center gap-1.5"):
-                                                        ui.icon("verified", size="16px").classes("text-blue-700")
+                                                        ui.icon("verified", size="16px").classes("text-[#B89A5A]")
                                                         ui.label(f"Verified Sources ({len(msg.citations)})").classes(
-                                                            "text-xs font-bold text-slate-800"
+                                                            "text-xs font-bold text-[#0E1D61] font-serif"
                                                         )
                                                     ui.button(
                                                         "Inspect Evidence",
                                                         icon="find_in_page",
                                                         on_click=lambda m=msg: open_evidence_for_message(m),
                                                     ).props("flat dense no-caps").classes(
-                                                        "text-[11px] text-blue-700 hover:text-blue-900 font-medium"
+                                                        "text-[11px] text-[#0E1D61] hover:text-[#15277A] font-semibold"
                                                     )
 
                                                 with ui.row().classes("w-full gap-2 flex-wrap"):
@@ -757,31 +757,31 @@ def register_chat_page() -> None:
                                                         with (
                                                             ui.card()
                                                             .classes(
-                                                                "flex-1 min-w-[220px] p-2.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-blue-400 cursor-pointer shadow-2xs flex flex-col justify-between transition-colors"
+                                                                "flex-1 min-w-[220px] p-2.5 bg-[#FAF6F0] border border-[#E2D9CC] rounded-xl hover:border-[#B89A5A] cursor-pointer shadow-2xs flex flex-col justify-between transition-colors"
                                                             )
                                                             .on("click", lambda c=cit: open_citation_viewer(c))
                                                         ):
                                                             with ui.row().classes("items-center justify-between w-full"):
                                                                 with ui.row().classes("items-center gap-1.5 min-w-0 flex-1"):
-                                                                    ui.badge(str(idx), color="blue-7").classes(
-                                                                        "text-[9px] font-bold px-1.5 py-0.5"
+                                                                    ui.badge(f"[{idx}]", color="amber-2").props("text-color=amber-10").classes(
+                                                                        "text-[10px] font-mono font-bold px-1.5 py-0.5 border border-[#E2D9CC]"
                                                                     )
                                                                     ui.label(cit.document_name).classes(
-                                                                        "text-xs font-semibold text-slate-800 truncate"
+                                                                        "text-xs font-semibold text-[#1C1917] truncate font-sans"
                                                                     )
-                                                                ui.badge(page_lbl, color="slate-2").props("text-color=slate-8").classes(
-                                                                    "text-[10px] font-mono px-1.5 py-0.5 border border-slate-300 shrink-0"
+                                                                ui.badge(page_lbl, color="slate-1").props("text-color=slate-7").classes(
+                                                                    "text-[10px] font-mono px-1.5 py-0.5 border border-[#E2D9CC] shrink-0"
                                                                 )
                                                             if cit.snippet:
                                                                 ui.label(f'"{cit.snippet.strip()}"').classes(
-                                                                    "text-[11px] text-slate-600 italic line-clamp-1 mt-1 font-sans"
+                                                                    "text-[11px] text-[#4A5568] italic line-clamp-1 mt-1 font-sans"
                                                                 )
 
                     if state.is_generating:
                         with ui.row().classes("w-full justify-start items-center gap-2 py-1 px-1"):
                             ui.spinner(size="xs", color="primary")
                             ui.label("Searching course documents and synthesizing answer...").classes(
-                                "text-xs font-medium text-slate-600"
+                                "text-xs font-medium text-[#4A5568]"
                             )
 
             render_messages()

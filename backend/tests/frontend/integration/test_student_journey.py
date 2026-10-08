@@ -17,7 +17,6 @@ Validates:
    - Documents in restricted courses return HTTP 404 for unassigned students.
 """
 
-import io
 import uuid
 from collections.abc import Generator
 
@@ -26,7 +25,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.app.core.permissions import Permission
 from backend.app.core.security import get_password_hash
 from backend.app.main import app
 from backend.app.models.document import Document, DocumentStatus, IndexingStatus
@@ -180,7 +178,7 @@ class TestStudentJourneyIntegration:
         """Active student-visible courses are accessible to students by default."""
         admin = _create_admin(db_session)
         pub_course_1 = _create_course(db_session, admin, "Intro to Python", is_active=True, is_student_visible=True)
-        pub_course_2 = _create_course(db_session, admin, "Data Structures", is_active=True, is_student_visible=True)
+        _create_course(db_session, admin, "Data Structures", is_active=True, is_student_visible=True)
         inactive_course = _create_course(db_session, admin, "Archived 1999", is_active=False, is_student_visible=True)
         private_course = _create_course(db_session, admin, "Faculty Research", is_active=True, is_student_visible=False)
 
