@@ -1,15 +1,15 @@
 """
 Evidence and Citation Inspection Panel Component.
 
-Allows users to inspect factual source documents, page numbers, chunk IDs,
-and relevance scores retrieved to ground the LLM's response. Adheres to accessible
-design practices by ensuring cards are focusable and keyboard selectable.
+Redesigned for the Editorial Academic identity.
+Displays retrieved factual source documents, page numbers, and chunk IDs.
 """
 
 from collections.abc import Callable
 
 from nicegui import ui
 
+from frontend.client.citations import group_citations_by_document
 from frontend.client.models import CitationDTO
 
 
@@ -20,84 +20,138 @@ def render_evidence_panel(
     on_open_viewer: Callable[[CitationDTO], None] | None = None,
     is_admin: bool = False,
 ) -> None:
-    """
-    Render the evidence inspection panel with source snippets and provenance metadata.
-    """
     with ui.column().classes("w-full h-full flex-1 flex flex-col"):
-        with ui.row().classes(
-            "w-full items-center justify-between border-b border-slate-100 pb-2.5 mb-3 shrink-0"
-        ):
-            with ui.row().classes("items-center gap-2"):
-                ui.icon("find_in_page", size="sm").classes("text-blue-600")
-                ui.label("Sources & Citations").classes("text-sm font-bold text-slate-800")
-            ui.label(f"{len(citations)} source(s)").classes("text-xs text-slate-500 font-mono")
-
         if not citations:
-            with ui.column().classes("w-full py-12 items-center justify-center text-center my-auto"):
-                ui.icon("menu_book", size="md").classes("text-slate-300 mb-1.5")
-                ui.label("Sources will appear here after you ask a question.").classes(
-                    "text-xs font-semibold text-slate-600"
-                )
+            with ui.column().classes(
+                "w-full py-12 items-center justify-center text-center my-auto"
+            ):
+                ui.icon("menu_book", size="2rem").classes("text-secondary-navy mb-2")
+                ui.label("Sources will appear here.").classes("text-sm font-bold text-primary-navy")
                 ui.label(
                     "When an answer is synthesized, verified citations and original excerpts from course materials will appear here."
-                ).classes("text-[11px] text-slate-400 max-w-xs mt-0.5 leading-normal")
+                ).classes("text-xs text-secondary-navy mt-1")
             return
 
-        with ui.column().classes("w-full gap-3 flex-1 overflow-y-auto pr-1 pb-4"):
-            for idx, cit in enumerate(citations, start=1):
-                is_selected = (
-                    selected_citation is not None and selected_citation.chunk_id == cit.chunk_id
-                )
-                card_classes = "w-full p-3.5 bg-white border rounded-xl shadow-2xs transition-all cursor-pointer "
-                if is_selected:
-                    card_classes += "border-blue-500 ring-2 ring-blue-100 bg-blue-50/20"
-                else:
-                    card_classes += "border-slate-200 hover:border-slate-300"
+        doc_groups = group_citations_by_document(citations)
 
-                card = ui.card().classes(card_classes)
-                if on_select:
-                    card.on("click", lambda e=None, c=cit: on_select(c))
+        with ui.column().classes("w-full gap-4 flex-1 overflow-y-auto pr-1 pb-4"):
+            for group in doc_groups:
+                is_pdf = group.document_name.lower().endswith(".pdf")
+                doc_icon = "picture_as_pdf" if is_pdf else "description"
 
-                with card:
-                    with ui.row().classes("w-full justify-between items-center gap-1 mb-1.5"):
-                        with ui.row().classes("items-center gap-1.5 flex-1 min-w-0"):
-                            with ui.badge(color="slate-800").classes(
-                                "text-[10px] font-mono px-1.5 py-0.5"
-                            ):
-                                ui.label(f"[{idx}]")
-                            ui.label(cit.document_name).classes(
-                                "text-xs font-bold text-slate-900 truncate"
-                            )
-
-                        with ui.row().classes("items-center gap-1.5 flex-shrink-0"):
-                            if cit.page_number is not None:
-                                with ui.badge(color="blue-700").classes(
-                                    "text-[10px] px-1.5 py-0.5"
-                                ):
-                                    ui.label(f"p.{cit.page_number}")
-                            if is_admin:
-                                ui.label(f"{cit.relevance_score:.3f}").classes(
-                                    "text-[11px] font-mono font-semibold text-slate-600"
-                                ).tooltip("Rerank / Fusion Relevance Score")
-
-                    if cit.section_title:
-                        ui.label(f"Section: {cit.section_title}").classes(
-                            "text-[11px] font-medium text-slate-500 mb-1 truncate"
-                        )
-
-                    # Source text snippet
-                    with ui.element("div").classes(
-                        "w-full text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200/80"
+                with ui.card().classes(
+                    "w-full p-4 bg-surface-elevated border border-subtle rounded-lg shadow-none gap-3"
+                ):
+                    with ui.row().classes(
+                        "w-full items-start justify-between gap-2 pb-2 border-b border-subtle"
                     ):
-                        ui.label(cit.snippet).classes("italic text-slate-700 select-text")
+                        with ui.row().classes("items-start gap-2 flex-1 min-w-0"):
+                            ui.icon(doc_icon, size="18px").classes("text-primary-navy shrink-0 mt-0.5")
+                            with ui.column().classes("gap-0.5 min-w-0 flex-1"):
+                                ui.label(group.document_name).classes(
+                                    "text-sm font-bold text-primary-navy break-all sm:break-words leading-snug font-sans"
+                                )
+                                if group.course_name:
+                                    ui.label(group.course_name).classes(
+                                        "text-[11px] font-mono text-secondary-navy"
+                                    )
 
-                    # Direct action to open in Source Viewer
-                    if on_open_viewer:
-                        page_str = f"Page {cit.page_number}" if cit.page_number else "Document"
-                        ui.button(
-                            f"Read in PDF ({page_str})",
-                            icon="picture_as_pdf",
-                            on_click=lambda e=None, c=cit: on_open_viewer(c),
-                        ).props("no-caps dense outline").classes(
-                            "w-full mt-2 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-lg py-1.5 justify-center transition-colors"
+                        pages_count = len(group.pages)
+                        badge_text = (
+                            f"{pages_count} cited page"
+                            if pages_count == 1
+                            else f"{pages_count} cited pages"
                         )
+                        ui.badge(badge_text, color="canvas").props("text-color=secondary-navy").classes(
+                            "text-[10px] font-mono font-medium px-2 py-0.5 border border-subtle shrink-0"
+                        )
+
+                    with ui.column().classes("w-full gap-3"):
+                        for pref in group.pages:
+                            is_selected = (
+                                selected_citation is not None
+                                and any(selected_citation.chunk_id == c.chunk_id for c in pref.citations)
+                            )
+                            item_classes = (
+                                "w-full p-3 bg-canvas border rounded shadow-none transition-all "
+                            )
+                            if is_selected:
+                                item_classes += "border-gold ring-1 ring-gold bg-gold-light"
+                            else:
+                                item_classes += "border-subtle hover:border-gold/80"
+
+                            page_card = ui.card().classes(item_classes)
+                            if on_select:
+                                page_card.on("click", lambda e=None, c=pref.citation: on_select(c))
+
+                            with page_card:
+                                with ui.row().classes(
+                                    "w-full justify-between items-center gap-2 mb-2"
+                                ):
+                                    with ui.row().classes("items-center gap-1.5 flex-wrap"):
+                                        for c_idx in pref.citation_indices:
+                                            ui.badge(f"[{c_idx}]", color="surface").props(
+                                                "text-color=primary-navy"
+                                            ).classes(
+                                                "text-[11px] font-mono font-bold px-1.5 py-0.5 border border-subtle"
+                                            )
+                                        if pref.page_number is not None:
+                                            ui.badge(f"Page {pref.page_number}", color="canvas").props(
+                                                "text-color=gold"
+                                            ).classes(
+                                                "text-xs font-mono font-bold px-2 py-0.5 border border-subtle"
+                                            )
+                                        else:
+                                            ui.badge("Document", color="canvas").props(
+                                                "text-color=secondary-navy"
+                                            ).classes(
+                                                "text-xs font-mono font-bold px-2 py-0.5 border border-subtle"
+                                            )
+
+                                        if getattr(pref.citation, "source_modality", None) == "visual":
+                                            v_label = (
+                                                f"Visual: {pref.citation.visual_type.title()}"
+                                                if getattr(pref.citation, "visual_type", None)
+                                                else "Visual Evidence"
+                                            )
+                                            ui.badge(v_label, color="canvas").props(
+                                                "text-color=primary-navy"
+                                            ).classes(
+                                                "text-xs font-mono font-bold px-2 py-0.5 border border-gold/60 bg-gold/10"
+                                            )
+
+                                    if is_admin and pref.citations:
+                                        max_score = max(c.relevance_score for c in pref.citations)
+                                        ui.label(f"{max_score:.3f}").classes(
+                                            "text-xs font-mono font-bold text-secondary-navy"
+                                        )
+
+                                with ui.column().classes("w-full gap-2"):
+                                    for snip in pref.snippets:
+                                        if snip.strip():
+                                            with ui.element("div").classes(
+                                                "w-full text-xs sm:text-sm text-primary-navy leading-relaxed bg-surface-elevated p-2.5 rounded border border-subtle"
+                                            ):
+                                                ui.label(snip.strip()).classes(
+                                                    "italic text-primary-navy select-text font-serif"
+                                                )
+
+                                if on_open_viewer:
+                                    page_str = (
+                                        f"Page {pref.page_number}"
+                                        if pref.page_number is not None
+                                        else "Document"
+                                    )
+                                    btn_label = (
+                                        f"Read in PDF ({page_str})"
+                                        if is_pdf
+                                        else f"Read Document ({page_str})"
+                                    )
+                                    btn_icon = "picture_as_pdf" if is_pdf else "description"
+                                    ui.button(
+                                        btn_label,
+                                        icon=btn_icon,
+                                        on_click=lambda e=None, c=pref.citation: on_open_viewer(c),
+                                    ).props("no-caps outline dense").classes(
+                                        "w-full mt-2 text-xs font-bold text-primary-navy border border-subtle hover:bg-surface rounded py-1.5 transition-colors"
+                                    )

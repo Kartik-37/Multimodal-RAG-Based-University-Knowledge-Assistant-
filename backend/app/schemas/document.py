@@ -34,6 +34,13 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
     indexed_at: datetime | None = None
     chunk_count: int = 0
+    job_id: uuid.UUID | None = None
+    current_stage: str | None = None
+    progress_percent: float = 0.0
+    total_chunks: int = 0
+    processed_chunks: int = 0
+    embedded_chunks: int = 0
+    indexed_chunks: int = 0
 
 
 class DocumentChunkResponse(BaseModel):

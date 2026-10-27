@@ -1,119 +1,178 @@
 """
 Status Badge Component with Accessible Multi-Modal Indicators.
 
-Renders status indicators for document ingestion lifecycle, vector indexing,
-and RAG grounding validation states. Adheres to WCAG 2.1 AA accessibility guidelines
-by never using color as the sole indicator of state (always pairs distinct iconography
-and clear text labels with color coding).
+Redesigned for Editorial Academic identity.
+Renders status indicators for document ingestion lifecycle and vector indexing.
 """
 
 from nicegui import ui
 
 
 def render_status_badge(status: str) -> None:
-    """
-    Render a semantic status badge for document ingestion with icon and text label.
-    """
     norm = status.upper().strip()
-
-    if norm in ("COMPLETED", "INDEXED"):
-        with ui.badge(color="emerald-700").classes("text-xs font-semibold px-2 py-0.5"):
+    if norm in ("COMPLETED", "INDEXED", "HEALTHY", "OPERATIONAL", "ACTIVE"):
+        with (
+            ui.badge(color="emerald-1")
+            .props("text-color=emerald-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-emerald-200")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("check_circle", size="xs")
-                ui.label("COMPLETED")
-    elif norm == "PROCESSING":
-        with ui.badge(color="blue-700").classes("text-xs font-semibold px-2 py-0.5 animate-pulse"):
+                ui.icon("check_circle", size="1rem")
+                ui.label(norm)
+    elif norm in ("PROCESSING", "DEGRADED"):
+        with (
+            ui.badge(color="amber-1")
+            .props("text-color=amber-9")
+            .classes(
+                "text-xs font-bold px-2 py-0.5 tracking-wider border border-amber-200"
+                + (" animate-pulse" if norm == "PROCESSING" else "")
+            )
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("sync", size="xs")
-                ui.label("PROCESSING")
-    elif norm == "FAILED":
-        with ui.badge(color="rose-700").classes("text-xs font-semibold px-2 py-0.5"):
+                ui.icon("warning" if norm == "DEGRADED" else "sync", size="1rem")
+                ui.label(norm)
+    elif norm in ("FAILED", "UNAVAILABLE", "UNHEALTHY", "OUTAGE"):
+        with (
+            ui.badge(color="rose-1")
+            .props("text-color=rose-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-rose-200")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("error", size="xs")
-                ui.label("FAILED")
+                ui.icon("error", size="1rem")
+                ui.label(norm)
+    elif norm in ("PREVIEW", "SIMULATION", "SIMULATED"):
+        with (
+            ui.badge(color="slate-1")
+            .props("text-color=slate-8")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-slate-300 bg-slate-100")
+        ):
+            with ui.row().classes("items-center gap-1"):
+                ui.icon("science", size="1rem")
+                ui.label(norm)
     elif norm in ("PENDING", "UPLOADED", "QUEUED"):
-        with ui.badge(color="amber-700").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("schedule", size="xs")
+                ui.icon("schedule", size="1rem")
                 ui.label("PENDING")
     else:
-        with ui.badge(color="slate-600").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("help_outline", size="xs")
+                ui.icon("help_outline", size="1rem")
                 ui.label(norm)
 
 
 def render_indexing_status_badge(status: str) -> None:
-    """
-    Render a distinct status badge for vector indexing with icon and text label.
-    """
     norm = status.upper().strip()
-
     if norm in ("COMPLETED", "INDEXED"):
-        with ui.badge(color="teal-700").classes("text-xs font-semibold px-2 py-0.5"):
-            with ui.row().classes("items-center gap-1"):
-                ui.icon("storage", size="xs")
-                ui.label("INDEXED")
-    elif norm in ("QUEUED", "PREPARING"):
-        with ui.badge(color="blue-700").classes("text-xs font-semibold px-2 py-0.5"):
-            with ui.row().classes("items-center gap-1"):
-                ui.icon("schedule", size="xs")
-                ui.label("INDEXING QUEUED")
-    elif norm in ("PROCESSING", "INDEXING"):
-        with ui.badge(color="indigo-700").classes(
-            "text-xs font-semibold px-2 py-0.5 animate-pulse"
+        with (
+            ui.badge(color="emerald-1")
+            .props("text-color=emerald-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-emerald-200")
         ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("autorenew", size="xs")
+                ui.icon("storage", size="1rem")
+                ui.label("INDEXED")
+    elif norm in ("QUEUED", "PREPARING"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
+            with ui.row().classes("items-center gap-1"):
+                ui.icon("schedule", size="1rem")
+                ui.label("INDEX QUEUED")
+    elif norm in ("PROCESSING", "INDEXING"):
+        with (
+            ui.badge(color="amber-1")
+            .props("text-color=amber-9")
+            .classes(
+                "text-xs font-bold px-2 py-0.5 tracking-wider border border-amber-200 animate-pulse"
+            )
+        ):
+            with ui.row().classes("items-center gap-1"):
+                ui.icon("autorenew", size="1rem")
                 ui.label("INDEXING...")
     elif norm == "FAILED":
-        with ui.badge(color="rose-700").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="rose-1")
+            .props("text-color=rose-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-rose-200")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("warning", size="xs")
+                ui.icon("warning", size="1rem")
                 ui.label("INDEX FAILED")
     elif norm in ("PENDING", "UNINDEXED"):
-        with ui.badge(color="slate-500").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("hourglass_empty", size="xs")
+                ui.icon("hourglass_empty", size="1rem")
                 ui.label("UNINDEXED")
     else:
-        with ui.badge(color="slate-600").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("help", size="xs")
+                ui.icon("help", size="1rem")
                 ui.label(f"INDEX: {norm}")
 
 
-def render_grounding_status_badge(
-    status: str,
-    is_grounded: bool | None = None,
-) -> None:
-    """
-    Render a RAG grounding verification badge with icon, semantic color, and label.
-    """
+def render_grounding_status_badge(status: str, is_grounded: bool | None = None) -> None:
     norm = status.upper().strip()
-
     if norm in ("FULLY_SUPPORTED", "GROUNDED") or (is_grounded is True and norm != "REFUSAL"):
-        with ui.badge(color="emerald-700").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="emerald-1")
+            .props("text-color=emerald-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-emerald-200")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("verified", size="xs")
+                ui.icon("verified", size="1rem")
                 ui.label("FULLY GROUNDED")
     elif norm == "PARTIALLY_SUPPORTED":
-        with ui.badge(color="amber-700").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="amber-1")
+            .props("text-color=amber-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-amber-200")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("warning_amber", size="xs")
+                ui.icon("warning_amber", size="1rem")
                 ui.label("PARTIALLY GROUNDED")
     elif norm == "REFUSAL":
-        with ui.badge(color="blue-grey-700").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("block", size="xs")
+                ui.icon("block", size="1rem")
                 ui.label("NO EVIDENCE / REFUSAL")
     elif norm in ("UNSUPPORTED", "FAILED"):
-        with ui.badge(color="rose-700").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="rose-1")
+            .props("text-color=rose-9")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-rose-200")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("dangerous", size="xs")
+                ui.icon("dangerous", size="1rem")
                 ui.label("UNSUPPORTED")
     else:
-        with ui.badge(color="slate-600").classes("text-xs font-semibold px-2 py-0.5"):
+        with (
+            ui.badge(color="canvas")
+            .props("text-color=secondary-navy")
+            .classes("text-xs font-bold px-2 py-0.5 tracking-wider border border-subtle")
+        ):
             with ui.row().classes("items-center gap-1"):
-                ui.icon("info", size="xs")
+                ui.icon("info", size="1rem")
                 ui.label(norm)

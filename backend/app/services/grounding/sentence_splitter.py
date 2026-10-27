@@ -68,8 +68,19 @@ _CONVERSATIONAL_REGEX = re.compile(
     r"i hope this helps|"
     r"please let me know|"
     r"feel free to ask|"
-    r"note that"
+    r"the (?:sequence|workflow|process|steps|following) (?:is|are)(?:\s+(?:as follows|listed below|described below))?[:.]?\s*$|"
+    r"the following (?:is|are) (?:a summary|summarized|outlined|described)\b|"
+    r"note that|"
+    r"(?:(?:however|note|but),?\s+)?(?:the\s+)?user\s+question\b|"
+    r"(?:(?:however|note|but),?\s+)?we\s+(?:must|should)\s+(?:be\s+precise|output|ensure)\b"
     r")",
+    re.IGNORECASE,
+)
+
+
+# Matches introductory framing before colon followed by factual content
+_INTRO_COLON_REGEX = re.compile(
+    r"^((?:here (?:is|are)\s+)?the (?:sequence|workflow|process|steps|following) (?:is|are)(?:\s+(?:as follows|listed below|described below))?:)\s*(.+)$",
     re.IGNORECASE,
 )
 
@@ -124,6 +135,17 @@ class SentenceSplitter:
         while re.search(r"\d+\.\d+", protected):
             protected = re.sub(r"(\d+)\.(\d+)", rf"\1{_PERIOD_ESCAPE}\2", protected)
 
+        # 3b. Protect periods in list item enumerations (e.g. '1. Step', '2. Next')
+        protected = re.sub(r"(?<=\b\d)\.(?=\s+[A-Za-z])", _PERIOD_ESCAPE, protected)
+
+        # 3c. Protect periods in filenames (e.g. failover_protocol.pdf)
+        protected = re.sub(
+            r"\b([A-Za-z0-9_ -]+)\.(pdf|txt|docx?|html?|json|py|md|png|jpe?g)\b",
+            rf"\1{_PERIOD_ESCAPE}\2",
+            protected,
+            flags=re.IGNORECASE,
+        )
+
         # 4. Protect code blocks or backtick spans
         def _escape_backticks(match: re.Match[str]) -> str:
             return match.group(0).replace(".", _PERIOD_ESCAPE)
@@ -141,8 +163,13 @@ class SentenceSplitter:
         )
 
         for line in lines:
+            # If line starts with introductory framing followed by content (e.g. "The sequence is: 1. ...")
+            intro_match = _INTRO_COLON_REGEX.match(line)
+            if intro_match:
+                line = intro_match.group(2)
+
             # Strip leading list markers from line before extracting sentences
-            line_no_prefix = re.sub(r"^\s*\d+\.\s+", "", line)
+            line_no_prefix = re.sub(r"^\s*(?:step\s+)?\d+[\.:\)]\s*", "", line, flags=re.IGNORECASE)
             line_no_prefix = re.sub(r"^\s*[-*•]\s+", "", line_no_prefix).strip()
             if not line_no_prefix:
                 continue
@@ -162,9 +189,9 @@ class SentenceSplitter:
             if not seg_restored:
                 continue
 
-            # Strip leading list markers like "1. ", "- ", "* "
+            # Strip leading list markers like "1. ", "- ", "* ", "Step 1: "
             clean_seg = re.sub(r"^[-*•]\s+", "", seg_restored)
-            clean_seg = re.sub(r"^\d+\.\s+", "", clean_seg).strip()
+            clean_seg = re.sub(r"^(?:step\s+)?\d+[\.:\)]\s*", "", clean_seg, flags=re.IGNORECASE).strip()
             if not clean_seg:
                 continue
 

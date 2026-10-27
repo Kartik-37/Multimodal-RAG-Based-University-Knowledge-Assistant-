@@ -34,6 +34,10 @@ from scripts.bootstrap_admin import bootstrap_admin
 
 @pytest.fixture(autouse=True)
 def setup_admin_and_client():
+    from backend.app.db.session import check_database_connection
+
+    if not check_database_connection():
+        pytest.skip("PostgreSQL database is not available in current environment")
     bootstrap_admin("admin@university.edu", "AdminPass123!", "System Administrator")
 
 

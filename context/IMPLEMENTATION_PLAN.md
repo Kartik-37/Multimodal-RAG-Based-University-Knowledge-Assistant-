@@ -15,18 +15,24 @@
    - Documented actual current scope: Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV).
    - Documented Genuine Multimodal RAG (vision/OCR) as a future phase.
    - Resolved all conflicting or stale documentation across context files.
-3. **Phase 3: Frontend Test Suite Rewrite** — **PENDING**
-   - Delete and recreate stale presentation tests that freeze the obsolete UI.
-   - Protect behavior, API contracts, auth, security, and workflows.
-   - Strictly prohibit assertions on CSS classes, colors, HTML nesting, or animations.
-4. **Phase 4: Frontend Rebuild from Scratch** — **PENDING**
-   - Rebuild the NiceGUI frontend with simple, restrained, accessible UI.
-   - Inspect all 21+ screenshots in `screenshot/` as audit evidence.
-   - No glassmorphism, no decorative gradients, no unnecessary animations/hover effects.
-   - High priority on grounded answers, readable citations, and responsive design.
-5. **Future Roadmap Phases:**
-   - **Persistent Chat History:** Implement durable Conversation/Message models and cross-user isolation when ready.
-   - **Multimodal RAG:** Implement image extraction, vision-language representations, and visual retrieval pipelines.
+3. **Phase 3: Frontend Test Suite Rewrite** — **COMPLETED & VERIFIED**
+   - Stale presentation tests freezing obsolete UI deleted and replaced with behavioral contract suites.
+   - Contract test suites protect role-based access, API clients, citation mapping, source viewer, document lifecycles, and health telemetry.
+   - Zero brittle CSS class, color string, or animation assertions.
+4. **Phase 4: Frontend Rebuild from Scratch** — **COMPLETED & VERIFIED**
+   - NiceGUI frontend rebuilt with institutional palette (Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`).
+   - Rebuilt Student Dashboard, Student Chat, Authenticated Source Viewer, Course Library, Profile, Auth/Landing, and Administrator Workspace (Parts 7, 8, 9, 10A, 10B, 10B.1, and 10B.2 Service Health Board).
+   - Fully responsive on desktop (1440x900) and mobile (390x844).
+5. **Persistent Chat History** — **COMPLETED & VERIFIED**
+   - Durable PostgreSQL `conversations` and `messages` tables with server-side authorization and cross-user isolation.
+6. **Phase 11A: Multimodal RAG MVP for Visual PDF Evidence (Phases 11A, 11A.1, 11A.2, 11A.3)** — **COMPLETED, VERIFIED & FROZEN**
+   - Implemented genuine visual evidence ingestion, representation, indexing, hybrid retrieval, and grounded citations for diagrams, charts, figures, and scanned pages in academic PDFs.
+   - Bounded page candidate selection, full document scan, candidate scoring, PyMuPDF pre-render scale bounding (`VISION_MAX_IMAGE_PIXELS`), Ollama vision-language model integration (`qwen2.5vl:3b`), 1024-d text embedding (`qwen3-embedding:0.6b`), and citation provenance.
+   - Database safety guard `validate_test_database_url` protects production database `rag_assistant_db` from test scripts.
+   - Visual query intent detection and `+1.5` score priority in CrossEncoder reranking guarantees diagram evidence is prioritized for visual queries.
+   - LLM reasoning deliberation sanitization and claim verifier numeric list invariance ensure 100% grounded student chat answers.
+   - End-to-end verified with live models on isolated test database through `RAGOrchestrator` student chat path (`scripts/verify_multimodal_chat_real.py`), generating answers with verified `#page=2&view=FitH` citations (8/8 assertions passed).
+   - Architecture and interfaces strictly frozen.
 
 ---
 

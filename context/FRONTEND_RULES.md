@@ -210,3 +210,47 @@ For chat specifically verify:
 - source viewer loads actual document;
 - unauthorized document access is denied;
 - generation failure does not expose exception text.
+
+## Student Home & Role-Based Navigation Architecture (Part 6B)
+
+- **Chat is the Student Home:** `/chat` is the authoritative default home and landing workspace for authenticated students.
+- **Student Dashboard Retired:** The separate student dashboard at `/dashboard` has been retired from the normal student user flow to eliminate duplication of the composer, sidebar history, and course discovery.
+- **Direct `/dashboard` Routing:** When an authenticated student accesses `/dashboard`, they are automatically forwarded to `/chat`. When an authenticated administrator accesses `/dashboard`, they are served the real operational Administrator Dashboard.
+- **Student Navigation Links:** Shared student navigation contains `Assistant` (`/chat`), `Courses` (`/knowledge-bases`), and `Profile` (`/profile`). No duplicate "Home" or "Dashboard" link is shown to students.
+- **Safe Return Routing:** Login and auth portals validate `return_to` destinations against safe internal relative routes (`/chat`, `/knowledge-bases`, `/profile`, `/reader`, `/documents`, `/indexing`, `/dashboard`), resolving `/dashboard` to `/chat` for students.
+- **Admin Dashboard Preserved:** The operational Administrator Dashboard at `/dashboard` must never be redirected to chat for administrators.
+
+## Assistant vs. New Chat & Unified Conversation History (Part 6C)
+
+- **Assistant is a Destination:** The `Assistant` navigation link (`/chat`) navigates to the student assistant workspace while preserving the active conversation thread when returning from other pages (Courses or Profile).
+- **New Chat is an Action:** The `New Chat` button starts a fresh draft conversation, unselects any conversation, clears messages and citations, resets the composer draft, resets query scope to `ALL_COURSES`, updates browser URL, and closes the mobile drawer.
+- **Single Source of Truth for History:** Conversation history is rendered exclusively in the shared left sidebar drawer (`sidebar_drawer`). The chat page (`frontend/pages/chat_page.py`) must NOT create a duplicate mobile dialog (`mobile_history_dialog`) or extra history toggle buttons.
+- **Unified Mobile Drawer:** On mobile viewports (`< 1024px`), the header hamburger button opens the unified drawer containing New Chat, Assistant, Courses, Profile, and Recent Chats. Selecting an action automatically closes the drawer.
+- **In-Place Reactive Refresh:** Clicking New Chat or a saved conversation while on `/chat` updates the view in-place via `state.notify()` and `history.replaceState` without a full page reload.
+
+## Student Profile & Account Information Architecture (Part 7)
+
+- **Account Details, Not Credentials:** The account information section is labeled "Account Details", using clean sentence-case labels (`Full Name`, `Email Address`, `Account Role`, `Portal Access`, `Account Status`). No passwords, tokens, internal IDs, or secrets are ever displayed.
+- **Truthful Status Labels:** Avoid misleading security/session claims such as "Session Verified" or "Active Session" unless an authoritative backend verification check is run. Present truthful, factual labels: `● Signed in` badge and `Active` status row derived from `user.is_active`.
+- **Honest 3-State Course Loading:** Course loading strictly decouples into 3 distinct states:
+  1. *Populated Courses:* Preview up to 5 courses with verified document counts and "+N more courses" link to `/knowledge-bases`.
+  2. *Genuine Empty State:* Honest academic empty state ("No accessible courses are currently available.") without claiming errors or zero-count bugs.
+  3. *Course Request Failure:* Safely normalized error notification via `normalize_error()` explaining courses could not be loaded, with a working Retry action (never falsely claiming no courses exist).
+- **Deterministic Initials & Identity:** Profile displays full name with wrapping support (`break-words`), email with break support (`break-all`), deterministic initials avatar, and role badge. Missing or long names are handled safely.
+- **Comprehensive Sign-Out Reset:** Sign-out calls `api_client.logout()`, resets in-memory `AppState` (`clear_chat()`, `active_kb = None`, `reset_session_state()`), and redirects to login without deleting backend-persisted conversations.
+- **Administrator Profile Integrity:** Admin profile retains operational governance summary ("Governance & Permissions", "Management Scope", "Assigned Permissions"), and direct navigation to `Manage Courses`, `Indexing Center`, and `Return to Dashboard`.
+
+## Global Breadcrumb Removal, Avatar Visibility & Initials Rules (Part 7B)
+
+- **No Redundant Breadcrumb Strip:** The shared layout (`frontend/components/layout.py`) must NOT render the redundant `[Back] Assistant > ...` navigation bar on normal student or administrator pages. Primary navigation belongs in the shared sidebar drawer. Content starts at a clean, natural offset (`padding: 2rem 1rem`) below the application header.
+- **Genuine Navigation Preserved:** Do not remove the reader's in-document return navigation (`/reader`), sidebar navigation, or Administrator `Return to Dashboard`.
+- **Visible Avatar Specification:** The profile identity card avatar must use `.bg-surface-navy` (or `.bg-primary-navy` backed by `var(--color-atlas-navy)`), `border-2 border-gold`, and `text-inverted` (`#FAF6F0`) with explicit dimensions (`w-14 h-14 sm:w-16 sm:h-16`) and flex centering. It must never rely on missing utility classes that cause white-on-white text against elevated surfaces.
+- **Unified Initials Derivation:** Use `get_user_initials(full_name, email)` centrally. Always strip parenthetical role annotations (e.g. `(Student)`, `(Admin)`, `(Faculty)`), extract only alphabetical characters, handle single-word names cleanly (e.g. `Morgan` -> `MO`), and fall back safely to email prefix or `"U"`. Never allow punctuation (like `'('`) to enter avatar badges.
+- **Profile Single New Chat Action (Superseded by Part 7C):** In Part 7B, New Chat was briefly consolidated into the identity card; in Part 7C, this was recognized as redundant with the global sidebar and completely removed.
+
+## Profile Architecture & Complete Elimination of In-Page Chat Launchers (Part 7C)
+
+- **Profile is an Account Page, Not a Chat Launcher:** The Profile page (`/profile`) must NOT render any `New Chat`, `Ask Assistant`, `Return to Assistant`, `Start Chat`, or other chat-launching action. The Profile page is exclusively an account-information and academic-catalog access page. The application shell's global left sidebar remains the sole and authoritative provider of `+ New Chat`.
+- **Elimination of Duplicated Identity Cards:** Never repeat Full Name, Email Address, and Account Role in a separate "Account Details" card. All identity, portal access, and session metadata belong in the compact top identity header where each piece of data appears exactly once.
+- **Content-Driven Layout (Zero Stretched Blank Cards):** Never use `flex flex-col justify-between items-stretch` across adjacent cards with unequal content height. Layouts must be content-driven to prevent empty white voids.
+- **Natural Mobile Typography & Word Wrapping:** Mobile email addresses must use `[overflow-wrap:anywhere] break-words text-xs sm:text-sm` instead of unconstrained `break-all` to prevent ugly mid-word line breaks (such as `ed\nu`). Avatars and names must scale gracefully (`w-13 h-13 sm:w-16 sm:h-16`, `text-xl sm:text-2xl`).

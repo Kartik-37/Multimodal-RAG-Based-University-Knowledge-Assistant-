@@ -17,6 +17,7 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
@@ -41,7 +42,7 @@ from backend.app.api.deps import (
 from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
-from backend.app.models.indexing_job import IndexingJob
+from backend.app.models.indexing_job import IndexingJob, IndexingJobStage, IndexingJobStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import User, UserRole
 from backend.app.schemas.document import DocumentChunkResponse, DocumentResponse
@@ -280,15 +281,21 @@ def get_course_summaries(
 def list_indexing_jobs(
     current_user: AuthenticatedAdmin,
     db: DatabaseSession,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ) -> list[IndexingJobResponse]:
     """
     List persistent vector indexing jobs across all courses authorized for current admin.
     Returns truthful chunk, vector, and stage progress.
     """
-    if not check_user_permission(current_user, Permission.DOCUMENT_VIEW):
+    if not (
+        check_user_permission(current_user, Permission.DOCUMENT_VIEW)
+        or check_user_permission(current_user, Permission.DOCUMENT_INDEX)
+        or check_user_permission(current_user, Permission.DOCUMENT_INDEX_RETRY)
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: Missing required permission 'DOCUMENT_VIEW'.",
+            detail="Access denied: Missing required permission to view indexing jobs.",
         )
 
     auth_kb_ids = get_authorized_knowledge_base_ids(current_user, db)
@@ -305,7 +312,8 @@ def list_indexing_jobs(
         .join(KnowledgeBase, IndexingJob.knowledge_base_id == KnowledgeBase.id)
         .where(IndexingJob.knowledge_base_id.in_(auth_kb_ids))
         .order_by(IndexingJob.created_at.desc())
-        .limit(100)
+        .limit(limit)
+        .offset(offset)
     )
 
     rows = db.execute(stmt).all()
@@ -725,6 +733,12 @@ async def upload_document(
         document_id=document_id,
         extension=validated.extension,
         content=validated.content,
+        file_obj=validated.file_obj or (file.file if file else None),
+    )
+
+    # Check indexing authority of the uploading administrator
+    can_index = check_user_permission(current_user, Permission.DOCUMENT_INDEX) or getattr(
+        current_user, "is_main", False
     )
 
     # Create document record in PENDING state
@@ -738,13 +752,31 @@ async def upload_document(
         file_size_bytes=validated.file_size_bytes,
         content_hash=validated.content_hash,
         status=DocumentStatus.PENDING,
+        indexing_status=IndexingStatus.PENDING,
     )
     db.add(doc)
+
+    # Initialize persistent IndexingJob tracking the SAVING stage
+    job = IndexingJob(
+        id=uuid.uuid4(),
+        document_id=doc.id,
+        knowledge_base_id=kb.id,
+        status=IndexingJobStatus.PROCESSING.value,
+        stage=IndexingJobStage.SAVING.value,
+        total_chunks=0,
+        processed_chunks=0,
+        embedded_chunks=0,
+        indexed_chunks=0,
+        progress_percent=0.0,
+        started_at=datetime.now(UTC),
+        attempt_number=1,
+    )
+    db.add(job)
     db.commit()
     db.refresh(doc)
 
-    # Dispatch ingestion background task
-    background_tasks.add_task(process_document_task, doc.id)
+    # Dispatch ingestion background task with automatic indexing continuation
+    background_tasks.add_task(process_document_task, doc.id, auto_index=can_index, job_id=job.id)
 
     response.status_code = status.HTTP_201_CREATED
     return DocumentResponse(
@@ -763,6 +795,13 @@ async def upload_document(
         updated_at=doc.updated_at,
         indexed_at=doc.indexed_at,
         chunk_count=0,
+        job_id=job.id,
+        current_stage=job.stage,
+        progress_percent=0.0,
+        total_chunks=0,
+        processed_chunks=0,
+        embedded_chunks=0,
+        indexed_chunks=0,
     )
 
 
@@ -802,6 +841,49 @@ def list_documents(
             select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
         ).scalar_one()
 
+        job = (
+            db.execute(
+                select(IndexingJob)
+                .where(IndexingJob.document_id == doc.id)
+                .order_by(IndexingJob.created_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+
+        current_stage = (
+            job.stage
+            if job
+            else (
+                "COMPLETED"
+                if doc.indexing_status == IndexingStatus.COMPLETED
+                else (
+                    "FAILED"
+                    if doc.status == DocumentStatus.FAILED or doc.indexing_status == IndexingStatus.FAILED
+                    else (
+                        "QUEUED_FOR_INDEXING"
+                        if doc.status == DocumentStatus.COMPLETED
+                        else (
+                            "EXTRACTING"
+                            if doc.status == DocumentStatus.PROCESSING
+                            else "PENDING"
+                        )
+                    )
+                )
+            )
+        )
+        progress_pct = (
+            job.progress_percent
+            if job
+            else (100.0 if doc.indexing_status == IndexingStatus.COMPLETED else 0.0)
+        )
+        tot_chk = job.total_chunks if job else chunk_count
+        emb_chk = (
+            job.embedded_chunks
+            if job
+            else (chunk_count if doc.indexing_status == IndexingStatus.COMPLETED else 0)
+        )
+
         results.append(
             DocumentResponse(
                 id=doc.id,
@@ -819,6 +901,13 @@ def list_documents(
                 updated_at=doc.updated_at,
                 indexed_at=doc.indexed_at,
                 chunk_count=chunk_count,
+                job_id=job.id if job else None,
+                current_stage=current_stage,
+                progress_percent=progress_pct,
+                total_chunks=tot_chk,
+                processed_chunks=job.processed_chunks if job else emb_chk,
+                embedded_chunks=emb_chk,
+                indexed_chunks=job.indexed_chunks if job else emb_chk,
             )
         )
     return results
@@ -858,6 +947,49 @@ def get_document(
         select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == doc.id)
     ).scalar_one()
 
+    job = (
+        db.execute(
+            select(IndexingJob)
+            .where(IndexingJob.document_id == doc.id)
+            .order_by(IndexingJob.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+
+    current_stage = (
+        job.stage
+        if job
+        else (
+            "COMPLETED"
+            if doc.indexing_status == IndexingStatus.COMPLETED
+            else (
+                "FAILED"
+                if doc.status == DocumentStatus.FAILED or doc.indexing_status == IndexingStatus.FAILED
+                else (
+                    "QUEUED_FOR_INDEXING"
+                    if doc.status == DocumentStatus.COMPLETED
+                    else (
+                        "EXTRACTING"
+                        if doc.status == DocumentStatus.PROCESSING
+                        else "PENDING"
+                    )
+                )
+            )
+        )
+    )
+    progress_pct = (
+        job.progress_percent
+        if job
+        else (100.0 if doc.indexing_status == IndexingStatus.COMPLETED else 0.0)
+    )
+    tot_chk = job.total_chunks if job else chunk_count
+    emb_chk = (
+        job.embedded_chunks
+        if job
+        else (chunk_count if doc.indexing_status == IndexingStatus.COMPLETED else 0)
+    )
+
     return DocumentResponse(
         id=doc.id,
         knowledge_base_id=doc.knowledge_base_id,
@@ -874,6 +1006,13 @@ def get_document(
         updated_at=doc.updated_at,
         indexed_at=doc.indexed_at,
         chunk_count=chunk_count,
+        job_id=job.id if job else None,
+        current_stage=current_stage,
+        progress_percent=progress_pct,
+        total_chunks=tot_chk,
+        processed_chunks=job.processed_chunks if job else emb_chk,
+        embedded_chunks=emb_chk,
+        indexed_chunks=job.indexed_chunks if job else emb_chk,
     )
 
 
@@ -923,24 +1062,50 @@ def get_document_index_status(
         ).scalar_one()
         indexed_count = chunk_count if doc.indexing_status == IndexingStatus.COMPLETED else 0
         pct = 100.0 if doc.indexing_status == IndexingStatus.COMPLETED else 0.0
+        stage = (
+            "COMPLETED"
+            if doc.indexing_status == IndexingStatus.COMPLETED
+            else (
+                "FAILED"
+                if doc.status == DocumentStatus.FAILED or doc.indexing_status == IndexingStatus.FAILED
+                else (
+                    "QUEUED_FOR_INDEXING"
+                    if doc.status == DocumentStatus.COMPLETED
+                    else (
+                        "EXTRACTING"
+                        if doc.status == DocumentStatus.PROCESSING
+                        else "VALIDATING"
+                    )
+                )
+            )
+        )
+        overall_status = (
+            "COMPLETED"
+            if doc.indexing_status == IndexingStatus.COMPLETED
+            else (
+                "FAILED"
+                if doc.status == DocumentStatus.FAILED or doc.indexing_status == IndexingStatus.FAILED
+                else (
+                    "QUEUED"
+                    if doc.status == DocumentStatus.COMPLETED
+                    else "PROCESSING"
+                )
+            )
+        )
 
         return IndexingJobResponse(
             id=None,
             job_id=None,
             document_id=doc.id,
             knowledge_base_id=doc.knowledge_base_id,
-            status=doc.indexing_status.value
-            if hasattr(doc.indexing_status, "value")
-            else str(doc.indexing_status),
-            stage="COMPLETED"
-            if doc.indexing_status == IndexingStatus.COMPLETED
-            else ("FAILED" if doc.indexing_status == IndexingStatus.FAILED else "PREPARING"),
+            status=overall_status,
+            stage=stage,
             total_chunks=chunk_count,
             processed_chunks=indexed_count,
             embedded_chunks=indexed_count,
             indexed_chunks=indexed_count,
             progress_percent=pct,
-            error_message=doc.indexing_error,
+            error_message=doc.indexing_error or doc.error_message,
             attempt_number=1 if doc.indexing_status != IndexingStatus.PENDING else 0,
             started_at=doc.created_at,
             completed_at=doc.indexed_at,

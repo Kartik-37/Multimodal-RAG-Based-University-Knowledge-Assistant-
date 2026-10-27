@@ -14,8 +14,9 @@ NiceGUI frontend (Presentation Layer)
 
 ### RAG Scope & Truthfulness
 
-> **Current Implementation:** Production-grade **Multi-Format Text RAG** supporting PDF, DOCX, TXT, Markdown, and CSV.  
-> **Roadmap Note:** Genuine **Multimodal RAG** (vision-language models, OCR pipelines, image embeddings, visual retrieval) is a planned future phase. The official academic project title is preserved.
+> **Current Implementation (Phases 11A, 11A.1, 11A.2, 11A.3 — COMPLETED & FROZEN):** **Visual PDF Evidence + Multi-Format Text RAG**. Supports PDF visual diagrams, flowcharts, charts, and scanned pages alongside structured text from PDF, DOCX, TXT, Markdown, and CSV.
+> **Visual Architecture:** PDF text + selected visual pages → PyMuPDF bounded extraction (`_evaluate_page()` scoring) → local vision-language analysis (`qwen2.5vl:3b`) → structured text representation of visual evidence → chunking and 1024-d text embedding (`qwen3-embedding:0.6b`) → pgvector hybrid retrieval → CrossEncoder reranking with `+1.5` visual query intent boost → grounded answer with `#page=N` PDF citation.
+> **Roadmap Note:** Direct pixel-vector CLIP embeddings, audio, video, and general web scraping remain deferred to future milestones.
 
 RAG query flow:
 
@@ -122,14 +123,25 @@ At minimum, evaluate the need for:
 - Citation
 - AuditEvent
 
-Avoid storing duplicate data without a reason.
+A document and its indexing jobs follow an explicit, verified lifecycle:
+1. `UPLOADING` — Browser sends raw document bytes.
+2. `VALIDATING` — Backend verifies format, size limit, and mime signature.
+3. `SAVING` — File safely stored in filesystem/blob storage and persistent DB record created.
+4. `EXTRACTING` — Parser extracts plain text and structural metadata.
+5. `CHUNKING` — Document split into configured chunk windows and persisted.
+6. `QUEUED_FOR_INDEXING` — Ingestion succeeded; persistent `IndexingJob` queued.
+7. `EMBEDDING` — Dense vector representations computed for each chunk.
+8. `WRITING_VECTORS` (`STORING_VECTORS`) — Generated embeddings persisted to pgvector.
+9. `VERIFYING` — Vector counts validated against chunk total.
+10. `COMPLETED` — Document fully indexed and ready for retrieval.
+Failure state: `FAILED` (with stage-specific diagnostic explanation).
 
-A document should have a clear lifecycle, for example:
-UPLOADED → QUEUED → PROCESSING → INDEXED
-and failure states such as:
-FAILED
-
-State transitions must be validated.
+### Automatic Pipeline Orchestration
+Upload automatically transitions to Ingestion (`process_document_task`).
+Upon successful chunk storage, the pipeline verifies admin indexing authority (`DOCUMENT_INDEX` or `is_main`).
+If authorized, `IngestionPipeline` automatically creates/primes the `IndexingJob`, signals `notify_indexing_worker()`, and dispatches `index_document_task()`.
+If unauthorized, the document remains in `QUEUED_FOR_INDEXING` awaiting authorized action.
+State transitions must be validated and idempotent against duplicate callbacks or race conditions.
 
 ## Database rules
 
@@ -282,3 +294,36 @@ The application enforces a strict separation between the FastAPI authentication 
   - Motion restricted strictly to real state communication (minimal loading/progress).
   - Designed responsive behavior for desktop, tablet, and mobile.
   - Citations and grounded answers are the primary visual focus of the chat experience.
+
+## Student Entry Route & Navigation Architecture (Part 6B & 6C)
+
+1. **Primary Student Workspace**:
+   - `/chat` is the default landing workspace for authenticated students.
+   - Successful student logins and registrations navigate directly to `/chat`.
+   - The separate student dashboard has been retired from the student flow to eliminate functional duplication of the composer, persistent sidebar history, and Course Library.
+2. **Role-Aware `/dashboard` Route**:
+   - When an authenticated student accesses `/dashboard`, they are client-side forwarded to `/chat`.
+   - When an authenticated administrator (`user.role == "ADMIN"`) accesses `/dashboard`, the real operational Administrator Dashboard is served.
+3. **Student Navigation & History Architecture (Part 6C)**:
+   - **Assistant (`/chat`)**: Workspace destination in the sidebar. Preserves active conversation history and state when returning from other pages (Courses or Profile).
+   - **New Chat (`+ New Chat`)**: Unambiguous primary action in sidebar. Clears active messages and citations, unselects active conversation, clears draft, resets search scope to `ALL_COURSES`, updates browser URL, and closes mobile drawer without deleting saved conversations.
+   - **Unified Conversation History**: The shared application drawer (`sidebar_drawer`) is the single source of truth for conversation history on both desktop and mobile. Duplicate chat-page mobile history dialogs and duplicate toggle buttons have been eliminated.
+   - Breadcrumbs resolve to `Assistant` (`/chat`) as root for students and `Dashboard` (`/dashboard`) as root for administrators.
+
+## Multimodal PDF Evidence Architecture (Phase 11A, 11A.1 & 11A.2)
+
+1. **Selective Visual Candidate Detection**:
+   - Native PyMuPDF parser inspects all pages cheaply without rendering or early breakout.
+   - Evaluates structural signals: raster image coverage (>5%), vector drawing count/area, sparse text (<50 chars), and visual text cues (`Figure`, `Diagram`, `Flowchart`, `Architecture`, etc.).
+   - Decorative line filter excludes dense text pages (>300 chars) with 5–14 simple vector paths and zero visual cues, preventing unnecessary vision processing.
+   - Top candidates ranked by relevance score and capped at `VISION_MAX_PAGES_PER_DOC` (default 3), processed in page order.
+2. **Pre-Render Memory Scale Bounding**:
+   - Calculates target scale matrix `pymupdf.Matrix(effective_scale, effective_scale)` prior to allocating `page.get_pixmap()` to guarantee total pixels do not exceed `VISION_MAX_IMAGE_PIXELS` (default 1536×1536).
+   - Alpha channel explicitly disabled (`alpha=False`). Peak memory is bounded before buffer allocation.
+3. **Sequential Model Processing & Memory Safety**:
+   - Single-model-at-a-time execution policy: vision model (`qwen2.5vl:3b`) unloaded before text embedding (`qwen3-embedding:0.6b`) and generation (`qwen3:4b`).
+   - Recommended Windows environment variable: `OLLAMA_MAX_LOADED_MODELS=1`.
+4. **Full Chat-Answer Path & Provenance Citations**:
+   - Visual evidence parsed into `ParsedSection` with `source_modality="visual"` and indexed into 1024-d pgvector.
+   - Hybrid retrieval and cross-encoder reranking feed visual evidence directly to `RAGOrchestrator`.
+   - LLM generation cites visual evidence with exact `#page=N&view=FitH` provenance and visual modality metadata.

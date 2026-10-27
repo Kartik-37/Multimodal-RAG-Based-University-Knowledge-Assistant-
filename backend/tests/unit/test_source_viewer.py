@@ -95,3 +95,57 @@ class TestSourceViewerUnitContracts:
         assert "auth_session_token" not in substituted
         assert "token=" not in substituted
         assert "session=" not in substituted
+
+    def test_non_pdf_unpaged_citation_resolution(self) -> None:
+        """Requirement: Non-PDF citations (DOCX, TXT) with page_number=None map without fabricating page."""
+        citations = [
+            CitationDTO(
+                document_name="cs101_lab_protocols.docx",
+                page_number=None,
+                chunk_id="chk-lab-01",
+                snippet="Lab submissions are due weekly on Fridays.",
+                relevance_score=0.91,
+                document_id="doc-docx-789",
+                course_name="CS101",
+            )
+        ]
+        text = "Follow guidelines in [1]."
+        resolved = extract_resolved_citations(text, citations)
+        assert len(resolved) == 1
+        assert resolved[0].citation.page_number is None
+        assert resolved[0].citation.document_name == "cs101_lab_protocols.docx"
+
+    def test_multi_page_citations_from_same_document_resolve_distinct_pages(self) -> None:
+        """Requirement: Multiple citations referencing different pages of same document resolve cleanly."""
+        doc_id = "doc-syllabus-uuid"
+        citations = [
+            CitationDTO(
+                document_name="syllabus.pdf",
+                page_number=2,
+                chunk_id="chk-syl-p2",
+                snippet="Grading breakdown: 30% labs.",
+                relevance_score=0.95,
+                document_id=doc_id,
+            ),
+            CitationDTO(
+                document_name="syllabus.pdf",
+                page_number=5,
+                chunk_id="chk-syl-p5",
+                snippet="Midterm covers weeks 1-7.",
+                relevance_score=0.92,
+                document_id=doc_id,
+            ),
+            CitationDTO(
+                document_name="syllabus.pdf",
+                page_number=8,
+                chunk_id="chk-syl-p8",
+                snippet="Late submissions penalized 10% per day.",
+                relevance_score=0.89,
+                document_id=doc_id,
+            ),
+        ]
+        text = "Grading is covered in [1], exam in [2], and late penalty in [3]."
+        resolved = extract_resolved_citations(text, citations)
+        assert len(resolved) == 3
+        assert [r.citation.page_number for r in resolved] == [2, 5, 8]
+        assert all(r.citation.document_id == doc_id for r in resolved)

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
         description="Filesystem path for local uploaded documents.",
     )
     MAX_UPLOAD_SIZE_BYTES: int = Field(
-        default=20 * 1024 * 1024,  # 20 MB default limit
+        default=100 * 1024 * 1024,  # 100 MiB default limit (104857600 bytes)
         description="Maximum allowed uploaded file size in bytes.",
     )
     ALLOWED_EXTENSIONS: set[str] = Field(
@@ -90,8 +90,38 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_LLM_MODEL: str = "qwen3:4b"
     OLLAMA_EMBED_MODEL: str = "qwen3-embedding:0.6b"
+    OLLAMA_VISION_MODEL: str = Field(
+        default="qwen2.5vl:3b",
+        description="Ollama vision-language model for PDF visual content analysis.",
+    )
+    VISION_PROCESSING_ENABLED: bool = Field(
+        default=True,
+        description="Whether PDF visual content analysis is enabled during ingestion.",
+    )
+    VISION_MAX_PAGES_PER_DOC: int = Field(
+        default=3,
+        ge=1,
+        le=50,
+        description="Maximum visual candidate pages to analyze per PDF to bound compute/RAM.",
+    )
+    VISION_REQUEST_TIMEOUT: float = Field(
+        default=180.0,
+        ge=5.0,
+        le=600.0,
+        description="Timeout in seconds for vision model inference calls.",
+    )
+    VISION_RENDER_DPI: int = Field(
+        default=100,
+        ge=72,
+        le=300,
+        description="DPI resolution for rendering PDF pages for visual analysis.",
+    )
+    VISION_MAX_IMAGE_PIXELS: int = Field(
+        default=1536 * 1536,
+        description="Maximum total pixel count for rendered images to prevent memory exhaustion.",
+    )
     OLLAMA_EMBED_BATCH_SIZE: int = Field(
-        default=4,
+        default=8,
         ge=1,
         description="Maximum chunk count per Ollama embedding batch to prevent local inference timeouts.",
     )
@@ -99,6 +129,28 @@ class Settings(BaseSettings):
         default=120.0,
         ge=5.0,
         description="HTTP timeout in seconds for Ollama embedding batch calls.",
+    )
+
+    # Selective OCR Configuration
+    OCR_ENABLED: bool = Field(
+        default=True,
+        description="Whether selective OCR is enabled when Tesseract is available.",
+    )
+    OCR_MAX_PAGES_PER_DOC: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of pages per PDF eligible for selective OCR.",
+    )
+    OCR_SPARSE_TEXT_THRESHOLD: int = Field(
+        default=30,
+        ge=0,
+        le=500,
+        description="Character threshold below which a page containing images is evaluated for selective OCR.",
+    )
+    TESSERACT_CMD: str | None = Field(
+        default=None,
+        description="Explicit filesystem path to tesseract.exe on Windows if not in PATH.",
     )
 
     # LLM Generation Defaults
@@ -109,7 +161,7 @@ class Settings(BaseSettings):
         description="Sampling temperature for grounded generation (low values favor evidence-bounded responses).",
     )
     LLM_MAX_OUTPUT_TOKENS: int = Field(
-        default=384,
+        default=768,
         ge=1,
         le=4096,
         description="Maximum generation token budget for the model response.",

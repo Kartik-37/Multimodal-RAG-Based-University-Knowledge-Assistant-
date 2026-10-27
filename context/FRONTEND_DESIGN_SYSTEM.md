@@ -105,21 +105,23 @@ The RAG Assistant presentation layer is an **editorial academic workspace** insp
 
 ## 4. Navigation Architecture
 
-### Single Unified Student Navigation Header
-- **Desktop**: A single, elegant horizontal top navigation bar anchored to the top of the viewport.
-  - Brand Mark: `RAG Assistant` (with subtle gold book icon).
-  - Navigation Links:
+### Authoritative Left Sidebar Shell & Chat Workspace
+- **Desktop (>= 1024px)**: A sleek, purposeful left sidebar shell (`ui.left_drawer`) inspired by modern AI assistant workspaces, maintaining the Ivory `#E8E0D2`, Gold `#B89A5A`, and Deep Atlas Navy `#0E1D61` palette.
+  - **Top Branding**: Academic crest icon, "RAG Assistant" in editorial typography, and "University Assistant" / "Admin Portal" subtext.
+  - **Primary Action**: Prominent `+ New Chat` button (with single clean `+` icon) that resets active conversation and provides an immediate draft workspace.
+  - **Upper Navigation Section**: Essential high-level links:
     1. **Home** (`/dashboard`)
-    2. **Ask Assistant** (`/chat`)
-    3. **Courses** (`/knowledge-bases`)
-    4. **Profile** (`/profile`)
-  - User Status & Action: Student Name, Role badge (`STUDENT`), and Sign Out action.
-- **Mobile / Tablet**: Responsive collapsible menu drawer carrying the identical 4 navigation links without layout clipping or hidden controls.
+    2. **Courses** (`/knowledge-bases`)
+    3. **Profile** (`/profile`)
+    *(Note: "Ask Assistant" is intentionally omitted from navigation links because "New Chat" sits directly above it, avoiding duplicate actions).*
+  - **Lower History Section**: `RECENT CHATS` stream rendering authenticated, persistent conversation threads ordered by recent activity, with active state highlighting and hover delete actions.
+  - **Base Profile Bar**: Student initials avatar ring, display name, role badge (`Student`), and Sign Out button.
+- **Mobile / Tablet (< 1024px)**: Compact mobile top header with hamburger menu button that opens the sidebar drawer, providing seamless access to New Chat, navigation links, and Recent Chats with zero layout clipping or horizontal overflow.
 - **Strictly Eliminated**:
-  - No persistent left sidebar on student screens.
-  - No duplicate top navbar and sidebar simultaneously.
-  - No "BCA" static badge in the global navigation bar.
-  - No generic breadcrumb chains ("<- Back to Dashboard / Dashboard > ...") on normal student pages. A contextual back button is allowed only in focused source inspection.
+  - No duplicate "New Chat" buttons inside the chat page header.
+  - No duplicate "Ask Assistant" links competing with the New Chat button.
+  - No old-fashioned dropdown arrows (`expand_more`) on the course selector.
+  - No generic breadcrumb chains on standard student pages.
 
 ---
 

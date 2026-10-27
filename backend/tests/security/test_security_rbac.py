@@ -44,6 +44,11 @@ from backend.app.models.user import User, UserRole, UserSession
 @pytest.fixture(autouse=True)
 def clean_security_db(db_engine) -> Generator[None, None, None]:
     """Clean all application tables before and after each test function."""
+    from backend.app.db.session import check_database_connection
+
+    if not check_database_connection(db_engine):
+        pytest.skip("PostgreSQL database is not available in current environment")
+
     with db_engine.begin() as conn:
         conn.execute(
             text(
@@ -59,6 +64,7 @@ def clean_security_db(db_engine) -> Generator[None, None, None]:
                 "user_sessions, users CASCADE;"
             )
         )
+
 
 
 def create_user_direct(

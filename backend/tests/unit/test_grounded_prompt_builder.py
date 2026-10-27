@@ -68,6 +68,8 @@ class TestGroundedPromptBuilderUnit:
         assert "4. INSUFFICIENT EVIDENCE POLICY" in instruction
         assert "5. CONFLICTING EVIDENCE" in instruction
         assert "6. CONFIDENTIALITY" in instruction
+        assert "7. DIRECT OUTPUT" in instruction
+        assert "8. CONCISE AND DIRECT BY DEFAULT" in instruction
 
     def test_format_evidence_item_metadata_and_delimiters(self) -> None:
         """Verify single item is wrapped with delimiters and contains source title, page, section."""

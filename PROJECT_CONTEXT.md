@@ -42,14 +42,15 @@ The project is governed by a strict phased plan.
   - *Resolved:* Student course access confirmed as **authoritative catalog policy**: all active, student-visible courses are automatically available without prior enrollment; restricted courses require membership (`KnowledgeBaseMember`).
   - *Resolved:* Untracked scratch files removed; working tree clean.
 - **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED & VERIFIED**.
-- **Phase 3: Test Suite Rewrite from Scratch** — **PENDING** (Phase 3 will delete/recreate stale presentation tests around behavior/contracts).
-- **Phase 4: Frontend Rebuild from Scratch** — **IN PROGRESS** (Strictly governed by `context/FRONTEND_DESIGN_SYSTEM.md` using Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`).
-- **Multimodal RAG** — **FUTURE / DEFERRED** (Current system is multi-format text RAG).
-- **Persistent Chat History** — **FUTURE / DEFERRED** (Process-memory `AppState._chat_history` is not persistent).
+- **Phase 3: Test Suite Rewrite from Scratch** — **COMPLETED & VERIFIED** (Contract-based behavioral test suites protect API contracts, auth, security, RBAC, document workflows, and citations without brittle CSS/DOM assertions).
+- **Phase 4: Frontend Rebuild from Scratch** — **COMPLETED & VERIFIED** (Rebuilt NiceGUI presentation layer governed by `context/FRONTEND_DESIGN_SYSTEM.md` across Student Dashboard, Chat, Source Viewer, Courses, Profile, Auth, and Administrator workspace including Part 10B.2 Service Health Board).
+- **Persistent Chat History** — **COMPLETED & VERIFIED** (Persistent PostgreSQL `conversations` and `messages` storage with server-side authorization and cross-user isolation).
+- **Phase 11A: Multimodal RAG MVP for Visual PDF Evidence (Phases 11A, 11A.1, 11A.2, 11A.3)** — **COMPLETED & VERIFIED** (Visual diagram, chart, flowchart, and scanned page extraction via PyMuPDF; structured analysis via local Ollama vision model `qwen2.5vl:3b`; 1024-d pgvector embedding via `qwen3-embedding:0.6b`; visual query intent prioritization (+1.5 score boost) in CrossEncoder reranker; grounded generation via `qwen3:4b`; full verified citation mapping to page number and visual modality in source viewer; database isolation guard `validate_test_database_url` enforced; verified end-to-end with `scripts/verify_multimodal_chat_real.py`). **Implementation is strictly frozen.**
+- **Phase 11A.3.1 & Phase 12A: Grounding Classification Correction, Test Integrity & Safe Packaging** — **COMPLETED & VERIFIED** (Introductory colon framing `The sequence is:` separated from substantive assertions; list numbering isolated from quantitative hallucination checks; educational step-by-step answers preserved; strict acceptance verified with 100% `FULLY_SUPPORTED` real-chat grounding; disposable scratch files cleaned; formal tests audited with 100% retention; 226 screenshots cataloged; safe archive `dist/RAG-Assistant-safe.zip` built and verified with zero secrets or private storage content). **Implementation is strictly frozen.**
 
 ## Screenshot reference rule
 
-The screenshots in the `screenshot/` folder document the existing implementation and its defects. They are **audit evidence, not a design template**. Future Phase 4 frontend work must inspect **all** supplied screenshots individually before redesigning corresponding areas.
+The screenshots in the `screenshot/` folder document the existing implementation, redesign milestones, and verification evidence. All routes have been validated and captured.
 
 ## Architecture baseline
 

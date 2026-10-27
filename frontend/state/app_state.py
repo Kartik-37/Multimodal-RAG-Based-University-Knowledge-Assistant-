@@ -4,9 +4,12 @@ Frontend Presentation State Management.
 Maintains UI state across page views:
 - Active knowledge base selection
 - Selected citation evidence for detail view
-- Active conversation message thread
+- Active conversation message thread and persistent conversation tracking
+- Decoupled background query synthesis and real cancellation
 """
 
+import asyncio
+import uuid
 from typing import Any
 
 from frontend.client.api_client import _get_browser_session_id, api_client
@@ -29,11 +32,102 @@ class AppState:
         self._is_generating: bool = False
         self._generation_error: str | None = None
         self._active_task: Any = None
+        self._active_conversation_id: str | None = None
+        self._generation_id: int = 0
+        self._is_cancelled: bool = False
+        self._listeners: list[Any] = []
+        self._reader_context: dict[str, Any] = {}
+        self._active_scope: str = "ALL_COURSES"
+        self._active_kb_id: str | None = None
+
+    @property
+    def reader_context(self) -> dict[str, Any]:
+        """Server-managed active reader session context (snippet, page, origin)."""
+        return getattr(self, "_reader_context", {})
+
+    def set_reader_context(
+        self,
+        document_id: str | None = None,
+        document_name: str | None = None,
+        page_number: int | None = None,
+        kb_id: str | None = None,
+        course_name: str | None = None,
+        snippet: str | None = None,
+        return_to: str | None = None,
+        conv_id: str | None = None,
+        citation: CitationDTO | None = None,
+    ) -> None:
+        """Store transient reader context safely in session state."""
+        self._reader_context = {
+            "document_id": document_id,
+            "document_name": document_name,
+            "page_number": page_number,
+            "kb_id": kb_id,
+            "course_name": course_name,
+            "snippet": snippet,
+            "return_to": return_to,
+            "conv_id": conv_id,
+            "citation": citation,
+        }
+
+    def subscribe(self, listener: Any) -> Any:
+        """Register a callback for state changes (e.g. conversation switches)."""
+        self._listeners.append(listener)
+        return lambda: self._listeners.remove(listener) if listener in self._listeners else None
+
+    def notify(self) -> None:
+        """Notify all registered listeners of a state change."""
+        for fn in list(self._listeners):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    @property
+    def active_conversation_id(self) -> str | None:
+        """Active persistent conversation UUID, or None if in draft new chat."""
+        return self._active_conversation_id
+
+    @active_conversation_id.setter
+    def active_conversation_id(self, conv_id: str | None) -> None:
+        self._active_conversation_id = conv_id
 
     @property
     def is_generating(self) -> bool:
         """Check if assistant is actively synthesizing an answer in the background."""
         return self._is_generating
+
+    @is_generating.setter
+    def is_generating(self, value: bool) -> None:
+        self._is_generating = value
+
+    @property
+    def active_scope(self) -> str:
+        """Active question query scope ('ALL_COURSES', 'COURSE', 'DOCUMENT')."""
+        return getattr(self, "_active_scope", "ALL_COURSES")
+
+    @active_scope.setter
+    def active_scope(self, value: str) -> None:
+        self._active_scope = value
+
+    @property
+    def active_kb_id(self) -> str | None:
+        """Active course ID filter, or None for ALL_COURSES."""
+        return getattr(self, "_active_kb_id", None)
+
+    @active_kb_id.setter
+    def active_kb_id(self, value: str | None) -> None:
+        self._active_kb_id = value
+
+    def set_scope(self, scope: str = "ALL_COURSES", kb_id: str | None = None) -> None:
+        """Update active scope and course ID filter."""
+        self._active_scope = scope
+        self._active_kb_id = kb_id
+
+    def reset_scope(self) -> None:
+        """Reset scope to ALL_COURSES."""
+        self._active_scope = "ALL_COURSES"
+        self._active_kb_id = None
 
     @property
     def generation_error(self) -> str | None:
@@ -58,10 +152,12 @@ class AppState:
         if self._is_generating:
             return
 
-        import asyncio
-
+        self._generation_id += 1
+        current_gen_id = self._generation_id
         self._is_generating = True
+        self._is_cancelled = False
         self._generation_error = None
+        target_conv_id = self._active_conversation_id
 
         async def _run_async_query() -> None:
             try:
@@ -71,11 +167,25 @@ class AppState:
                     question=question,
                     document_id=document_id,
                     scope=scope,
+                    conversation_id=target_conv_id,
                 )
+                if self._generation_id != current_gen_id or self._is_cancelled:
+                    return
+
+                # If this was a fresh new chat, link active_conversation_id
+                if not self._active_conversation_id:
+                    convs = api_client.get_conversations()
+                    if convs:
+                        self._active_conversation_id = convs[0].id
+
                 self._chat_history.append(resp)
                 if resp.citations:
                     self._selected_citation = resp.citations[0]
+            except asyncio.CancelledError:
+                return
             except Exception as e:
+                if self._generation_id != current_gen_id or self._is_cancelled:
+                    return
                 clean_err = normalize_error(e, context="chat")
                 self._generation_error = clean_err
                 err_msg = ChatMessageDTO(
@@ -86,8 +196,10 @@ class AppState:
                 )
                 self._chat_history.append(err_msg)
             finally:
-                self._is_generating = False
-                self._active_task = None
+                if self._generation_id == current_gen_id:
+                    self._is_generating = False
+                    self._active_task = None
+                    self.notify()
 
         try:
             loop = asyncio.get_running_loop()
@@ -98,6 +210,72 @@ class AppState:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
         self._active_task = loop.create_task(_run_async_query())
+
+    def stop_generating(self) -> None:
+        """
+        Request immediate cancellation of in-progress answer generation.
+        Terminates the active task, discards late responses, and presents a distinct cancelled state.
+        """
+        if not self._is_generating:
+            return
+        self._is_cancelled = True
+        self._generation_id += 1
+        if self._active_task and not self._active_task.done():
+            self._active_task.cancel()
+        self._is_generating = False
+        self._active_task = None
+        stopped_msg = ChatMessageDTO(
+            id=f"msg-stopped-{uuid.uuid4().hex[:8]}",
+            role="assistant",
+            content="*(Response generation stopped by user)*",
+            citations=[],
+        )
+        self._chat_history.append(stopped_msg)
+        self.notify()
+
+    def start_new_conversation(self) -> None:
+        """
+        Start a fresh new conversation thread in draft mode without writing fake history.
+        """
+        if self._is_generating:
+            self.stop_generating()
+        self._active_conversation_id = None
+        self._chat_history.clear()
+        self._selected_citation = None
+        self._generation_error = None
+        self._active_scope = "ALL_COURSES"
+        self._active_kb_id = None
+        self.notify()
+
+    def load_conversation(self, conv_id: str) -> None:
+        """
+        Load an existing saved conversation thread and its messages.
+        """
+        if self._is_generating:
+            self.stop_generating()
+        detail = api_client.get_conversation(conv_id)
+        self._active_conversation_id = detail.id
+        self._chat_history = list(detail.messages)
+        self._generation_error = None
+        # Select latest citation if present
+        latest_cits = [
+            m.citations
+            for m in reversed(self._chat_history)
+            if m.role == "assistant" and m.citations
+        ]
+        self._selected_citation = latest_cits[0][0] if latest_cits else None
+        self.notify()
+
+    def delete_conversation(self, conv_id: str) -> bool:
+        """
+        Delete a conversation thread and reset active view if currently open.
+        """
+        success = api_client.delete_conversation(conv_id)
+        if success and self._active_conversation_id == conv_id:
+            self.start_new_conversation()
+        else:
+            self.notify()
+        return success
 
     @property
     def current_user(self) -> UserDTO | None:
@@ -154,14 +332,8 @@ class AppState:
         self._chat_history.append(msg)
 
     def clear_chat(self) -> None:
-        """Reset conversation history and cancel running background task if active."""
-        if self._active_task and not self._active_task.done():
-            self._active_task.cancel()
-        self._is_generating = False
-        self._active_task = None
-        self._generation_error = None
-        self._chat_history.clear()
-        self._selected_citation = None
+        """Legacy alias: reset conversation history and draft new chat."""
+        self.start_new_conversation()
 
 
 _session_app_states: dict[str, AppState] = {}
@@ -192,6 +364,14 @@ class _SessionAppStateProxy:
             _session_app_states.pop(session_id, None)
         else:
             self._fallback_state = AppState()
+
+    @property
+    def active_conversation_id(self) -> str | None:
+        return self._get_state().active_conversation_id
+
+    @active_conversation_id.setter
+    def active_conversation_id(self, value: str | None) -> None:
+        self._get_state().active_conversation_id = value
 
     @property
     def current_user(self) -> UserDTO | None:
@@ -231,6 +411,10 @@ class _SessionAppStateProxy:
     def is_generating(self) -> bool:
         return self._get_state().is_generating
 
+    @is_generating.setter
+    def is_generating(self, value: bool) -> None:
+        self._get_state().is_generating = value
+
     @property
     def generation_error(self) -> str | None:
         return self._get_state().generation_error
@@ -252,8 +436,76 @@ class _SessionAppStateProxy:
             scope=scope,
         )
 
+    def stop_generating(self) -> None:
+        self._get_state().stop_generating()
+
+    def start_new_conversation(self) -> None:
+        self._get_state().start_new_conversation()
+
+    @property
+    def active_scope(self) -> str:
+        return self._get_state().active_scope
+
+    @active_scope.setter
+    def active_scope(self, value: str) -> None:
+        self._get_state().active_scope = value
+
+    @property
+    def active_kb_id(self) -> str | None:
+        return self._get_state().active_kb_id
+
+    @active_kb_id.setter
+    def active_kb_id(self, value: str | None) -> None:
+        self._get_state().active_kb_id = value
+
+    def set_scope(self, scope: str = "ALL_COURSES", kb_id: str | None = None) -> None:
+        self._get_state().set_scope(scope, kb_id)
+
+    def reset_scope(self) -> None:
+        self._get_state().reset_scope()
+
+    def load_conversation(self, conv_id: str) -> None:
+        self._get_state().load_conversation(conv_id)
+
+    def delete_conversation(self, conv_id: str) -> bool:
+        return self._get_state().delete_conversation(conv_id)
+
+    def subscribe(self, listener: Any) -> Any:
+        return self._get_state().subscribe(listener)
+
+    def notify(self) -> None:
+        self._get_state().notify()
+
     def clear_chat(self) -> None:
         self._get_state().clear_chat()
+
+    @property
+    def reader_context(self) -> dict[str, Any]:
+        return self._get_state().reader_context
+
+    def set_reader_context(
+        self,
+        document_id: str | None = None,
+        document_name: str | None = None,
+        page_number: int | None = None,
+        kb_id: str | None = None,
+        course_name: str | None = None,
+        snippet: str | None = None,
+        return_to: str | None = None,
+        conv_id: str | None = None,
+        citation: CitationDTO | None = None,
+    ) -> None:
+        self._get_state().set_reader_context(
+            document_id=document_id,
+            document_name=document_name,
+            page_number=page_number,
+            kb_id=kb_id,
+            course_name=course_name,
+            snippet=snippet,
+            return_to=return_to,
+            conv_id=conv_id,
+            citation=citation,
+        )
 
 
 # Presentation state is scoped to the current NiceGUI browser client.

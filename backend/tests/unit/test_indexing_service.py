@@ -52,6 +52,11 @@ class SimpleTestProvider(BaseEmbeddingProvider):
 @pytest.fixture(autouse=True)
 def clean_indexing_unit_db(db_engine) -> Generator[None, None, None]:
     """Clean all tables before and after each test function."""
+    from backend.app.db.session import check_database_connection
+
+    if not check_database_connection(db_engine):
+        pytest.skip("PostgreSQL database is not available in current environment")
+
     with db_engine.begin() as conn:
         conn.execute(
             text(
@@ -67,6 +72,7 @@ def clean_indexing_unit_db(db_engine) -> Generator[None, None, None]:
                 "knowledge_bases, user_sessions, users CASCADE;"
             )
         )
+
 
 
 def create_test_fixtures(

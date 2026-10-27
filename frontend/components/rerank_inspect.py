@@ -1,11 +1,8 @@
 """
 CrossEncoder Reranking Inspection Component.
 
-Allows administrators to execute and inspect CrossEncoder reranking over candidate chunks
-retrieved from Step 9 hybrid retrieval (dense vector + PostgreSQL full-text RRF).
-Displays raw CrossEncoder scores (formatted to 6 decimal places for UI display only),
-final rerank order, RRF scores, individual branch ranks, and full candidate provenance.
-Does NOT perform LLM answer generation or query rewriting.
+Allows administrators to execute and inspect CrossEncoder reranking over candidate chunks.
+Redesigned with Editorial Academic identity.
 """
 
 from nicegui import ui
@@ -15,124 +12,147 @@ from frontend.client.models import RerankResultDTO
 
 
 def open_rerank_inspection_dialog(kb_id: str, kb_name: str) -> None:
-    """
-    Open an administrative inspection dialog for evaluating CrossEncoder reranking.
-    """
-    with ui.dialog() as dialog, ui.card().classes("w-[800px] max-w-[95vw] p-6 gap-4"):
-        with ui.row().classes("w-full items-center justify-between border-b pb-3"):
-            with ui.row().classes("items-center gap-2"):
-                ui.icon("tune", size="sm").classes("text-purple-600")
+    with (
+        ui.dialog() as dialog,
+        ui.card().classes(
+            "w-[800px] max-w-[95vw] p-8 bg-surface-elevated border border-subtle rounded shadow-none gap-4"
+        ),
+    ):
+        with ui.row().classes("w-full items-center justify-between border-b border-subtle pb-4"):
+            with ui.row().classes("items-center gap-3"):
+                ui.icon("tune", size="1.25rem").classes("text-primary-navy")
                 ui.label("CrossEncoder Reranking Inspection").classes(
-                    "text-base font-bold text-gray-900"
+                    "text-lg font-bold text-primary-navy font-editorial"
                 )
-                ui.badge(kb_name, color="purple").classes("text-xs")
-            ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+                ui.badge(kb_name, color="canvas").props("text-color=primary-navy").classes(
+                    "text-xs font-bold px-2 py-1 border border-subtle"
+                )
+            ui.button(icon="close", on_click=dialog.close).props("flat round dense").classes(
+                "text-secondary-navy hover:text-primary-navy"
+            )
 
         ui.label(
-            "Execute CrossEncoder reranking on hybrid candidate chunks (vector + lexical RRF) "
-            "using the local sentence-transformers model (ms-marco-MiniLM-L-6-v2)."
-        ).classes("text-xs text-gray-500")
+            "Execute CrossEncoder reranking on hybrid candidate chunks using the local sentence-transformers model."
+        ).classes("text-sm text-secondary-navy font-serif")
 
-        with ui.row().classes("w-full gap-3 items-end"):
-            query_input = ui.input(
-                label="Search Query",
-                placeholder="Enter query to evaluate semantic relevance with CrossEncoder...",
-            ).classes("flex-1")
-            candidates_input = ui.number(
-                label="Candidates",
-                value=20,
-                min=1,
-                max=50,
-                step=1,
-            ).classes("w-24")
-            top_k_input = ui.number(
-                label="Top K",
-                value=5,
-                min=1,
-                max=50,
-                step=1,
-            ).classes("w-20")
-            rerank_btn = ui.button("Rerank", icon="auto_fix_high").props("color=purple")
+        with ui.row().classes("w-full gap-4 items-end"):
+            query_input = (
+                ui.input(
+                    label="Search Query",
+                    placeholder="Enter query to evaluate semantic relevance...",
+                )
+                .props("outlined dense")
+                .classes("flex-1 minimalist-input")
+            )
+            candidates_input = (
+                ui.number(label="Candidates", value=20, min=1, max=50, step=1)
+                .props("outlined dense")
+                .classes("w-24 minimalist-input")
+            )
+            top_k_input = (
+                ui.number(label="Top K", value=5, min=1, max=50, step=1)
+                .props("outlined dense")
+                .classes("w-20 minimalist-input")
+            )
+            rerank_btn = (
+                ui.button("Rerank", icon="auto_fix_high")
+                .props("no-caps")
+                .classes("px-4 py-2 text-sm font-bold bg-primary-navy text-inverted rounded")
+            )
 
-        results_container = ui.column().classes("w-full max-h-[440px] overflow-y-auto gap-3 p-1")
+        results_container = ui.column().classes("w-full max-h-[440px] overflow-y-auto gap-4 p-1")
 
         def display_results(results: list[RerankResultDTO]) -> None:
             results_container.clear()
             with results_container:
                 if not results:
                     with ui.column().classes("w-full py-8 items-center justify-center text-center"):
-                        ui.icon("search_off", size="md").classes("text-gray-400 mb-1")
-                        ui.label("No candidate chunks available to rerank.").classes(
-                            "text-sm text-gray-500"
+                        ui.icon("search_off", size="2rem").classes(
+                            "text-secondary-navy opacity-50 mb-2"
                         )
-                        ui.label(
-                            "Ensure documents are ingested, indexed, and terms match knowledge base content."
-                        ).classes("text-xs text-gray-400")
+                        ui.label("No candidate chunks available to rerank.").classes(
+                            "text-sm font-bold text-primary-navy"
+                        )
+                        ui.label("Ensure documents are ingested and indexed.").classes(
+                            "text-xs text-secondary-navy"
+                        )
                     return
 
                 ui.label(f"Reranked Results ({len(results)} items):").classes(
-                    "text-xs font-bold text-gray-700 uppercase"
+                    "text-xs font-bold text-secondary-navy uppercase tracking-wider"
                 )
 
                 for r in results:
                     with ui.card().classes(
-                        "w-full p-3 bg-gray-50 border border-gray-200 rounded gap-1 shadow-none"
+                        "w-full p-4 bg-canvas border border-subtle rounded shadow-none gap-2"
                     ):
                         with ui.row().classes("w-full justify-between items-center"):
                             with ui.row().classes("items-center gap-2"):
-                                ui.badge(f"Rank #{r.reranker_rank}", color="purple").classes(
-                                    "text-xs font-mono font-bold"
+                                ui.badge(f"Rank #{r.reranker_rank}", color="primary-navy").props(
+                                    "text-color=inverted"
+                                ).classes(
+                                    "text-[10px] font-mono font-bold px-2 py-0.5 tracking-wider"
                                 )
                                 ui.label(r.document_title).classes(
-                                    "text-xs font-semibold text-gray-900 truncate"
+                                    "text-sm font-bold text-primary-navy truncate"
                                 )
                                 if r.page_number is not None:
-                                    ui.badge(f"p.{r.page_number}", color="blue-grey").classes(
-                                        "text-xs"
+                                    ui.badge(f"p.{r.page_number}", color="surface-elevated").props(
+                                        "text-color=gold"
+                                    ).classes(
+                                        "text-[10px] font-bold px-1.5 py-0.5 border border-subtle"
                                     )
                                 if r.section_title:
                                     ui.label(f"§ {r.section_title}").classes(
-                                        "text-xs text-gray-600 truncate italic"
+                                        "text-xs text-secondary-navy truncate italic"
                                     )
 
                             with ui.row().classes("items-center gap-2"):
-                                # Display formatting only (raw float is preserved in DTO)
                                 ui.badge(
-                                    f"CrossEncoder: {r.reranker_score:.6f}",
-                                    color="purple",
-                                ).classes("text-xs font-mono font-bold")
+                                    f"CrossEncoder: {r.reranker_score:.6f}", color="primary-navy"
+                                ).props("text-color=inverted").classes(
+                                    "text-[10px] font-mono font-bold px-2 py-0.5 tracking-wider"
+                                )
 
-                        # Full provenance row: RRF score + branch ranks
                         with ui.row().classes("w-full items-center gap-2 mt-1"):
-                            ui.badge(f"RRF: {r.rrf_score:.6f}", color="indigo").classes(
-                                "text-[10px] font-mono"
+                            ui.badge(f"RRF: {r.rrf_score:.6f}", color="surface").props(
+                                "text-color=primary-navy"
+                            ).classes(
+                                "text-[10px] font-mono font-bold px-1.5 py-0.5 border border-subtle"
                             )
                             if r.vector_rank is not None:
                                 ui.badge(
                                     f"Vector #{r.vector_rank} (+{r.vector_contribution:.6f})",
-                                    color="blue",
-                                ).classes("text-[10px] font-mono")
+                                    color="emerald-1",
+                                ).props("text-color=emerald-9").classes(
+                                    "text-[10px] font-mono font-bold px-1.5 py-0.5 border border-emerald-200"
+                                )
                             else:
-                                ui.badge("Vector: None", color="grey").classes(
-                                    "text-[10px] font-mono"
+                                ui.badge("Vector: None", color="surface").props(
+                                    "text-color=secondary-navy"
+                                ).classes(
+                                    "text-[10px] font-mono px-1.5 py-0.5 border border-subtle"
                                 )
 
                             if r.lexical_rank is not None:
                                 ui.badge(
                                     f"Lexical #{r.lexical_rank} (+{r.lexical_contribution:.6f})",
-                                    color="teal",
-                                ).classes("text-[10px] font-mono")
+                                    color="amber-1",
+                                ).props("text-color=amber-9").classes(
+                                    "text-[10px] font-mono font-bold px-1.5 py-0.5 border border-amber-200"
+                                )
                             else:
-                                ui.badge("Lexical: None", color="grey").classes(
-                                    "text-[10px] font-mono"
+                                ui.badge("Lexical: None", color="surface").props(
+                                    "text-color=secondary-navy"
+                                ).classes(
+                                    "text-[10px] font-mono px-1.5 py-0.5 border border-subtle"
                                 )
 
-                        # Text snippet
                         ui.label(r.text).classes(
-                            "text-xs text-gray-800 bg-white p-2 rounded border border-gray-200 font-mono leading-relaxed mt-1"
+                            "text-sm text-primary-navy bg-surface-elevated p-3 rounded border border-subtle font-serif leading-relaxed mt-2"
                         )
                         ui.label(f"Chunk ID: {r.chunk_id} | Index: {r.chunk_index}").classes(
-                            "text-[10px] text-gray-400 font-mono"
+                            "text-[10px] text-secondary-navy font-mono"
                         )
 
         async def run_rerank() -> None:
@@ -146,10 +166,7 @@ def open_rerank_inspection_dialog(kb_id: str, kb_name: str) -> None:
                 candidate_lim = int(candidates_input.value or 20)
                 k = int(top_k_input.value or 5)
                 results = api_client.rerank_chunks(
-                    kb_id=kb_id,
-                    query=q,
-                    candidate_limit=candidate_lim,
-                    top_k=k,
+                    kb_id=kb_id, query=q, candidate_limit=candidate_lim, top_k=k
                 )
                 display_results(results)
             except Exception as exc:

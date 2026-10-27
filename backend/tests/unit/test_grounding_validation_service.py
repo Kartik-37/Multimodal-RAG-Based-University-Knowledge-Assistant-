@@ -6,6 +6,7 @@ import uuid
 
 from backend.app.schemas.context_assembly import ContextAssemblyResult, ContextItem
 from backend.app.schemas.grounding_validation import (
+    GroundingStatus,
     GroundingValidationRequest,
 )
 from backend.app.schemas.llm import LLMGenerationResponse
@@ -228,3 +229,164 @@ def test_grounding_validation_service_singleton() -> None:
     s2 = get_grounding_validation_service()
     assert s1 is s2
     assert isinstance(s1, GroundingValidationService)
+
+
+def test_grounding_validation_failover_sequence_fully_supported() -> None:
+    """Verify factual sequence answer starting with 'The sequence is:' achieves FULLY_SUPPORTED."""
+    from backend.app.services.rag_orchestrator import determine_grounding_status
+
+    context = _make_context(
+        [
+            (
+                "source_1",
+                "Figure 2: Automated Failover Protocol Workflow Diagram. "
+                "Sequence: When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller, "
+                "which promotes the Standby Node to become the active primary server.",
+            )
+        ]
+    )
+
+    response = LLMGenerationResponse(
+        answer=(
+            "The sequence is: When a heartbeat timeout occurs, the Health Monitor triggers "
+            "the Failover Controller, which promotes the Standby Node [source_1]."
+        ),
+        query="failover sequence",
+        provider="ollama",
+        model="qwen3:4b",
+        sources_available=["source_1"],
+        sources_referenced=["source_1"],
+        is_empty_context=False,
+        latency_ms=450.0,
+    )
+
+    service = GroundingValidationService()
+    request = GroundingValidationRequest(response=response, context=context)
+    result = service.validate(request)
+
+    assert result.factual_claims == 1
+    assert result.conversational_claims == 0
+    assert result.supported_claims == 1
+    assert result.unsupported_claims == 0
+    assert result.citation_coverage == 1.0
+    assert result.citation_validity_rate == 1.0
+
+    is_grounded, status = determine_grounding_status(result, is_empty_context=False)
+    assert is_grounded is True
+    assert status == "FULLY_SUPPORTED"
+
+
+def test_grounding_validation_missing_citation_not_fully_supported() -> None:
+    """Verify factual sequence without citation does NOT achieve FULLY_SUPPORTED."""
+    from backend.app.services.rag_orchestrator import determine_grounding_status
+
+    context = _make_context(
+        [
+            (
+                "source_1",
+                "When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller.",
+            )
+        ]
+    )
+
+    response = LLMGenerationResponse(
+        answer=(
+            "The sequence is: When a heartbeat timeout occurs, the Health Monitor triggers "
+            "the Failover Controller."
+        ),
+        query="failover sequence",
+        provider="ollama",
+        model="qwen3:4b",
+        sources_available=["source_1"],
+        sources_referenced=[],
+        is_empty_context=False,
+        latency_ms=450.0,
+    )
+
+    service = GroundingValidationService()
+    request = GroundingValidationRequest(response=response, context=context)
+    result = service.validate(request)
+
+    assert result.factual_claims == 1
+    assert result.citation_coverage == 0.0
+
+    is_grounded, status = determine_grounding_status(result, is_empty_context=False)
+    assert status != "FULLY_SUPPORTED"
+
+
+def test_grounding_validation_invalid_citation_remains_invalid() -> None:
+    """Verify citing a non-existent source produces UNSUPPORTED and is_grounded=False."""
+    from backend.app.services.rag_orchestrator import determine_grounding_status
+
+    context = _make_context(
+        [
+            (
+                "source_1",
+                "When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller.",
+            )
+        ]
+    )
+
+    response = LLMGenerationResponse(
+        answer=(
+            "The sequence is: When a heartbeat timeout occurs, the Health Monitor triggers "
+            "the Failover Controller [source_99]."
+        ),
+        query="failover sequence",
+        provider="ollama",
+        model="qwen3:4b",
+        sources_available=["source_1"],
+        sources_referenced=["source_99"],
+        is_empty_context=False,
+        latency_ms=450.0,
+    )
+
+    service = GroundingValidationService()
+    request = GroundingValidationRequest(response=response, context=context)
+    result = service.validate(request)
+
+    assert result.invalid_citations >= 1
+    assert result.unsupported_claims >= 1
+
+    is_grounded, status = determine_grounding_status(result, is_empty_context=False)
+    assert is_grounded is False
+    assert status == "UNSUPPORTED"
+
+
+def test_grounding_validation_unsupported_claim_remains_unsupported() -> None:
+    """Verify claim with asserted entity mismatch is marked UNSUPPORTED and not grounded."""
+    from backend.app.services.rag_orchestrator import determine_grounding_status
+
+    context = _make_context(
+        [
+            (
+                "source_1",
+                "Modern university computing clusters utilize active-passive database configurations.",
+            )
+        ]
+    )
+
+    response = LLMGenerationResponse(
+        answer=(
+            "The sequence is: In Phase 99, when the NASA protocol triggers, "
+            "the Alpha Controller destroys the database [source_1]."
+        ),
+        query="failover sequence",
+        provider="ollama",
+        model="qwen3:4b",
+        sources_available=["source_1"],
+        sources_referenced=["source_1"],
+        is_empty_context=False,
+        latency_ms=450.0,
+    )
+
+    service = GroundingValidationService()
+    request = GroundingValidationRequest(response=response, context=context)
+    result = service.validate(request)
+
+    assert result.unsupported_claims >= 1
+    assert result.claims[0].status == GroundingStatus.UNSUPPORTED
+
+    is_grounded, status = determine_grounding_status(result, is_empty_context=False)
+    assert is_grounded is False
+    assert status == "UNSUPPORTED"

@@ -57,6 +57,10 @@ class ChatQueryRequest(KnowledgeBaseChatRequest):
         default=None,
         description="Explicit query scope: 'ALL_COURSES', 'COURSE', or 'DOCUMENT'.",
     )
+    conversation_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional persistent conversation thread UUID.",
+    )
 
 
 class CitationItem(BaseModel):
@@ -101,6 +105,14 @@ class CitationItem(BaseModel):
     snippet: str = Field(
         ...,
         description="Verbatim text excerpt from the cited chunk.",
+    )
+    source_modality: str | None = Field(
+        default="text",
+        description="Source evidence modality: 'text' or 'visual'.",
+    )
+    visual_type: str | None = Field(
+        default=None,
+        description="Type of visual evidence (e.g. 'diagram', 'chart', 'flowchart') if source_modality is visual.",
     )
 
 

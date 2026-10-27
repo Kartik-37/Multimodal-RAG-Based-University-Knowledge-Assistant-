@@ -10,6 +10,7 @@ Connects client requests to the application-level RAG orchestrator:
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,6 +32,7 @@ from backend.app.core.telemetry import (
     set_current_user_id,
     user_id_ctx,
 )
+from backend.app.models.conversation import ChatMessage, Conversation
 from backend.app.models.document import IndexingStatus
 from backend.app.models.user import UserRole
 from backend.app.schemas.chat import (
@@ -139,6 +141,65 @@ async def _execute_orchestrated_chat(
         kb_id_ctx.reset(kb_token)
 
 
+def _try_persist_turn(
+    db: DatabaseSession,
+    user_id: uuid.UUID,
+    question: str,
+    response: ChatQueryResponse,
+    scope: str,
+    active_conv: Conversation | None = None,
+    kb_id: uuid.UUID | None = None,
+) -> None:
+    """Safely persist conversation turn (user question and assistant response) with user ownership."""
+    try:
+        if active_conv is None:
+            clean_title = question.strip()
+            if len(clean_title) > 60:
+                clean_title = clean_title[:57] + "..."
+            conv = Conversation(
+                user_id=user_id,
+                title=clean_title or "New Conversation",
+                scope=scope,
+                knowledge_base_id=kb_id,
+            )
+            db.add(conv)
+            db.flush()
+        else:
+            conv = active_conv
+
+        user_msg = ChatMessage(
+            conversation_id=conv.id,
+            role="user",
+            content=question,
+            citations=[],
+        )
+        db.add(user_msg)
+        db.flush()
+
+        citations_data = [
+            c.model_dump() if hasattr(c, "model_dump") else c.dict()
+            for c in response.citations
+        ]
+        assistant_msg = ChatMessage(
+            conversation_id=conv.id,
+            role="assistant",
+            content=response.answer,
+            citations=citations_data,
+            is_grounded=response.grounding.is_grounded,
+            grounding_status=response.grounding.status,
+        )
+        db.add(assistant_msg)
+        conv.updated_at = datetime.now(UTC)
+        db.commit()
+        response.metadata["conversation_id"] = str(conv.id)
+    except Exception as exc:
+        logger.warning("Could not persist chat turn to database: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 @router.post(
     "/chat/query",
     response_model=ChatQueryResponse,
@@ -165,9 +226,26 @@ async def query_knowledge_base_legacy(
             detail="Access denied: Missing required permission 'ADMIN_CHAT'.",
         )
 
+    # 2. Conversation ownership verification if conversation_id was provided
+    active_conv: Conversation | None = None
+    if payload.conversation_id is not None:
+        active_conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.id == payload.conversation_id,
+                Conversation.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not active_conv:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found.",
+            )
+
     target_document_id: uuid.UUID | None = None
 
-    # 2. Scope validation and resolution. The explicit scope controls the
+    # 3. Scope validation and resolution. The explicit scope controls the
     # required identifiers; invalid combinations are rejected instead of
     # silently falling back to broader retrieval.
     valid_scopes = {"ALL_COURSES", "COURSE", "DOCUMENT"}
@@ -195,7 +273,7 @@ async def query_knowledge_base_legacy(
             db=db,
         )
         if not authorized_kb_ids:
-            return ChatQueryResponse(
+            refusal_resp = ChatQueryResponse(
                 query=payload.question,
                 processed_query=payload.question,
                 knowledge_base_id=None,
@@ -224,6 +302,16 @@ async def query_knowledge_base_legacy(
                 model="system",
                 metadata={"reason": "no_authorized_knowledge_bases"},
             )
+            _try_persist_turn(
+                db=db,
+                user_id=current_user.id,
+                question=payload.question,
+                response=refusal_resp,
+                scope=scope,
+                active_conv=active_conv,
+                kb_id=None,
+            )
+            return refusal_resp
         target_kb: uuid.UUID | list[uuid.UUID] = authorized_kb_ids
 
     elif scope == "COURSE":
@@ -277,7 +365,7 @@ async def query_knowledge_base_legacy(
                 ),
             )
 
-    return await _execute_orchestrated_chat(
+    rag_response = await _execute_orchestrated_chat(
         orchestrator=orchestrator,
         db=db,
         kb_id=target_kb,
@@ -285,6 +373,16 @@ async def query_knowledge_base_legacy(
         user_id=current_user.id,
         document_id=target_document_id,
     )
+    _try_persist_turn(
+        db=db,
+        user_id=current_user.id,
+        question=payload.question,
+        response=rag_response,
+        scope=scope,
+        active_conv=active_conv,
+        kb_id=payload.knowledge_base_id,
+    )
+    return rag_response
 
 
 @router.post(

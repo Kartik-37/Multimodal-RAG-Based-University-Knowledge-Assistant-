@@ -102,3 +102,53 @@ def test_sentence_splitter_empty_and_whitespace_input() -> None:
     splitter = SentenceSplitter()
     assert splitter.split("") == []
     assert splitter.split("   \n\t  ") == []
+
+
+def test_sentence_splitter_factual_sequence_not_conversational() -> None:
+    """Verify that factual statements starting with 'The sequence is:' or 'The workflow is:' are not marked conversational."""
+    splitter = SentenceSplitter()
+
+    # Sequence answer with citation
+    text_seq = (
+        "The sequence is: When a heartbeat timeout occurs, the Health Monitor triggers "
+        "the Failover Controller, which promotes the Standby Node [source_1]."
+    )
+    claims_seq = splitter.split(text_seq)
+    assert len(claims_seq) == 1
+    assert claims_seq[0].is_conversational is False
+    assert claims_seq[0].cited_source_ids == ["source_1"]
+    assert "Health Monitor triggers the Failover Controller" in claims_seq[0].text
+
+    # Workflow answer with citation
+    text_wf = "The workflow is: When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller [source_1]."
+    claims_wf = splitter.split(text_wf)
+    assert len(claims_wf) == 1
+    assert claims_wf[0].is_conversational is False
+    assert claims_wf[0].cited_source_ids == ["source_1"]
+
+    # Direct factual answer without preamble
+    text_direct = "When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller [source_1]."
+    claims_direct = splitter.split(text_direct)
+    assert len(claims_direct) == 1
+    assert claims_direct[0].is_conversational is False
+
+
+def test_sentence_splitter_distinguishes_framing_from_factual_statements() -> None:
+    """Verify pure framing preambles remain conversational while substantive claims are factual."""
+    splitter = SentenceSplitter()
+
+    framing_examples = [
+        "The sequence is as follows:",
+        "The sequence is as follows.",
+        "The sequence is:",
+        "The steps are:",
+        "The steps are as follows:",
+        "The workflow is as follows:",
+        "The process is as follows:",
+        "Here is a summary of the topic.",
+        "I could not find any relevant information in the available documents.",
+    ]
+    for frame in framing_examples:
+        claims = splitter.split(frame)
+        assert len(claims) == 1, f"Expected 1 claim for framing '{frame}'"
+        assert claims[0].is_conversational is True, f"Expected is_conversational=True for '{frame}'"

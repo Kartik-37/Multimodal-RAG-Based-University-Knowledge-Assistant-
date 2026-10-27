@@ -136,7 +136,11 @@ def test_alembic_schema_matches_migration_head() -> None:
     head_rev = script.get_current_head()
     assert head_rev is not None
 
+    from backend.app.db.session import check_database_connection
+
     test_engine = create_db_engine(settings.TEST_DATABASE_URL)
+    if not check_database_connection(test_engine):
+        pytest.skip("PostgreSQL database is not available in current environment")
     with test_engine.connect() as conn:
         ctx = MigrationContext.configure(conn)
         current_rev = ctx.get_current_revision()
@@ -144,6 +148,7 @@ def test_alembic_schema_matches_migration_head() -> None:
             f"Test DB revision ({current_rev}) does not match Alembic head ({head_rev})"
         )
     test_engine.dispose()
+
 
 
 # ==============================================================================
@@ -390,3 +395,55 @@ def test_env_example_parseable_by_settings() -> None:
     assert parsed_settings.RATE_LIMIT_LOGIN_MAX_REQUESTS == 20
     assert parsed_settings.RATE_LIMIT_AUTH_FAIL_CLOSED is True
     assert parsed_settings.RATE_LIMIT_EXPENSIVE_FAIL_CLOSED is False
+
+
+def test_validate_test_database_url_guard() -> None:
+    """
+    Quality Gate Dim 12: Database Guard Isolation Test.
+    Verifies that validate_test_database_url strictly permits only approved isolated test databases,
+    rejects production/system databases, and never leaks credentials in error messages.
+    """
+    from backend.app.db.session import validate_test_database_url
+
+    # 1. Approved test databases must pass cleanly
+    assert (
+        validate_test_database_url(
+            "postgresql+psycopg://test_user:test_secret@localhost:5432/rag_assistant_test_db"
+        )
+        == "rag_assistant_test_db"
+    )
+    assert (
+        validate_test_database_url(
+            "postgresql://db_admin:pass123@127.0.0.1:5432/test_ephemeral_run"
+        )
+        == "test_ephemeral_run"
+    )
+    assert validate_test_database_url("sqlite:///:memory:") == ":memory:"
+
+    # 2. Production database names must be strictly rejected
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_test_database_url(
+            "postgresql+psycopg://pguser:super_secret_password@db.prod.internal:5432/rag_assistant_db"
+        )
+    err = str(exc_info.value)
+    assert "REFUSING DESTRUCTIVE SETUP" in err
+    assert "rag_assistant_db" in err
+    assert "super_secret_password" not in err  # No credential leakage
+
+    # 3. System database (postgres) must be strictly rejected
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_test_database_url("postgresql://admin:rootpwd@localhost:5432/postgres")
+    assert "REFUSING DESTRUCTIVE SETUP" in str(exc_info.value)
+    assert "rootpwd" not in str(exc_info.value)
+
+    # 4. Arbitrary unapproved database names must be rejected
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_test_database_url("postgresql://localhost:5432/university_live_records")
+    assert "not an approved isolated test database" in str(exc_info.value)
+
+    # 5. Invalid / empty inputs must raise ValueError
+    with pytest.raises(ValueError, match="empty or missing"):
+        validate_test_database_url("")
+
+    with pytest.raises(ValueError, match="empty or missing"):
+        validate_test_database_url(None)

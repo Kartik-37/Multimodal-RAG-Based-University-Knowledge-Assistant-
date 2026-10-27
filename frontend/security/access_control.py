@@ -103,7 +103,11 @@ def can_access_route(user: UserDTO | None, route: str) -> bool:
         if route == "/knowledge-bases":
             return has_admin_permission(user, Permission.COURSE_VIEW)
         if route == "/documents":
-            return has_admin_permission(user, Permission.DOCUMENT_VIEW)
+            return (
+                has_admin_permission(user, Permission.DOCUMENT_VIEW)
+                or has_admin_permission(user, Permission.DOCUMENT_INDEX)
+                or has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
+            )
         if route == "/indexing":
             return has_admin_permission(
                 user, Permission.DOCUMENT_INDEX

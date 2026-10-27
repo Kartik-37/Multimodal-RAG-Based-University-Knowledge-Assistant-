@@ -21,13 +21,13 @@ Read, in order:
 
 Then inspect the actual repository and the screenshot folder.
 
-## Current rebuild mode
+## Current operational mode
 
-This is a **repair + frontend-rebuild phase**, not a normal incremental UI polish.
+The project has achieved complete implementation across all architectural milestones, including Frontend Rebuild (Phase 4), Backend Security Hardening (Phase 1), Behavioral Test Suite (Phase 3), and Visual Multimodal RAG (Phases 11A, 11A.1, 11A.2, 11A.3).
 
-The existing frontend may be replaced from scratch. The instruction "do not rewrite working functionality merely for cleanliness" means do not break working business/security behavior; it does NOT forbid a complete visual/UI rewrite explicitly requested by the user.
+This is now the **Final Acceptance, Implementation Freeze, and Academic Reporting** phase.
 
-Do not preserve obsolete tests merely because they currently pass.
+The system architecture and user interfaces are strictly frozen. Do not introduce new features, unsolicited visual refactorings, or new modalities. All operational focus is on rigorous behavioral verification, test isolation, documentation synchronization, and academic presentation reporting.
 
 ## Mandatory order for this task
 
@@ -160,14 +160,15 @@ If a check cannot run because the environment lacks PostgreSQL/pgvector/Ollama/b
 ## Current RAG scope & multimodal truthfulness
 
 - Official project title: **Multimodal RAG-Based University Knowledge Assistant** (canonical title must be preserved).
-- Current implementation: **Multi-format TEXT RAG** supporting PDF, DOCX, TXT, Markdown, and CSV.
-- Genuine Multimodal RAG (vision-language models, OCR pipelines, image embeddings, visual retrieval) is intentionally **deferred to a future roadmap phase**.
-- Do not claim or advertise multimodal support in UI, API responses, or documentation until non-text modality support is actually implemented in that future phase.
+- Current implementation: **Visual PDF Evidence + Multi-format TEXT RAG** (Phases 11A, 11A.1, 11A.2, 11A.3 — **COMPLETED & FROZEN**).
+- Supports visual diagrams, flowcharts, charts, and scanned pages in academic PDFs via bounded PyMuPDF extraction, local vision analysis (`qwen2.5vl:3b`), and 1024-d text embedding (`qwen3-embedding:0.6b`).
+- CrossEncoder reranker applies a `+1.5` score priority for visual candidates when visual query intent is detected, ensuring visual evidence is cited when diagrams are requested.
+- Genuine multi-modal video, audio, web-page visual scraping, and direct CLIP pixel-vector embeddings remain deferred to future roadmap phases.
+- Truthfulness gate: Real vision inference is gated on the local installation of `qwen2.5vl:3b` via `ollama pull qwen2.5vl:3b`. If unavailable, text ingestion continues cleanly without fake visual chunks or fake multimodal badges.
 
 ## Screenshot reference rule
 
-- Screenshots in the `screenshot/` folder document the existing implementation and its defects; they are **audit evidence, not a design template**.
-- Future Phase 4 frontend work must inspect **all** supplied screenshots individually before redesigning corresponding areas.
+- Screenshots in the `screenshot/` folder document the baseline, redesign iterations, and final verified states. All major routes across student, admin, reader, and auth experiences have been systematically verified and captured.
 
 ## Source-viewer rules
 

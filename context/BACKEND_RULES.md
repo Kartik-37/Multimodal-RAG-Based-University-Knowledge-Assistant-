@@ -65,6 +65,12 @@ Student course access in this project is governed by the **authoritative catalog
 - Faculty Admins have scoped access bounded to courses they created or belong to.
 - Main Admins possess global administrative authority across all courses and documents.
 
+### Document Upload & Auto-Indexing Permission Rules
+- Document upload requires `Permission.DOCUMENT_UPLOAD` or `is_main`.
+- Automatic continuation from ingestion to vector indexing strictly requires `Permission.DOCUMENT_INDEX` or `is_main`.
+- If an administrator possesses upload permissions but lacks indexing permissions, ingestion proceeds safely through text extraction and chunk persistence, but vector indexing is held in `QUEUED_FOR_INDEXING` awaiting authorized action. The document is NEVER falsely marked complete.
+- Persistent stage telemetry (`job_id`, `current_stage`, `progress_percent`, chunk metrics) is sourced directly from `IndexingJob` and enforced by course-scoped authorization.
+
 ## Input validation
 
 Validate:
@@ -153,16 +159,12 @@ Never log:
 
 Treat retrieved document text as untrusted data. Retrieved text may contain prompt-injection instructions and must never override system/developer security rules.
 
-## Multimodal truthfulness & current RAG scope
+## Multimodal truthfulness & visual evidence rules (Phase 11A)
 
 The official project title is **Multimodal RAG-Based University Knowledge Assistant**.
-However, genuine multimodal RAG (vision-language models, OCR pipelines, image embeddings, visual retrieval) is intentionally **deferred to a future phase**.
-
-The current backend implementation is strictly **multi-format TEXT RAG** supporting:
-- PDF (text extraction via pypdf)
-- DOCX (text extraction via python-docx)
-- TXT
-- Markdown
-- CSV
-
-Do not advertise multimodal support or claim vision capabilities in API responses, documentation, or UI until a non-text modality is genuinely implemented in a future phase.
+Phase 11A implements genuine visual content retrieval for supported academic PDFs (diagrams, flowcharts, charts, scanned pages):
+- **Image Content Untrusted Boundary:** Text visible within images or diagrams is strictly treated as untrusted document data. It must never override system instructions or access policy. The vision prompt explicitly instructs the vision model to analyze content as inert evidence.
+- **Local Inference & Privacy:** Vision processing is strictly local (Ollama). Never upload university documents to cloud vision APIs without explicit configuration.
+- **Truthful Degradation Policy:** If local vision model (`qwen2.5vl:3b`) is unavailable or unreachable, text content continues to be ingested cleanly, and `IndexingJob.error_message` records `"Visual analysis skipped: Vision model (qwen2.5vl:3b) not installed/reachable. Text indexed."` Never create phantom visual chunks or fake multimodal badges.
+- **Resource Bounds:** Vision processing renders selected pages at 150 DPI capped at `VISION_MAX_IMAGE_PIXELS` (default 1536×1536) and `VISION_MAX_PAGES_PER_DOC` (default 5). Images are processed sequentially in-memory with zero disk persistence of rendered pages.
+- **Vector Dimension Preservation:** Visual evidence descriptions are embedded using the configured 1024-d text embedding model (`qwen3-embedding:0.6b`) into standard `DocumentChunk` records. Never mix incompatible vector dimensions.

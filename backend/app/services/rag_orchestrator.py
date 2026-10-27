@@ -379,16 +379,19 @@ class RAGOrchestrator:
             # -------------------------------------------------------------
             # 8. Citation Provenance Packaging
             # -------------------------------------------------------------
-            context_item_map = {item.source_id: item for item in assembled_context.items}
+            context_item_map = {item.source_id.lower(): item for item in assembled_context.items}
             citations: list[CitationItem] = []
 
             # Only include citations that were referenced by the model in its response
             for src_tag in llm_res.sources_referenced:
-                item = context_item_map.get(src_tag)
+                item = context_item_map.get(src_tag.lower())
                 if item is not None:
                     snippet_text = item.text.strip()
                     if len(snippet_text) > 300:
                         snippet_text = snippet_text[:300] + "..."
+
+                    modality = item.chunk_metadata.get("source_modality", "text") if item.chunk_metadata else "text"
+                    v_type = item.chunk_metadata.get("visual_type") if item.chunk_metadata else None
 
                     citations.append(
                         CitationItem(
@@ -401,6 +404,8 @@ class RAGOrchestrator:
                             section_title=item.section_title,
                             relevance_score=item.reranker_score,
                             snippet=snippet_text,
+                            source_modality=modality,
+                            visual_type=v_type,
                         )
                     )
 

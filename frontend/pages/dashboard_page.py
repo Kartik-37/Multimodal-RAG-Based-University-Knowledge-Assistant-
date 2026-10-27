@@ -1,539 +1,494 @@
 """
-Dashboard Presentation Page with Role-Tailored Perspectives.
+Administrator Overview Page.
 
-Provides distinct experiences:
-- STUDENT: Direct inquiry entry point, academic course atlas cards, and grounded Q&A access.
-  Strictly membership-based & public catalog: students see active, published or enrolled courses.
-- ADMIN: University Knowledge Management with courses, document lifecycle, and indexing overview.
-Strictly avoids N+1 API calls and uses no obsolete active-corpus concepts.
+Operational starting point and control center for university administrators.
+Tailored for the Editorial Academic identity:
+- Truthful, restrained subsystem operational telemetry (no giant status pill container)
+- Prioritized Attention Required section only when genuine failed jobs exist
+- Balanced operational workspace: Academic Knowledge Repositories and Vectorization Queue
+- Zero redundant quick-action buttons duplicating the global sidebar
+- Truthful decoupled loading, empty, and error branches
+- Server-enforced student redirect to /chat
 """
 
 import datetime
-import urllib.parse
+import logging
+from collections.abc import Callable
 
 from nicegui import ui
 
+from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
+from frontend.client.models import (
+    ActivityEventDTO,
+    CourseSummaryDTO,
+    IndexingJobDTO,
+    SystemHealthDTO,
+    UserDTO,
+)
 from frontend.components.layout import page_layout
-from frontend.components.ui_kit import render_alert, render_empty_state, render_stat_card
+from frontend.security.access_control import has_admin_permission
 from frontend.state.app_state import state
+
+logger = logging.getLogger(__name__)
+
+
+def format_relative_time(ts_str: str | None) -> str:
+    """Format an ISO timestamp or date into human-readable relative duration."""
+    if not ts_str:
+        return ""
+    try:
+        clean_ts = ts_str.replace("Z", "+00:00")
+        dt = datetime.datetime.fromisoformat(clean_ts)
+        now = datetime.datetime.now(dt.tzinfo) if dt.tzinfo else datetime.datetime.now()
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+        if seconds < 0 or seconds < 60:
+            return "Just now"
+        if seconds < 3600:
+            return f"{seconds // 60}m ago"
+        if seconds < 86400:
+            return f"{seconds // 3600}h ago"
+        if seconds < 86400 * 7:
+            return f"{seconds // 86400}d ago"
+        return dt.strftime("%b %d, %Y")
+    except Exception:
+        return str(ts_str)[:10]
+
+
+def get_greeting(full_name: str | None, current_hour: int | None = None) -> str:
+    """Format time-of-day greeting with administrator's first name."""
+    if current_hour is None:
+        current_hour = datetime.datetime.now().hour
+    if current_hour < 12:
+        period = "Good morning"
+    elif current_hour < 18:
+        period = "Good afternoon"
+    else:
+        period = "Good evening"
+
+    name = (full_name or "").strip()
+    if not name:
+        return f"{period}."
+    first_name = name.split()[0]
+    return f"{period}, {first_name}."
+
+
+def _render_student_dashboard() -> None:
+    """Student dashboard contract: redirect directly to conversational workspace."""
+    ui.navigate.to("/chat")
+
+
+def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> None:
+    """Render the operational dashboard contents with balanced, restrained layouts."""
+    is_main = user.admin_role == "MAIN_ADMIN"
+    can_view_courses = is_main or has_admin_permission(user, Permission.COURSE_VIEW)
+    can_index = is_main or has_admin_permission(user, Permission.DOCUMENT_INDEX)
+    can_retry_index = is_main or has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
+    can_view_activity = is_main or has_admin_permission(user, Permission.ADMIN_VIEW)
+
+    # 1. Fetch operational health
+    system_health: SystemHealthDTO | None = None
+    system_health_error: str | None = None
+    try:
+        system_health = api_client.get_system_health()
+    except Exception as exc:
+        system_health_error = normalize_error(exc, context="system")
+        logger.warning("Failed to retrieve system health for dashboard: %s", exc)
+
+    # 2. Fetch indexing jobs
+    indexing_jobs: list[IndexingJobDTO] | None = None
+    indexing_jobs_error: str | None = None
+    try:
+        indexing_jobs = api_client.get_indexing_jobs()
+    except Exception as exc:
+        indexing_jobs_error = normalize_error(exc, context="document")
+        logger.warning("Failed to retrieve indexing jobs for dashboard: %s", exc)
+
+    active_jobs: list[IndexingJobDTO] = []
+    failed_jobs: list[IndexingJobDTO] = []
+    if indexing_jobs is not None:
+        active_jobs = [
+            j
+            for j in indexing_jobs
+            if j.status in ("PROCESSING", "STARTING", "PARSING", "CHUNKING", "EMBEDDING", "INDEXING", "VERIFYING")
+        ]
+        failed_jobs = [j for j in indexing_jobs if j.status == "FAILED"]
+
+    # 3. Fetch course summaries
+    course_summaries: list[CourseSummaryDTO] | None = None
+    course_summaries_error: str | None = None
+    if can_view_courses:
+        try:
+            course_summaries = api_client.get_course_summaries()
+        except Exception as exc:
+            course_summaries_error = normalize_error(exc, context="course")
+            logger.warning("Failed to retrieve course summaries for dashboard: %s", exc)
+
+    # 4. Fetch recent activity (if permitted)
+    recent_activity: list[ActivityEventDTO] | None = None
+    recent_activity_error: str | None = None
+    if can_view_activity:
+        try:
+            logs = api_client.get_activity_log()
+            recent_activity = logs[:5] if logs else []
+        except Exception as exc:
+            recent_activity_error = normalize_error(exc, context="audit")
+            logger.warning("Failed to retrieve activity log for dashboard: %s", exc)
+
+    # =========================================================================
+    # A. Truthful System Operational Status Strip (Compact, Clean, Direct)
+    # =========================================================================
+    if system_health_error:
+        with ui.row().classes(
+            "w-full items-center justify-between p-3.5 rounded-lg bg-surface-elevated border border-gold/40 gap-3"
+        ):
+            with ui.row().classes("items-center gap-2.5 min-w-0 flex-1"):
+                ui.icon("warning", size="18px").classes("text-amber-700 shrink-0")
+                ui.label(f"Subsystem telemetry probe failed: {system_health_error}").classes(
+                    "text-xs sm:text-sm text-secondary-navy font-medium truncate"
+                )
+            ui.button("Retry Diagnostics", icon="refresh", on_click=on_refresh).props(
+                "outline dense no-caps"
+            ).classes("text-xs font-semibold text-primary-navy border-gold shrink-0")
+    elif system_health:
+        status_val = (system_health.status or "unknown").lower()
+        if status_val == "healthy":
+            strip_bg = "bg-emerald-50/70 border-emerald-300 text-emerald-950"
+            status_dot = "text-emerald-600"
+            status_title = "All Core Infrastructure Operational"
+            status_detail = "Relational persistence, pgvector embeddings, inference runtime, and indexing daemon are synchronized."
+        elif status_val == "degraded":
+            strip_bg = "bg-amber-50/80 border-amber-300 text-amber-950"
+            status_dot = "text-amber-600"
+            degraded_names = [
+                c.name.replace("_", " ").title()
+                for c in (system_health.components or [])
+                if (c.status or "").lower() in ("degraded", "failed", "outage", "unavailable")
+            ]
+            comp_desc = f" ({', '.join(degraded_names)})" if degraded_names else ""
+            status_title = f"System Operating in Degraded State{comp_desc}"
+            status_detail = "One or more background daemons are degraded. Retrieval remains available for indexed material."
+        elif status_val in ("preview", "simulation"):
+            strip_bg = "bg-slate-50/80 border-slate-300 text-slate-900"
+            status_dot = "text-slate-500"
+            status_title = "Interactive Preview Mode (Simulated Infrastructure)"
+            status_detail = "Running with decoupled preview data. Subsystem infrastructure has not been verified against live services."
+        elif status_val in ("unavailable", "unhealthy", "failed", "outage"):
+            strip_bg = "bg-rose-50/80 border-rose-300 text-rose-950"
+            status_dot = "text-rose-600"
+            status_title = "Critical Infrastructure Outage Detected"
+            status_detail = "Core database, vector extensions, or model inference are currently unreachable."
+        else:
+            strip_bg = "bg-canvas border-subtle text-secondary-navy"
+            status_dot = "text-secondary-navy"
+            status_title = "System Telemetry Status Unknown"
+            status_detail = "Subsystem health status could not be established from available telemetry."
+
+        with ui.row().classes(f"w-full flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 sm:p-4 rounded-lg border {strip_bg} gap-2 sm:gap-3"):
+            with ui.row().classes("items-center gap-3 min-w-0 flex-1 w-full sm:w-auto"):
+                ui.label("●").classes(f"text-base {status_dot} leading-none shrink-0")
+                with ui.column().classes("gap-0 min-w-0 flex-1"):
+                    with ui.row().classes("items-center gap-2 flex-wrap"):
+                        ui.label(status_title).classes("text-xs sm:text-sm font-bold font-sans break-words")
+                        if system_health.checked_at:
+                            ui.label(f"• Verified {system_health.checked_at[:19].replace('T', ' ')}").classes(
+                                "text-[11px] font-mono opacity-70 hidden md:inline"
+                            )
+                    ui.label(status_detail).classes("text-xs opacity-85 line-clamp-2 sm:line-clamp-1")
+            if is_main or has_admin_permission(user, Permission.ADMIN_VIEW):
+                ui.button(
+                    "Detailed Diagnostics",
+                    icon="arrow_forward",
+                    on_click=lambda: ui.navigate.to("/system-health"),
+                ).props("flat dense no-caps").classes(
+                    "text-xs font-bold text-primary-navy hover:text-gold shrink-0 px-2 self-start sm:self-auto"
+                )
+
+    # =========================================================================
+    # B. Attention Required (Rendered ONLY when genuine issues exist)
+    # =========================================================================
+    if failed_jobs:
+        with ui.column().classes("w-full p-4 rounded-lg bg-rose-50/90 border border-rose-300 gap-3"):
+            with ui.row().classes("w-full items-center justify-between"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("error", size="18px").classes("text-rose-700")
+                    ui.label(f"Attention Required: {len(failed_jobs)} Failed Indexing Job(s)").classes(
+                        "text-xs sm:text-sm font-bold text-rose-950 font-sans tracking-wide"
+                    )
+                if can_index:
+                    ui.button(
+                        "Open Processing Queue",
+                        icon="arrow_forward",
+                        on_click=lambda: ui.navigate.to("/documents?view=processing"),
+                    ).props("flat dense no-caps").classes("text-xs font-bold text-rose-900 hover:underline")
+
+            with ui.column().classes("w-full gap-2"):
+                for job in failed_jobs[:3]:
+                    with ui.row().classes(
+                        "w-full items-center justify-between p-2.5 rounded bg-white/80 border border-rose-200 gap-2"
+                    ):
+                        with ui.column().classes("gap-0.5 min-w-0 flex-1"):
+                            ui.label(job.document_name or f"Document {job.document_id[:8]}").classes(
+                                "text-xs font-bold text-rose-950 truncate"
+                            )
+                            ui.label(job.error_message or "Vector embedding synthesis failed").classes(
+                                "text-[11px] text-rose-800 line-clamp-1"
+                            )
+                        if can_retry_index:
+
+                            def trigger_retry(kb=job.knowledge_base_id, doc=job.document_id):
+                                try:
+                                    api_client.retry_indexing(kb, doc)
+                                    ui.notify("Indexing retry submitted.", type="positive")
+                                    on_refresh()
+                                except Exception as ex:
+                                    ui.notify(normalize_error(ex, context="indexing"), type="negative")
+
+                            ui.button("Retry", icon="refresh", on_click=trigger_retry).props(
+                                "outline dense no-caps"
+                            ).classes("text-xs font-bold text-rose-900 border-rose-400 px-2.5 py-0.5")
+
+    # =========================================================================
+    # C. Primary Operational Workspace (Balanced 2 Columns on Desktop)
+    # =========================================================================
+    with ui.element("div").classes("w-full grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"):
+        # ---------------------------------------------------------------------
+        # Column 1: Academic Knowledge Repositories (Compact Summary)
+        # ---------------------------------------------------------------------
+        with ui.column().classes("w-full p-5 bg-surface-elevated border border-subtle rounded-lg gap-3"):
+            with ui.row().classes("w-full items-center justify-between pb-2.5 border-b border-subtle"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("school", size="18px").classes("text-primary-navy")
+                    ui.label("Course Repositories").classes(
+                        "text-sm font-bold text-primary-navy font-editorial"
+                    )
+                if can_view_courses:
+                    ui.button(
+                        "Manage Courses",
+                        icon="arrow_forward",
+                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
+                    ).props("flat dense no-caps").classes(
+                        "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+                    )
+
+            if course_summaries_error:
+                with ui.row().classes(
+                    "w-full p-3 rounded bg-canvas border border-subtle text-xs text-secondary-navy justify-between items-center"
+                ):
+                    ui.label(f"Course summaries unavailable: {course_summaries_error}")
+                    ui.button("Retry", icon="refresh", on_click=on_refresh).props(
+                        "flat dense no-caps"
+                    ).classes("text-xs font-bold text-primary-navy")
+            elif course_summaries:
+                with ui.column().classes("w-full gap-0 border border-subtle rounded overflow-hidden"):
+                    for idx, c in enumerate(course_summaries[:4]):
+                        border_b = "border-b border-subtle" if (idx < min(len(course_summaries), 4) - 1 or len(course_summaries) > 4) else ""
+                        with (
+                            ui.row()
+                            .classes(
+                                f"w-full items-center justify-between p-3 bg-canvas hover:bg-surface transition-colors {border_b} cursor-pointer"
+                            )
+                            .on("click", lambda e, cid=c.id: ui.navigate.to(f"/documents?kb_id={cid}"))
+                        ):
+                            with ui.column().classes("gap-0.5 min-w-0 flex-1 pr-3"):
+                                ui.label(c.name).classes(
+                                    "text-xs font-bold text-primary-navy truncate font-editorial"
+                                )
+                                ui.label(f"{c.active_documents} active • {c.total_documents} total documents").classes(
+                                    "text-[11px] text-secondary-navy"
+                                )
+                            with ui.row().classes("items-center gap-2 shrink-0"):
+                                ui.label(f"{c.indexed_documents} indexed").classes(
+                                    "text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                )
+                                ui.icon("chevron_right", size="16px").classes("text-secondary-navy/60")
+                    if len(course_summaries) > 4:
+                        with (
+                            ui.row()
+                            .classes("w-full items-center justify-center p-2.5 bg-surface hover:bg-surface-elevated text-xs font-semibold text-primary-navy cursor-pointer")
+                            .on("click", lambda: ui.navigate.to("/knowledge-bases"))
+                        ):
+                            ui.label(f"+ {len(course_summaries) - 4} more courses in Course Management →")
+            else:
+                with ui.row().classes("w-full p-4 rounded bg-canvas border border-subtle items-center gap-3"):
+                    ui.icon("school", size="20px").classes("text-gold")
+                    with ui.column().classes("gap-0"):
+                        ui.label("No Courses Provisioned").classes("text-xs font-bold text-primary-navy")
+                        ui.label("Create courses in Course Management to begin syllabus indexing.").classes(
+                            "text-xs text-secondary-navy"
+                        )
+
+        # ---------------------------------------------------------------------
+        # Column 2: Indexing & Vectorization Queue
+        # ---------------------------------------------------------------------
+        with ui.column().classes("w-full p-5 bg-surface-elevated border border-subtle rounded-lg gap-3"):
+            with ui.row().classes("w-full items-center justify-between pb-2.5 border-b border-subtle"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("sync", size="18px").classes("text-primary-navy")
+                    ui.label("Indexing Queue").classes(
+                        "text-sm font-bold text-primary-navy font-editorial"
+                    )
+                if can_index:
+                    ui.button(
+                        "Open Processing Queue",
+                        icon="arrow_forward",
+                        on_click=lambda: ui.navigate.to("/documents?view=processing"),
+                    ).props("flat dense no-caps").classes(
+                        "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+                    )
+
+            if indexing_jobs_error:
+                with ui.row().classes(
+                    "w-full p-3 rounded bg-canvas border border-subtle text-xs text-secondary-navy justify-between items-center"
+                ):
+                    ui.label(f"Queue telemetry unavailable: {indexing_jobs_error}")
+                    ui.button("Retry", icon="refresh", on_click=on_refresh).props(
+                        "flat dense no-caps"
+                    ).classes("text-xs font-bold text-primary-navy")
+            elif active_jobs:
+                with ui.column().classes("w-full gap-3"):
+                    ui.label(f"{len(active_jobs)} active vectorization job(s) in progress").classes(
+                        "text-xs font-bold text-amber-800 uppercase tracking-wider"
+                    )
+                    for job in active_jobs:
+                        pct = min(100.0, max(0.0, job.progress_percent))
+                        with ui.column().classes("w-full p-3 rounded border border-amber-200 bg-amber-50/50 gap-1.5"):
+                            with ui.row().classes("w-full justify-between items-center"):
+                                ui.label(job.document_name or "Course Material").classes(
+                                    "text-xs font-bold text-primary-navy truncate max-w-[200px]"
+                                )
+                                ui.label(f"Stage: {job.stage.replace('_', ' ').title()}").classes(
+                                    "text-[10px] font-bold text-amber-700 uppercase"
+                                )
+                            ui.linear_progress(value=pct / 100.0, show_value=False).props(
+                                "rounded color=amber-7"
+                            ).classes("w-full")
+                            with ui.row().classes("w-full justify-between text-[11px] font-mono text-secondary-navy"):
+                                ui.label(f"{job.processed_chunks} / {job.total_chunks} chunks")
+                                ui.label(f"{pct:.0f}%")
+            elif failed_jobs:
+                with ui.row().classes("w-full p-4 rounded bg-rose-50/60 border border-rose-200 items-center justify-between gap-3"):
+                    with ui.row().classes("items-center gap-2.5 min-w-0 flex-1"):
+                        ui.icon("warning", size="20px").classes("text-rose-700")
+                        with ui.column().classes("gap-0"):
+                            ui.label(f"{len(failed_jobs)} Failed Job(s) Need Attention").classes("text-xs font-bold text-rose-950")
+                            ui.label("Review diagnostics or retry in the Processing queue.").classes("text-xs text-rose-800")
+                    ui.button("View Queue", icon="arrow_forward", on_click=lambda: ui.navigate.to("/documents?view=processing")).props("flat dense no-caps").classes("text-xs font-bold text-rose-900")
+            else:
+                with ui.row().classes("w-full p-4 rounded bg-canvas border border-subtle items-center gap-3"):
+                    ui.icon("check_circle", size="20px").classes("text-emerald-700")
+                    with ui.column().classes("gap-0"):
+                        ui.label("Queue Idle").classes("text-xs font-bold text-primary-navy")
+                        ui.label("All document vector embeddings are currently synchronized.").classes(
+                            "text-xs text-secondary-navy"
+                        )
+
+    # =========================================================================
+    # D. Recent Activity Audit Ledger (if permitted)
+    # =========================================================================
+    if can_view_activity:
+        with ui.column().classes("w-full p-5 bg-surface-elevated border border-subtle rounded-lg gap-3"):
+            with ui.row().classes("w-full items-center justify-between pb-2.5 border-b border-subtle"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("history", size="18px").classes("text-primary-navy")
+                    ui.label("Recent Activity").classes(
+                        "text-sm font-bold text-primary-navy font-editorial"
+                    )
+                ui.button(
+                    "Full Audit Log",
+                    icon="arrow_forward",
+                    on_click=lambda: ui.navigate.to("/activity"),
+                ).props("flat dense no-caps").classes(
+                    "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+                )
+
+            if recent_activity_error:
+                ui.label(f"Audit log unavailable: {recent_activity_error}").classes(
+                    "text-xs text-secondary-navy italic"
+                )
+            elif recent_activity:
+                with ui.column().classes("w-full gap-0 border border-subtle rounded overflow-hidden"):
+                    for idx, act in enumerate(recent_activity):
+                        border_b = "border-b border-subtle/50" if idx < len(recent_activity) - 1 else ""
+                        with ui.row().classes(
+                            f"w-full items-center justify-between p-2.5 bg-canvas hover:bg-surface/50 text-xs {border_b} gap-3"
+                        ):
+                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                ui.icon("check_circle", size="14px").classes("text-emerald-700 shrink-0")
+                                ui.label(f"{act.action} — {act.resource_name}").classes(
+                                    "font-semibold text-primary-navy truncate font-sans"
+                                )
+                                ui.label(f"by {act.actor_name or act.actor_email}").classes(
+                                    "text-secondary-navy text-[11px] truncate hidden sm:inline"
+                                )
+                            ui.label(format_relative_time(act.timestamp)).classes(
+                                "text-[11px] font-mono text-secondary-navy shrink-0"
+                            )
+            else:
+                ui.label("No recent administrative events recorded.").classes(
+                    "text-xs text-secondary-navy italic py-2"
+                )
+
+
+def _render_admin_dashboard(user: UserDTO) -> None:
+    """Admin dashboard wrapper providing in-place refresh capability."""
+    dashboard_box = ui.column().classes("w-full gap-6 max-w-5xl mx-auto")
+
+    def on_refresh() -> None:
+        dashboard_box.clear()
+        with dashboard_box:
+            _render_dashboard_content(user, on_refresh)
+
+    with dashboard_box:
+        _render_dashboard_content(user, on_refresh)
 
 
 def register_dashboard_page() -> None:
-    """Register /dashboard and index / routes with NiceGUI."""
-
     @ui.page("/")
     def index_route() -> None:
-        """Entry point redirecting to dashboard if authenticated, else login."""
-        if state.current_user is not None:
-            ui.navigate.to("/dashboard")
+        try:
+            user = state.current_user or api_client.get_current_user()
+        except Exception:
+            user = None
+        if user is not None:
+            if user.role == "STUDENT":
+                ui.navigate.to("/chat")
+            else:
+                ui.navigate.to("/dashboard")
         else:
             ui.navigate.to("/login")
 
     @ui.page("/dashboard")
     def dashboard_page() -> None:
-        user = state.current_user
-        is_admin = bool(user and user.role == "ADMIN")
+        try:
+            user = state.current_user or api_client.get_current_user()
+        except Exception:
+            user = None
+        if not user:
+            ui.navigate.to("/login")
+            return
 
-        page_title = (
-            "University Knowledge Management"
-            if is_admin
-            else f"Welcome, {user.full_name if user else 'Student'}"
-        )
-        page_subtitle = (
-            "Manage courses, learning materials, vector indexing, and administrative operations."
-            if is_admin
-            else "Access your verified course materials and ask questions with authoritative source citations."
-        )
+        if user.role != "ADMIN":
+            # Authenticated students visiting /dashboard are redirected to the chat workspace
+            ui.navigate.to("/chat")
+            return
+
+        def render_header_actions() -> None:
+            ui.button(
+                "Refresh",
+                icon="refresh",
+                on_click=lambda: ui.navigate.to("/dashboard"),
+            ).props("flat dense no-caps").classes(
+                "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+            )
 
         with page_layout(
-            title=page_title,
-            subtitle=page_subtitle,
+            title="Administrator Overview",
+            subtitle="Operational telemetry, vector indexing queue, and academic knowledge management.",
             active_route="/dashboard",
             require_auth=True,
+            header_actions_fn=render_header_actions,
         ):
-            # ------------------------------------------------------------------
-            # STUDENT PERSPECTIVE
-            # ------------------------------------------------------------------
-            if not is_admin:
-                now_hour = datetime.datetime.now().hour
-                time_greeting = "Good morning" if now_hour < 12 else ("Good afternoon" if now_hour < 18 else "Good evening")
-                user_first_name = user.full_name.split()[0] if (user and user.full_name) else "Student"
-
-                course_load_error = False
-                enrolled_kbs = []
-                try:
-                    enrolled_kbs = api_client.get_knowledge_bases() if user else []
-                except ValueError as err:
-                    course_load_error = True
-                    render_alert(f"Unable to load courses. {err}", "negative")
-
-                # 1. Study Starting Point Header & Personalized Greeting
-                with ui.element("div").classes("w-full mb-3"):
-                    with ui.row().classes("w-full justify-between items-center gap-3 flex-wrap"):
-                        with ui.column().classes("gap-1"):
-                            ui.label(f"{time_greeting}, {user_first_name}").classes(
-                                "text-2xl sm:text-3xl font-extrabold text-[#0E1D61] tracking-tight font-serif"
-                            )
-                            ui.label(
-                                "Query your university course materials with verified academic grounding and citations."
-                            ).classes("text-sm text-[#4A5568] leading-relaxed")
-                        with ui.row().classes("items-center gap-2"):
-                            with ui.element("div").classes(
-                                "inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FAF6F0] border border-[#E2D9CC] text-[#B89A5A] text-xs font-semibold font-mono"
-                            ):
-                                ui.icon("verified", size="14px").classes("text-[#B89A5A]")
-                                ui.label("Verified Academic Grounding")
-
-                # 2. Visually Integrated Assistant Composer
-                with ui.card().classes(
-                    "w-full p-6 sm:p-7 bg-white border border-[#E2D9CC] rounded-2xl shadow-sm gap-4 box-border my-2"
-                ):
-                    with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
-                        with ui.row().classes("items-center gap-2.5"):
-                            with ui.element("div").classes(
-                                "w-8 h-8 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold border border-[#E2D9CC]"
-                            ):
-                                ui.icon("chat", size="18px")
-                            ui.label("Ask Knowledge Assistant").classes(
-                                "text-base font-bold text-[#0E1D61] tracking-tight font-serif"
-                            )
-                        ui.label("Searches all accessible course syllabi & notes").classes(
-                            "text-xs font-medium text-[#718096] font-mono"
-                        )
-
-                    def handle_quick_ask(custom_query: str | None = None) -> None:
-                        q_val = custom_query or (ask_input.value or "").strip()
-                        if q_val:
-                            encoded_q = urllib.parse.quote(q_val)
-                            ui.navigate.to(f"/chat?q={encoded_q}")
-                        else:
-                            ui.navigate.to("/chat")
-
-                    with ui.row().classes("w-full gap-2.5 items-center"):
-                        ask_input = (
-                            ui.input(
-                                placeholder="Ask any question about your courses (e.g. 'Explain cache coherence' or 'What is the attendance policy?')...",
-                            )
-                            .props("outlined dense")
-                            .classes("flex-1 text-sm minimalist-input")
-                        )
-                        ask_input.on("keydown.enter", lambda: handle_quick_ask())
-
-                        ui.button(
-                            "Ask Assistant",
-                            icon="arrow_forward",
-                            on_click=lambda: handle_quick_ask(),
-                        ).props("no-caps").classes(
-                            "px-5 py-2 font-semibold text-sm rounded-xl !bg-[#0E1D61] hover:!bg-[#15277A] !text-white shadow-sm transition-colors shrink-0"
-                        )
-
-                    # Example Prompt Inspiration Chips
-                    with ui.column().classes("w-full gap-2 pt-1"):
-                        ui.label("Suggested starting inquiries:").classes(
-                            "text-xs font-semibold text-[#718096] tracking-wider uppercase font-mono"
-                        )
-                        prompt_examples = [
-                            "Explain the main topics covered in the syllabus",
-                            "What is the evaluation and grading breakdown?",
-                            "Summarize the late submission policy",
-                            "Compare key concepts from recent lecture notes",
-                        ]
-                        with ui.row().classes("w-full items-center gap-2 flex-wrap"):
-                            for prompt_text in prompt_examples:
-                                with (
-                                    ui.row()
-                                    .classes(
-                                        "items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FAF6F0] hover:bg-[#F5EFEB] border border-[#E2D9CC] hover:border-[#B89A5A] text-xs text-[#1C1917] hover:text-[#0E1D61] cursor-pointer transition-colors"
-                                    )
-                                    .on("click", lambda p=prompt_text: handle_quick_ask(p))
-                                ):
-                                    ui.icon("arrow_outward", size="12px").classes("text-[#B89A5A]")
-                                    ui.label(prompt_text).classes("font-medium")
-
-                # 3. Quick Action Strips & Metrics
-                with ui.element("div").classes(
-                    "w-full grid grid-cols-1 sm:grid-cols-3 gap-4 my-2 box-border"
-                ):
-                    total_docs = sum(c.document_count for c in enrolled_kbs)
-                    actions_data = [
-                        (
-                            "menu_book",
-                            "Available Courses",
-                            f"{len(enrolled_kbs)} Course(s) Active",
-                            "Explore course library",
-                            "/knowledge-bases",
-                        ),
-                        (
-                            "chat",
-                            "Direct Assistant Chat",
-                            "Full Conversation Mode",
-                            "Start new inquiry",
-                            "/chat",
-                        ),
-                        (
-                            "description",
-                            "Learning Materials",
-                            f"{total_docs} Verified Document(s)",
-                            "View course materials",
-                            "/knowledge-bases",
-                        ),
-                    ]
-                    for a_icon, a_title, a_sub, _a_action, a_route in actions_data:
-                        with (
-                            ui.card()
-                            .classes(
-                                "academic-card p-4 bg-white border border-[#E2D9CC] rounded-xl shadow-xs flex flex-col justify-between cursor-pointer hover:border-[#B89A5A] transition-colors"
-                            )
-                            .on("click", lambda r=a_route: ui.navigate.to(r))
-                        ):
-                            with ui.row().classes("items-center justify-between w-full mb-1"):
-                                with ui.element("div").classes(
-                                    "w-8 h-8 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold border border-[#E2D9CC]"
-                                ):
-                                    ui.icon(a_icon, size="18px")
-                                ui.icon("chevron_right", size="18px").classes("text-[#A0AEC0]")
-                            with ui.column().classes("gap-0.5"):
-                                ui.label(a_title).classes("text-sm font-bold text-[#0E1D61] font-serif")
-                                ui.label(a_sub).classes("text-xs text-[#718096] font-medium")
-
-                # 4. Available Courses Catalog Section
-                with ui.column().classes("w-full gap-4 mt-4"):
-                    with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
-                        with ui.row().classes("items-center gap-2"):
-                            with ui.element("div").classes(
-                                "w-7 h-7 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold border border-[#E2D9CC]"
-                            ):
-                                ui.icon("school", size="16px")
-                            ui.label("Your Academic Courses").classes(
-                                "text-lg font-bold text-[#0E1D61] tracking-tight font-serif"
-                            )
-                            ui.label(f"({len(enrolled_kbs)} available)").classes(
-                                "text-xs text-[#718096] font-mono"
-                            )
-
-                        if enrolled_kbs and len(enrolled_kbs) > 2:
-                            search_input = (
-                                ui.input(placeholder="Search courses...")
-                                .props("outlined dense clearable")
-                                .classes("w-60 text-xs minimalist-input")
-                            )
-
-                    # Courses Cards Container
-                    courses_container = ui.element("div").classes(
-                        "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-                    )
-
-                    def render_enrolled_cards(query_text: str = "") -> None:
-                        courses_container.clear()
-                        clean_q = (query_text or "").strip().lower()
-                        filtered = (
-                            [
-                                k
-                                for k in enrolled_kbs
-                                if clean_q in k.name.lower()
-                                or clean_q in (k.description or "").lower()
-                            ]
-                            if clean_q
-                            else enrolled_kbs
-                        )
-
-                        with courses_container:
-                            if not filtered and not course_load_error:
-                                with ui.column().classes("col-span-full w-full"):
-                                    render_empty_state(
-                                        icon="search_off" if clean_q else "school",
-                                        title=(
-                                            "No Matching Courses"
-                                            if clean_q
-                                            else "No Courses Available"
-                                        ),
-                                        description=(
-                                            f"No course matches '{clean_q}'."
-                                            if clean_q
-                                            else "No university courses are currently published for student access. "
-                                            "Your faculty instructor will publish course materials shortly."
-                                        ),
-                                    )
-                            elif filtered:
-                                for kb in filtered:
-                                    with ui.card().classes(
-                                        "academic-card p-5 bg-white border border-[#E2D9CC] rounded-xl shadow-xs flex flex-col justify-between hover:border-[#B89A5A] transition-colors"
-                                    ):
-                                        with ui.column().classes("gap-2 w-full"):
-                                            with ui.row().classes("items-center justify-between w-full"):
-                                                ui.label(kb.name).classes(
-                                                    "text-sm font-bold text-[#0E1D61] font-serif tracking-tight truncate flex-1"
-                                                )
-                                                ui.badge(
-                                                    f"{kb.document_count} doc(s)",
-                                                    color="slate-1",
-                                                ).props("text-color=slate-7").classes(
-                                                    "text-[10px] font-mono font-semibold px-2 py-0.5 border border-[#E2D9CC] shrink-0"
-                                                )
-
-                                            ui.label(
-                                                kb.description
-                                                or "Official learning modules, syllabi, and reference documents."
-                                            ).classes(
-                                                "text-xs text-[#4A5568] line-clamp-2 leading-relaxed"
-                                            )
-
-                                        with ui.row().classes(
-                                            "w-full justify-between items-center pt-3 border-t border-[#F5EFEB] mt-3"
-                                        ):
-                                            ui.button(
-                                                "Ask Questions",
-                                                icon="chat",
-                                                on_click=lambda c_id=kb.id: ui.navigate.to(
-                                                    f"/chat?kb_id={c_id}"
-                                                ),
-                                            ).props("no-caps dense").classes(
-                                                "text-xs font-semibold px-3 py-1.5 !bg-[#0E1D61] hover:!bg-[#15277A] !text-white rounded-lg shadow-xs transition-colors"
-                                            )
-                                            ui.button(
-                                                "View Materials",
-                                                icon="menu_book",
-                                                on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                                            ).props("flat dense no-caps").classes(
-                                                "text-xs font-semibold text-[#4A5568] hover:text-[#0E1D61] px-2 py-1"
-                                            )
-
-                    if enrolled_kbs and len(enrolled_kbs) > 2:
-                        search_input.on_value_change(lambda e: render_enrolled_cards(e.value))
-
-                    render_enrolled_cards()
-                return
-
-            # ------------------------------------------------------------------
-            # ADMINISTRATOR PERSPECTIVE
-            # ------------------------------------------------------------------
-            def user_can(perm: str) -> bool:
-                if not user or user.role != "ADMIN":
-                    return False
-                if user.admin_role == "MAIN_ADMIN":
-                    return True
-                return perm in (user.permissions or [])
-
-            try:
-                course_summaries = api_client.get_course_summaries()
-            except ValueError as err:
-                render_alert(f"Unable to load course data. {err}", "negative")
-                course_summaries = []
-
-            try:
-                indexing_jobs = api_client.get_indexing_jobs()
-            except Exception:
-                indexing_jobs = []
-
-            total_courses = len(course_summaries)
-            total_documents = sum(c.total_documents for c in course_summaries)
-            active_documents = sum(c.active_documents for c in course_summaries)
-            total_indexed = sum(c.indexed_documents for c in course_summaries)
-            total_indexing = sum(c.indexing_documents for c in course_summaries)
-            total_failed = sum(c.failed_documents for c in course_summaries)
-
-            active_jobs = [
-                j
-                for j in indexing_jobs
-                if j.status
-                in (
-                    "PROCESSING",
-                    "STARTING",
-                    "PARSING",
-                    "CHUNKING",
-                    "EMBEDDING",
-                    "INDEXING",
-                    "VERIFYING",
-                )
-            ]
-
-            # 1. 4 Key Operational Metric Cards
-            with ui.row().classes("w-full gap-4"):
-                render_stat_card(
-                    title="Courses",
-                    value=total_courses,
-                    subtitle=f"{total_courses} registered catalog"
-                    if total_courses != 1
-                    else "1 registered course",
-                    icon="menu_book",
-                    icon_color="blue-600",
-                )
-                render_stat_card(
-                    title="Documents",
-                    value=total_documents,
-                    subtitle=f"{active_documents} active in retrieval",
-                    icon="description",
-                    icon_color="indigo-600",
-                )
-                render_stat_card(
-                    title="Indexing",
-                    value=total_indexing,
-                    subtitle=f"{total_indexed} fully indexed"
-                    if total_indexing == 0
-                    else f"{len(active_jobs)} active worker job(s)",
-                    icon="autorenew",
-                    icon_color="amber-600" if total_indexing > 0 else "slate-500",
-                )
-                render_stat_card(
-                    title="Failed Jobs",
-                    value=total_failed,
-                    subtitle="No action required"
-                    if total_failed == 0
-                    else f"{total_failed} need attention / retry",
-                    icon="error_outline",
-                    icon_color="rose-600" if total_failed > 0 else "emerald-600",
-                )
-
-            # 2. Operational Actions Bar
-            with ui.card().classes(
-                "academic-card w-full p-4 sm:p-5 bg-white border border-[#E2D9CC] rounded-xl shadow-xs"
-            ):
-                with ui.row().classes("w-full justify-between items-center mb-2.5 pb-2 border-b border-[#F5EFEB]"):
-                    with ui.row().classes("items-center gap-2"):
-                        with ui.element("div").classes(
-                            "w-7 h-7 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold border border-[#E2D9CC]"
-                        ):
-                            ui.icon("tune", size="16px")
-                        ui.label("Operational Actions").classes(
-                            "text-sm font-bold text-[#0E1D61] font-serif"
-                        )
-                    ui.label("Assigned administrative permissions").classes(
-                        "text-xs text-[#718096] font-mono"
-                    )
-
-                with ui.row().classes("w-full gap-2.5 flex-wrap items-center"):
-                    if user_can("DOCUMENT_UPLOAD"):
-                        ui.button(
-                            "Upload Document",
-                            icon="upload_file",
-                            on_click=lambda: ui.navigate.to("/documents"),
-                        ).props("no-caps dense").classes(
-                            "text-xs font-medium px-3.5 py-2 !bg-[#0E1D61] hover:!bg-[#15277A] !text-white rounded-lg shadow-xs transition-colors"
-                        )
-
-                    if user_can("COURSE_CREATE"):
-                        ui.button(
-                            "Create Course",
-                            icon="add",
-                            on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                        ).props("no-caps dense").classes(
-                            "text-xs font-medium px-3.5 py-2 !bg-[#1C1917] hover:!bg-[#292524] !text-white rounded-lg shadow-xs transition-colors"
-                        )
-
-                    ui.button(
-                        "Indexing Center",
-                        icon="hub",
-                        on_click=lambda: ui.navigate.to("/indexing"),
-                    ).props("no-caps dense outline").classes(
-                        "text-xs font-medium px-3.5 py-2 border-[#E2D9CC] text-[#1C1917] hover:bg-[#FAF6F0] rounded-lg transition-colors"
-                    )
-
-                    if user_can("ADMIN_CHAT") or user.role == "ADMIN":
-                        ui.button(
-                            "Admin Knowledge Chat",
-                            icon="chat",
-                            on_click=lambda: ui.navigate.to("/chat"),
-                        ).props("no-caps dense outline").classes(
-                            "text-xs font-medium px-3.5 py-2 border-[#0E1D61] text-[#0E1D61] hover:bg-[#FAF6F0] rounded-lg transition-colors"
-                        )
-
-                    ui.button(
-                        "System Health",
-                        icon="health_and_safety",
-                        on_click=lambda: ui.navigate.to("/system-health"),
-                    ).props("no-caps dense outline").classes(
-                        "text-xs font-medium px-3.5 py-2 border-[#E2D9CC] text-[#4A5568] hover:bg-[#FAF6F0] rounded-lg transition-colors"
-                    )
-
-            # 3. Course Catalog & Material Breakdown Table
-            with ui.card().classes(
-                "academic-card w-full p-5 sm:p-6 bg-white border border-[#E2D9CC] rounded-xl shadow-xs"
-            ):
-                with ui.row().classes("w-full justify-between items-center mb-3 pb-2 border-b border-[#F5EFEB]"):
-                    with ui.row().classes("items-center gap-2"):
-                        with ui.element("div").classes(
-                            "w-7 h-7 rounded-lg bg-[#FAF6F0] text-[#0E1D61] flex items-center justify-center font-bold border border-[#E2D9CC]"
-                        ):
-                            ui.icon("menu_book", size="16px")
-                        ui.label("Course Catalog & Documents").classes(
-                            "text-sm font-bold text-[#0E1D61] font-serif"
-                        )
-                    ui.button(
-                        "Manage All Courses",
-                        icon="arrow_forward",
-                        on_click=lambda: ui.navigate.to("/knowledge-bases"),
-                    ).props("flat dense no-caps").classes("text-xs text-[#0E1D61] font-medium")
-
-                if not course_summaries:
-                    render_empty_state(
-                        icon="menu_book",
-                        title="No Courses Registered",
-                        description="Create your first academic course knowledge base to start uploading and indexing documents.",
-                    )
-                else:
-                    course_rows = [
-                        {
-                            "id": c.id,
-                            "name": c.name,
-                            "total": c.total_documents,
-                            "active": c.active_documents,
-                            "indexed": c.indexed_documents,
-                        }
-                        for c in course_summaries
-                    ]
-                    course_cols = [
-                        {
-                            "name": "name",
-                            "label": "COURSE NAME",
-                            "field": "name",
-                            "align": "left",
-                            "sortable": True,
-                        },
-                        {
-                            "name": "total",
-                            "label": "TOTAL MATERIALS",
-                            "field": "total",
-                            "align": "center",
-                            "sortable": True,
-                        },
-                        {
-                            "name": "active",
-                            "label": "ACTIVE",
-                            "field": "active",
-                            "align": "center",
-                            "sortable": True,
-                        },
-                        {
-                            "name": "indexed",
-                            "label": "INDEXED",
-                            "field": "indexed",
-                            "align": "center",
-                            "sortable": True,
-                        },
-                        {
-                            "name": "actions",
-                            "label": "ACTION",
-                            "field": "id",
-                            "align": "right",
-                        },
-                    ]
-                    table = ui.table(
-                        columns=course_cols,
-                        rows=course_rows,
-                        row_key="id",
-                        pagination={"rowsPerPage": 10},
-                    ).classes("w-full shadow-none border-0 text-xs")
-
-                    table.add_slot(
-                        "body-cell-actions",
-                        """
-                        <q-td :props="props" class="text-right">
-                            <q-btn flat dense no-caps color="primary" label="Manage Documents" icon-right="arrow_forward" size="sm" @click="() => $emit('open_docs', props.value)" />
-                        </q-td>
-                        """,
-                    )
-                    table.on(
-                        "open_docs",
-                        lambda e: ui.navigate.to(f"/documents?kb_id={e.args}"),
-                    )
+            _render_admin_dashboard(user)

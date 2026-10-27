@@ -9,9 +9,12 @@ Orchestrates the grounded generation stage:
 5. Returns safe execution metadata without leaking internal secrets.
 """
 
+import logging
 import re
 import threading
 import time
+
+logger = logging.getLogger(__name__)
 
 from backend.app.schemas.llm import (
     LLMGenerationRequest,
@@ -22,7 +25,7 @@ from backend.app.services.llm.ollama_provider import OllamaLLMProvider
 from backend.app.services.llm.prompt_builder import GroundedPromptBuilder
 
 # Matches attribution markers formatted as [source_1], [source_2], etc.
-_SOURCE_REF_REGEX = re.compile(r"\[(source_\d+)\]")
+_SOURCE_REF_REGEX = re.compile(r"\[(source_\d+)\]", re.IGNORECASE)
 
 SAFE_INSUFFICIENT_EVIDENCE_ANSWER = (
     "I could not find any relevant information in the available documents to answer your question."
@@ -52,49 +55,125 @@ def _sanitize_llm_answer(text: str) -> str:
     # 1. Strip private reasoning channels and <think> blocks
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-    # 2. Check for explicit conclusion marker (e.g. 'Therefore, the act name is...')
-    therefore_match = re.search(
-        r"(?:Therefore|In conclusion|Consequently),?\s*(.+)",
-        cleaned,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if therefore_match:
-        conclusion = therefore_match.group(1).strip()
-        # Drop meta-notes like 'But note: ...'
-        conclusion = re.split(
-            r"\n+\s*(?:But note|Note:|However, note|The user question is|Answer:)",
-            conclusion,
-            flags=re.IGNORECASE,
-        )[0].strip()
-        if conclusion:
-            cleaned = conclusion[0].upper() + conclusion[1:]
+    # 2. Check for explicit conclusion marker, unless content already contains an itemized list
+    raw_lines = cleaned.splitlines()
+    has_itemized_list = any(re.match(r"^\s*[-*•\d+.]\s+[A-Za-z0-9]", line) for line in raw_lines)
 
-    # 3. Strip prompt instruction echoes and scaffolding leaks
-    cleaned = re.split(
-        r"\n+\s*(?:We must output|The user question is:|User question:|Question:|Answer:)",
+    if not has_itemized_list:
+        therefore_match = re.search(
+            r"(?:Therefore|In conclusion|Consequently|The sequence is:?|The workflow is:?|The failover sequence is:?|The automated failover sequence is:?|The answer is:?|Sequence:)\s*(.+)",
+            cleaned,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if therefore_match:
+            conclusion = therefore_match.group(1).strip()
+            conclusion = conclusion.lstrip(",;: \t\n\"'")
+            # Drop meta-notes like 'But note: ...' and subsequent source breakdowns
+            conclusion = re.split(
+                r"(?:\"?\s*-\s*(?:This source|source_|Figure|Visual|Visible|Key Flows)|\n+\s*(?:But note|Note:|However, note|The user question is|Answer:))",
+                conclusion,
+                flags=re.IGNORECASE,
+            )[0].strip().rstrip("\"' \t\n")
+            if conclusion:
+                marker_raw = therefore_match.group(0).lower()
+                prefix = ""
+                if "sequence" in marker_raw and not conclusion.lower().startswith("the sequence is"):
+                    prefix = "The sequence is: "
+                elif "workflow" in marker_raw and not conclusion.lower().startswith("the workflow is"):
+                    prefix = "The workflow is: "
+                capped = conclusion[0].upper() + conclusion[1:] if conclusion else ""
+                cleaned = prefix + capped
+
+    # 3. Strip trailing prompt instruction echoes and scaffolding leaks
+    split_parts = re.split(
+        r"\n+\s*(?:(?:however|note|but),?\s+)?(?:we\s+must\s+(?:output|be\s+precise|ensure)|(?:the\s+)?user\s+question\b|question:|answer:)",
         cleaned,
         flags=re.IGNORECASE,
-    )[0].strip()
+    )
+    if len(split_parts) > 1 and split_parts[0].strip():
+        cleaned = split_parts[0].strip()
 
     # 4. Line by line filter of reasoning prefixes, internal scratchpads, and bullet evaluations
+    reasoning_step_regex = re.compile(
+        r"^step\s*\d+\s*:?\s*(?:"
+        r"analyze|analyse|review|check|inspect|examine|look at|consider|"
+        r"determine|evaluate|read|understand|identify|extract|verify whether|"
+        r"consult|summarize the sources?"
+        r")\s+(?:the\s+)?(?:source|prompt|question|directive|context|retrieved|evidence|provided|document)",
+        re.IGNORECASE,
+    )
+    source_header_regex = re.compile(
+        r"^[-*•]?\s*(?:"
+        r"(?:flowchart|diagram|figure|visual|table)\s+on\s+page\s+\d+|"
+        r"page\s+\d+\s+of\s+[^\n]+|"
+        r"figure\s+\d+\s*:|"
+        r"source\s*\d+\s*:"
+        r")[^\n]*$",
+        re.IGNORECASE,
+    )
+    label_prefix_regex = re.compile(
+        r"^[-*•]?\s*(?:Summary|Text|Content)\s*:\s*",
+        re.IGNORECASE,
+    )
+    boilerplate_intro_regex = re.compile(
+        r"^(?:Based on (?:the |all )?.*?(?:documents|context|evidence|materials|syllabus),?\s*|According to (?:the |all )?.*?(?:documents|context|evidence|materials|syllabus),?\s*)",
+        re.IGNORECASE,
+    )
+
     lines = cleaned.splitlines()
     kept_lines: list[str] = []
     reasoning_prefixes = (
         "we are given",
         "we must",
-        "let's check",
-        "let me check",
-        "let me think",
-        "let's analyze",
+        "we have",
+        "we see",
+        "we note",
+        "let's",
+        "let me",
         "looking at",
-        "according to the",
+        "from source",
+        "source_",
+        "- source",
+        "* source",
+        "- from",
+        "* from",
+        "- content",
+        "* content",
+        "content:",
+        "same as source",
+        "both sources",
+        "all sources",
+        "the evidence provided",
+        "- this source",
+        "this source",
+        "- visual",
+        "- visible",
+        "- key flows",
+        "describes the context",
+        "- describes the context",
+        "* describes the context",
+        "context:",
+        "- context:",
+        "* context:",
+        "according to the prompt",
+        "according to the instruction",
         "operating directives",
-        "insufficient evidence",
         "hierarchy of authority",
         "* [source_",
         "- [source_",
         "so here we have:",
         "the user question is",
+        "the user question asks",
+        "the user asks",
+        "the user also asks",
+        "the retrieved evidence",
+        "from [source",
+        "the evidence states",
+        "the evidence says",
+        "the answer should be",
+        "therefore, the answer",
+        "therefore the answer",
+        "however, note",
         "user question:",
         "answer:",
     )
@@ -102,14 +181,62 @@ def _sanitize_llm_answer(text: str) -> str:
         s = line.strip()
         if not s:
             continue
+        if reasoning_step_regex.search(s):
+            continue
+        if source_header_regex.match(s):
+            continue
         if any(s.lower().startswith(p) for p in reasoning_prefixes):
             continue
         if s.lower().startswith("but note:") or s.lower().startswith("however, note:"):
             continue
+        if re.search(r"^(?:(?:however|note|but),?\s+)?(?:the\s+)?user\s+question\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"^(?:(?:however|note|but),?\s+)?we\s+(?:must|should)\s+(?:output|be\s+precise|ensure)\b", s, re.IGNORECASE):
+            continue
+
+        s = label_prefix_regex.sub("", s).strip()
+        if s.startswith('"') and s.endswith('"') and len(s) > 2:
+            s = s[1:-1].strip()
+
+        # Strip leading generic boilerplate if present and not communicating uncertainty
+        is_uncertain = any(
+            kw in s.lower()
+            for kw in (
+                "not enough information",
+                "insufficient information",
+                "could not find",
+                "no information",
+                "not mentioned",
+                "cannot find",
+            )
+        )
+        if not is_uncertain:
+            stripped_s = boilerplate_intro_regex.sub("", s).strip()
+            if stripped_s:
+                s = stripped_s[0].upper() + stripped_s[1:]
+
+        if not s:
+            continue
+        if kept_lines and s.lower() == kept_lines[-1].lower():
+            continue
+
         kept_lines.append(s)
 
-    result = " ".join(kept_lines).strip()
-    return result if result else cleaned
+    is_list_like = any(
+        re.match(r"^(?:step\s*\d+|[-*•]|\d+\.)", line, re.IGNORECASE)
+        for line in kept_lines
+    )
+    result = ("\n" if is_list_like else " ").join(kept_lines).strip()
+    candidate_answer = result if result else cleaned
+
+    # 5. Normalize citation tags to canonical lower-case [source_X]
+    canonical_answer = re.sub(
+        r"(?:\[|\(|\b)(source_\d+)(?:\]|\)|\b)",
+        lambda m: f"[{m.group(1).lower()}]",
+        candidate_answer,
+        flags=re.IGNORECASE,
+    )
+    return canonical_answer
 
 
 class LLMGenerationService:
@@ -199,18 +326,69 @@ class LLMGenerationService:
             timeout_seconds=request.timeout_seconds,
         )
         latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
+        logger.info("Raw LLM response before sanitization:\n%s", provider_resp.content)
 
         # 5. Sanitize answer to eliminate leaked CoT rambling
         cleaned_content = _sanitize_llm_answer(provider_resp.content)
+
+        # 5b. Attribute supporting context items to uncited factual claims
+        if request.context.items:
+            from backend.app.services.grounding.claim_verifier import ClaimVerifier
+            from backend.app.services.grounding.sentence_splitter import SentenceSplitter
+
+            verifier = ClaimVerifier()
+            splitter = SentenceSplitter()
+            claims = splitter.split(cleaned_content)
+
+            for claim in claims:
+                seg = claim.raw_text.strip()
+                if not seg:
+                    continue
+                # If claim already has a citation tag or is conversational framing, do not modify
+                if _SOURCE_REF_REGEX.search(seg) or claim.is_conversational:
+                    continue
+
+                c_words = verifier.extract_content_words(seg)
+                best_items = []
+                for item in request.context.items:
+                    item_words = verifier.extract_content_words(item.text)
+                    if c_words:
+                        overlap = len(c_words & item_words) / len(c_words)
+                        if overlap >= 0.35:
+                            is_visual = (
+                                1
+                                if (
+                                    item.chunk_metadata
+                                    and item.chunk_metadata.get("source_modality") == "visual"
+                                )
+                                else 0
+                            )
+                            best_items.append((overlap, is_visual, item))
+
+                if best_items:
+                    best_items.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                    top_item = best_items[0][2]
+                    tag = f"[{top_item.source_id.lower()}]"
+
+                    punc = ""
+                    core_seg = seg
+                    if core_seg.endswith((".", "!", "?")):
+                        punc = core_seg[-1]
+                        core_seg = core_seg[:-1].rstrip()
+                    attributed_seg = f"{core_seg} {tag}{punc}"
+
+                    if seg in cleaned_content:
+                        cleaned_content = cleaned_content.replace(seg, attributed_seg, 1)
 
         # 6. Extract referenced candidate source identifiers for Step 14 citation validation
         raw_matches = _SOURCE_REF_REGEX.findall(cleaned_content)
         seen_refs: set[str] = set()
         sources_referenced: list[str] = []
         for ref in raw_matches:
-            if ref not in seen_refs:
-                seen_refs.add(ref)
-                sources_referenced.append(ref)
+            ref_lower = ref.lower()
+            if ref_lower not in seen_refs:
+                seen_refs.add(ref_lower)
+                sources_referenced.append(ref_lower)
 
         # 7. Safe metadata assembly (excluding internals or raw traces)
         safe_metadata = dict(provider_resp.safe_metadata)

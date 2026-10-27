@@ -33,11 +33,19 @@ class IndexingJobStatus(enum.StrEnum):
 
 
 class IndexingJobStage(enum.StrEnum):
-    """Detailed progress stages within vector indexing."""
+    """Detailed progress stages within document processing and vector indexing."""
 
+    UPLOADING = "UPLOADING"
+    VALIDATING = "VALIDATING"
+    SAVING = "SAVING"
+    EXTRACTING = "EXTRACTING"
+    EXTRACTING_VISUALS = "EXTRACTING_VISUALS"
+    CHUNKING = "CHUNKING"
+    QUEUED_FOR_INDEXING = "QUEUED_FOR_INDEXING"
     PREPARING = "PREPARING"
     EMBEDDING = "EMBEDDING"
     WRITING_VECTORS = "WRITING_VECTORS"
+    STORING_VECTORS = "STORING_VECTORS"
     VERIFYING = "VERIFYING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"

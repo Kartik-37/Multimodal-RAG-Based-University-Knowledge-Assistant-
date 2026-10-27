@@ -20,8 +20,9 @@ from backend.app.api.deps import (
     get_authorized_document,
     get_authorized_knowledge_base,
 )
-from backend.app.models.document import Document
+from backend.app.models.document import Document, DocumentChunk
 from backend.app.models.user import UserRole
+from backend.app.schemas.document import DocumentChunkResponse
 from backend.app.services.storage import storage_service
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -86,6 +87,53 @@ def get_document_file_by_id(
         db=db,
     )
     return _stream_document(doc)
+
+
+@router.get(
+    "/{document_id}/chunks",
+    response_model=list[DocumentChunkResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get extracted chunks for an authorized document by document ID",
+)
+def get_document_chunks_by_id(
+    document_id: uuid.UUID,
+    db: DatabaseSession,
+    current_user: AuthenticatedUser,
+) -> list[DocumentChunkResponse]:
+    """
+    Retrieve extracted chunks for an authorized document by document UUID.
+    Enforces server-side authorization on parent course and active/published status.
+    """
+    doc = get_authorized_document(
+        document_id=document_id,
+        current_user=current_user,
+        db=db,
+    )
+    chunks = (
+        db.execute(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == doc.id)
+            .order_by(DocumentChunk.chunk_index.asc())
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        DocumentChunkResponse(
+            id=c.id,
+            document_id=c.document_id,
+            knowledge_base_id=c.knowledge_base_id,
+            chunk_index=c.chunk_index,
+            text=c.text,
+            token_count=c.token_count,
+            page_number=c.page_number,
+            section_title=c.section_title,
+            chunk_metadata=c.chunk_metadata,
+            has_embedding=(c.embedding is not None),
+            created_at=c.created_at,
+        )
+        for c in chunks
+    ]
 
 
 @router.get(

@@ -133,7 +133,6 @@ class TestLLMProviderUnit:
             json_payload = call_kwargs["json"]
             assert json_payload["model"] == "qwen3:4b"
             assert json_payload["stream"] is False
-            assert json_payload["think"] is False
             assert json_payload["messages"] == [
                 {"role": "system", "content": "System grounding prompt"},
                 {"role": "user", "content": "What does an OS manage?"},

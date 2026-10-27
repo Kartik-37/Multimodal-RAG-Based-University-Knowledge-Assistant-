@@ -202,8 +202,44 @@ class RerankingService:
             logger.exception("Unexpected error during CrossEncoder scoring: %s", exc)
             raise RerankerProviderError(f"CrossEncoder scoring failure: {exc}") from exc
 
+        is_visual_query = any(
+            w in clean_query.lower()
+            for w in (
+                "diagram",
+                "flowchart",
+                "chart",
+                "figure",
+                "visual",
+                "illustration",
+                "infographic",
+                "infographics",
+                "image",
+                "picture",
+                "graphic",
+                "photo",
+                "timeline",
+                "roadmap",
+                "architecture diagram",
+                "protocol diagram",
+            )
+        )
+
+        def _sort_key(item: tuple[float, Any]) -> tuple[float, int, str]:
+            score, candidate = item
+            is_visual = (
+                1
+                if (
+                    candidate.chunk_metadata
+                    and candidate.chunk_metadata.get("source_modality") == "visual"
+                )
+                else 0
+            )
+            # When the user explicitly requests visual/diagram evidence, give visual chunks priority
+            boosted_score = score + (1.5 if (is_visual_query and is_visual) else 0.0)
+            return (-boosted_score, candidate.chunk_index, str(candidate.chunk_id))
+
         paired = list(zip(scores, candidates, strict=True))
-        paired.sort(key=lambda item: (-item[0], item[1].chunk_index, str(item[1].chunk_id)))
+        paired.sort(key=_sort_key)
         selected_paired = paired[:bounded_top_k]
 
         reranked_items: list[RerankResultItem] = []

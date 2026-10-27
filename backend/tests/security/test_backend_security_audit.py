@@ -77,6 +77,11 @@ from backend.app.services.llm.prompt_builder import GroundedPromptBuilder
 @pytest.fixture(autouse=True)
 def clean_database(db_engine):
     """Ensure database state is clean before and after every test function."""
+    from backend.app.db.session import check_database_connection
+
+    if not check_database_connection(db_engine):
+        pytest.skip("PostgreSQL database is not available in current environment")
+
     with db_engine.begin() as conn:
         conn.execute(
             text(
@@ -92,6 +97,7 @@ def clean_database(db_engine):
                 "knowledge_base_members, knowledge_bases, user_sessions, users CASCADE;"
             )
         )
+
 
 
 def _create_user(

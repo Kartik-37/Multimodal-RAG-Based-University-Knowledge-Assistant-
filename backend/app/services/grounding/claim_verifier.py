@@ -195,8 +195,10 @@ class ClaimVerifier:
         return {w for w in words if w not in _STOPWORDS}
 
     def extract_numbers(self, text: str) -> set[str]:
-        """Extract numeric and decimal tokens from text."""
-        return set(_NUMBER_REGEX.findall(text))
+        """Extract numeric and decimal tokens from text, ignoring list item enumeration prefixes."""
+        cleaned = re.sub(r"(?:^|(?<=[\n\(:;]))\s*(?:step\s+)?\d+[\.\)]\s+", " ", text, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bstep\s+\d+[:.]?\s*", " ", cleaned, flags=re.IGNORECASE)
+        return set(_NUMBER_REGEX.findall(cleaned))
 
     def extract_acronyms(self, text: str) -> set[str]:
         """Extract uppercase domain acronyms from text."""
@@ -283,26 +285,35 @@ class ClaimVerifier:
             # Evaluate each valid cited item
             best_overlap = 0.0
             best_snippet = ""
-            has_entity_mismatch = False
-            missing_entities: list[str] = []
+
+            all_cited_numbers: set[str] = set()
+            all_cited_acronyms: set[str] = set()
+            for item in valid_cited_items:
+                all_cited_numbers.update(self.extract_numbers(item.text))
+                all_cited_acronyms.update(self.extract_acronyms(item.text))
+                if item.page_number is not None:
+                    all_cited_numbers.add(str(item.page_number))
+
+            missing_nums = claim_numbers - all_cited_numbers
+            missing_acrs = claim_acronyms - all_cited_acronyms
+            has_entity_mismatch = bool(missing_nums or missing_acrs)
+            missing_entities: list[str] = sorted(missing_nums | missing_acrs) if has_entity_mismatch else []
 
             for item in valid_cited_items:
-                chunk_numbers = self.extract_numbers(item.text)
-                chunk_acronyms = self.extract_acronyms(item.text)
-                chunk_words = self.extract_content_words(item.text)
-
-                # Check number & acronym invariance
-                missing_nums = claim_numbers - chunk_numbers
-                missing_acrs = claim_acronyms - chunk_acronyms
-                if missing_nums or missing_acrs:
-                    has_entity_mismatch = True
-                    missing_entities.extend(sorted(missing_nums | missing_acrs))
+                evidence_text = item.text
+                if item.document_title:
+                    evidence_text += f" {item.document_title}"
+                if item.page_number is not None:
+                    evidence_text += f" page {item.page_number}"
+                if item.chunk_metadata and item.chunk_metadata.get("source_modality") == "visual":
+                    evidence_text += f" visual infographic diagram image {item.chunk_metadata.get('visual_type', '')}"
+                chunk_words = self.extract_content_words(evidence_text)
 
                 # Calculate content word recall
                 if claim_content_words:
                     overlap = len(claim_content_words & chunk_words) / len(claim_content_words)
                 else:
-                    overlap = 1.0 if not (missing_nums or missing_acrs) else 0.0
+                    overlap = 1.0 if not has_entity_mismatch else 0.0
 
                 if overlap > best_overlap:
                     best_overlap = overlap

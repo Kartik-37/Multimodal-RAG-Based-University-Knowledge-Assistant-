@@ -9,14 +9,65 @@ preventing event-loop blocking while ensuring thread safety for NiceGUI and back
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import Any
 
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+APPROVED_TEST_DB_NAMES = {"rag_assistant_test_db", ":memory:"}
+APPROVED_TEST_DB_PREFIXES = ("test_", "rag_assistant_test")
+
+
+def validate_test_database_url(raw_url: str | None) -> str:
+    """
+    Validate that a given SQLAlchemy database URL points strictly to an approved isolated test database.
+
+    Security & Isolation Directives:
+    - Rejects production database names ('rag_assistant_db', 'postgres') explicitly.
+    - Rejects unapproved database names without permitted test prefixes.
+    - Never prints passwords, tokens, or raw connection strings in logs or exceptions.
+    - Returns the verified database name on success.
+    - Raises RuntimeError or ValueError if validation fails.
+    """
+    if not raw_url or not isinstance(raw_url, str) or not raw_url.strip():
+        raise ValueError("Database URL is empty or missing.")
+
+    try:
+        parsed = make_url(raw_url.strip())
+    except Exception as exc:
+        raise ValueError(f"Failed to parse database connection URL: {type(exc).__name__}") from exc
+
+    db_name = parsed.database
+    if not db_name:
+        raise ValueError("Database URL does not specify a target database name.")
+
+    # Explicit protection for production databases
+    if db_name.lower() in ("rag_assistant_db", "postgres"):
+        raise RuntimeError(
+            f"REFUSING DESTRUCTIVE SETUP: Target database '{db_name}' is a protected production/system database. "
+            "Verification and test operations must strictly target an approved test database."
+        )
+
+    # Must match approved exact names or prefixes
+    is_approved = (
+        db_name in APPROVED_TEST_DB_NAMES
+        or any(db_name.startswith(pfx) for pfx in APPROVED_TEST_DB_PREFIXES)
+    )
+
+    if not is_approved:
+        raise RuntimeError(
+            f"REFUSING DESTRUCTIVE SETUP: Database '{db_name}' is not an approved isolated test database "
+            f"(must be one of {APPROVED_TEST_DB_NAMES} or have prefix {APPROVED_TEST_DB_PREFIXES})."
+        )
+
+    return db_name
+
 
 
 def create_db_engine(database_url: str | None = None) -> Engine:
@@ -27,12 +78,16 @@ def create_db_engine(database_url: str | None = None) -> Engine:
     connections gracefully.
     """
     url = database_url or settings.DATABASE_URL
+    connect_args: dict[str, Any] = {}
+    if "postgresql" in str(url):
+        connect_args["connect_timeout"] = 3
     return create_engine(
         url,
         pool_pre_ping=True,
         pool_size=10,
         max_overflow=20,
         echo=False,
+        connect_args=connect_args,
     )
 
 

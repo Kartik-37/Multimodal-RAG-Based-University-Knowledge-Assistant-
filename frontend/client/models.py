@@ -19,6 +19,7 @@ class UserDTO(BaseModel):
     role: str = "STUDENT"
     admin_role: str | None = None
     permissions: list[str] = Field(default_factory=list)
+    is_active: bool = True
 
 
 class KnowledgeBaseDTO(BaseModel):
@@ -29,7 +30,7 @@ class KnowledgeBaseDTO(BaseModel):
     description: str = ""
     is_active: bool = True
     is_student_visible: bool = True
-    document_count: int = 0
+    document_count: int | None = 0
     created_at: str = ""
 
 
@@ -52,6 +53,10 @@ class IndexingJobDTO(BaseModel):
     attempt_number: int = 1
     started_at: str | None = None
     completed_at: str | None = None
+
+    @property
+    def id(self) -> str:
+        return self.job_id or self.document_id
 
 
 class ComponentHealthDTO(BaseModel):
@@ -100,6 +105,18 @@ class DocumentDTO(BaseModel):
     is_active: bool = False
     created_at: str = ""
     indexed_at: str | None = None
+    job_id: str | None = None
+    current_stage: str | None = None
+    progress_percent: float = 0.0
+    total_chunks: int = 0
+    processed_chunks: int = 0
+    embedded_chunks: int = 0
+    indexed_chunks: int = 0
+
+    @property
+    def knowledge_base_id(self) -> str:
+        """Alias for kb_id for backward compatibility with course association references."""
+        return self.kb_id
 
 
 class CitationDTO(BaseModel):
@@ -115,6 +132,8 @@ class CitationDTO(BaseModel):
     section_title: str | None = None
     knowledge_base_id: str | None = None
     course_name: str | None = None
+    source_modality: str | None = "text"
+    visual_type: str | None = None
 
 
 class AdminUserDTO(BaseModel):
@@ -143,6 +162,30 @@ class ChatMessageDTO(BaseModel):
     grounding_status: str | None = None
     total_pipeline_ms: float | None = None
     model: str | None = None
+
+
+class ConversationSummaryDTO(BaseModel):
+    """Compact conversation thread summary for history sidebar."""
+
+    id: str
+    title: str
+    scope: str = "ALL_COURSES"
+    knowledge_base_id: str | None = None
+    message_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class ConversationDetailDTO(BaseModel):
+    """Full conversation detail with ordered messages."""
+
+    id: str
+    title: str
+    scope: str = "ALL_COURSES"
+    knowledge_base_id: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+    messages: list[ChatMessageDTO] = Field(default_factory=list)
 
 
 class RetrievalResultDTO(BaseModel):

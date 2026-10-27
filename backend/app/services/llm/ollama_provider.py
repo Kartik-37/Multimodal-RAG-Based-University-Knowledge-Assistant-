@@ -91,9 +91,6 @@ class OllamaLLMProvider(BaseLLMProvider):
             "model": self._model_name,
             "messages": messages,
             "stream": False,
-            # qwen3 can expose a separate reasoning channel. The application
-            # contract is answer-only, so explicitly disable model thinking
-            # output rather than risking internal reasoning reaching the UI.
             "think": False,
             "options": {
                 "temperature": temp,

@@ -23,6 +23,7 @@ Architectural Invariants:
 
 import asyncio
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -126,7 +127,8 @@ class IndexingPipeline:
                 job.progress_percent = 0.0
                 job.started_at = now
                 job.completed_at = None
-                job.error_message = None
+                if job.error_message and not job.error_message.startswith("Visual analysis"):
+                    job.error_message = None
                 job.attempt_number += 1
                 job.updated_at = now
             else:
@@ -218,7 +220,8 @@ class IndexingPipeline:
                 job.status = IndexingJobStatus.PROCESSING.value
                 job.stage = IndexingJobStage.PREPARING.value
                 job.started_at = job.started_at or now
-                job.error_message = None
+                if job.error_message and not job.error_message.startswith("Visual analysis"):
+                    job.error_message = None
                 job.updated_at = now
 
             doc.indexing_status = IndexingStatus.PROCESSING
@@ -277,6 +280,7 @@ class IndexingPipeline:
 
         # 3. Process chunks in configurable batches with live progress persistence
         processed_count = 0
+        t_embed_start = time.monotonic()
         try:
             for start_idx in range(0, total_chunks, batch_size):
                 batch = chunk_data[start_idx : start_idx + batch_size]
@@ -373,8 +377,13 @@ class IndexingPipeline:
 
                 db.commit()
 
+            embed_duration_ms = (time.monotonic() - t_embed_start) * 1000
             logger.info(
-                "Successfully completed and verified vector indexing for document %s.", document_id
+                "Successfully completed and verified vector indexing for document %s: %d chunks indexed in %.1f ms (batch_size=%d).",
+                document_id,
+                total_chunks,
+                embed_duration_ms,
+                batch_size,
             )
             return True
 

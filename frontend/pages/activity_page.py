@@ -1,13 +1,8 @@
 """
 Administrative Activity & Audit Log Presentation Page.
 
-Provides university administrators with an immutable, truthful chronological timeline
-of all administrative operations:
-- Course creation and modifications
-- Document ingestion, uploads, deactivations, deletions
-- Vector indexing triggers and retries
-- Administrator provisioning and RBAC permission changes
-All events are retrieved directly from persistent PostgreSQL records.
+Redesigned for the Editorial Academic identity.
+Provides university administrators with an immutable, truthful chronological audit ledger.
 """
 
 from typing import Any
@@ -16,91 +11,237 @@ from nicegui import ui
 
 from frontend.client.api_client import api_client
 from frontend.client.error_handler import normalize_error
+from frontend.client.models import ActivityEventDTO
 from frontend.components.layout import page_layout
-from frontend.components.ui_kit import render_alert, render_empty_state
+from frontend.components.ui_kit import (
+    render_alert,
+    render_empty_state,
+    render_section_heading,
+    render_status_badge,
+)
 from frontend.state.app_state import state
 
 
 def register_activity_page() -> None:
-    """Register /activity route with NiceGUI."""
-
     @ui.page("/activity")
     def activity_page() -> None:
         user = state.current_user
         if not user or user.role != "ADMIN":
             with page_layout(
-                title="Activity & Audit Log",
-                subtitle="Administrative operation audit timeline.",
+                title="Activity & Audit",
+                subtitle="Administrative timeline.",
                 active_route="/activity",
                 require_auth=True,
             ):
                 render_empty_state(
-                    icon="lock",
-                    title="Access Restricted",
-                    description="This area is reserved strictly for authenticated University Administrators.",
-                    action_label="Go to Dashboard",
+                    "lock",
+                    "Access Restricted",
+                    "This area is reserved strictly for authenticated University Administrators.",
+                    action_label="Go to Overview",
                     on_action=lambda: ui.navigate.to("/dashboard"),
                 )
             return
 
         with page_layout(
-            title="Administrative Activity & Audit Timeline",
-            subtitle="Chronological audit records of university course changes, document lifecycle events, indexing operations, and administrator management.",
+            title="Activity & Audit",
+            subtitle="Immutable chronological audit trail of academic catalog changes, document lifecycle events, indexing operations, and RBAC governance.",
             active_route="/activity",
             require_auth=True,
         ):
+            # Page State
+            events_cache: list[ActivityEventDTO] = []
+            search_query = ""
+            category_filter = "ALL"  # ALL | COURSES | DOCUMENTS | INDEXING | ADMINS
+            outcome_filter = "ALL"  # ALL | SUCCESS | FAILED
+
+            # Header Row
+            with ui.row().classes("w-full justify-between items-center mb-6 flex-wrap gap-4"):
+                render_section_heading(
+                    title="Audit Ledger",
+                    caption="Immutable chronological record of administrative actions, resource modifications, and system events.",
+                )
+                with ui.row().classes("items-center gap-3"):
+                    record_count_badge = ui.badge("Loading...", color="canvas").props(
+                        "text-color=secondary-navy"
+                    ).classes("text-xs font-mono font-bold px-2.5 py-1 border border-subtle")
+
+                    ui.button("Refresh", icon="refresh", on_click=lambda: refresh_activity()).props(
+                        "outline dense no-caps"
+                    ).classes(
+                        "text-xs font-bold text-primary-navy border border-subtle px-3 py-1.5 rounded hover:bg-surface"
+                    )
+
+            # Toolbar Container (Search & Multi-Filter)
+            toolbar_container = ui.column().classes("w-full gap-3 p-4 bg-surface-elevated border border-subtle rounded mb-4")
+
+            # Main Content Container
             content_container = ui.column().classes("w-full gap-4")
 
-            # Filter state
-            search_query = ""
-            category_filter = "ALL"
+            def render_toolbar() -> None:
+                toolbar_container.clear()
+                with toolbar_container:
+                    # Row 1: Search & Outcome Filters
+                    with ui.row().classes("w-full justify-between items-center flex-wrap gap-4"):
+                        search_input = (
+                            ui.input(
+                                placeholder="Search by actor, action, resource, or details...",
+                                value=search_query,
+                            )
+                            .props("outlined dense clearable")
+                            .classes("w-full md:w-96 text-sm minimalist-input")
+                        )
 
-            def render_activity_view() -> None:
+                        def on_search(e: Any) -> None:
+                            nonlocal search_query
+                            search_query = (e.value or "").strip()
+                            render_table()
+
+                        search_input.on("update:model-value", on_search)
+
+                        # Category Pills
+                        with ui.row().classes("items-center gap-2 flex-wrap"):
+                            categories = [
+                                ("ALL", "All Categories"),
+                                ("COURSES", "Courses"),
+                                ("DOCUMENTS", "Documents"),
+                                ("INDEXING", "Indexing"),
+                                ("ADMINS", "Security & Admins"),
+                            ]
+                            for cat_key, cat_label in categories:
+                                is_sel = category_filter == cat_key
+                                btn_cls = (
+                                    "bg-primary-navy text-inverted font-bold"
+                                    if is_sel
+                                    else "bg-canvas text-secondary-navy border border-subtle hover:bg-surface font-medium"
+                                )
+
+                                def make_cat_handler(k=cat_key):
+                                    return lambda: switch_category(k)
+
+                                ui.button(cat_label, on_click=make_cat_handler()).props("no-caps dense").classes(
+                                    f"text-xs px-3 py-1.5 rounded {btn_cls} transition-colors"
+                                )
+
+                    # Row 2: Secondary Status/Outcome Filter
+                    with ui.row().classes("w-full items-center justify-between flex-wrap gap-2 pt-2 border-t border-subtle text-xs"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Outcome:").classes("font-bold text-secondary-navy uppercase tracking-wider")
+                            for out_key, out_label in [
+                                ("ALL", "All"),
+                                ("SUCCESS", "Success Only"),
+                                ("FAILED", "Failures Only"),
+                            ]:
+                                is_out_sel = outcome_filter == out_key
+                                out_cls = (
+                                    "text-primary-navy font-bold underline"
+                                    if is_out_sel
+                                    else "text-secondary-navy hover:text-primary-navy font-medium"
+                                )
+
+                                def make_out_handler(k=out_key):
+                                    return lambda: switch_outcome(k)
+
+                                ui.button(out_label, on_click=make_out_handler()).props("flat dense no-caps").classes(
+                                    f"text-xs p-1 {out_cls}"
+                                )
+
+                        ui.label("Records are immutable and tamper-evident.").classes("text-secondary-navy italic font-serif")
+
+            def switch_category(cat_name: str) -> None:
+                nonlocal category_filter
+                category_filter = cat_name
+                render_toolbar()
+                render_table()
+
+            def switch_outcome(out_name: str) -> None:
+                nonlocal outcome_filter
+                outcome_filter = out_name
+                render_toolbar()
+                render_table()
+
+            # --- Details Modal Dialog ---
+            def open_event_modal(ev: ActivityEventDTO) -> None:
+                dialog = ui.dialog()
+                with (
+                    dialog,
+                    ui.card().classes(
+                        "w-full max-w-lg p-6 bg-surface-elevated rounded shadow-none border border-subtle gap-4"
+                    ),
+                ):
+                    with ui.row().classes("w-full justify-between items-center border-b border-subtle pb-3"):
+                        with ui.row().classes("items-center gap-2.5"):
+                            ui.icon("receipt_long", size="1.25rem").classes("text-primary-navy")
+                            ui.label("Audit Event Inspection").classes(
+                                "text-base font-bold text-primary-navy font-editorial"
+                            )
+                        ui.button(icon="close", on_click=dialog.close).props("flat round dense").classes(
+                            "text-secondary-navy hover:text-primary-navy"
+                        )
+
+                    with ui.column().classes("w-full gap-3 text-xs"):
+                        with ui.row().classes("w-full justify-between items-center py-1 border-b border-subtle"):
+                            ui.label("Event ID").classes("font-bold text-secondary-navy")
+                            ui.label(ev.id).classes("font-mono text-primary-navy")
+
+                        with ui.row().classes("w-full justify-between items-center py-1 border-b border-subtle"):
+                            ui.label("Timestamp (UTC)").classes("font-bold text-secondary-navy")
+                            ui.label(str(ev.timestamp).replace("T", " ")).classes("font-mono text-primary-navy")
+
+                        with ui.row().classes("w-full justify-between items-center py-1 border-b border-subtle"):
+                            ui.label("Actor").classes("font-bold text-secondary-navy")
+                            ui.label(f"{ev.actor_name} ({ev.actor_email})").classes("font-semibold text-primary-navy")
+
+                        with ui.row().classes("w-full justify-between items-center py-1 border-b border-subtle"):
+                            ui.label("Action").classes("font-bold text-secondary-navy")
+                            ui.badge(ev.action, color="canvas").props("text-color=secondary-navy").classes(
+                                "border border-subtle font-mono px-2 py-0.5"
+                            )
+
+                        with ui.row().classes("w-full justify-between items-center py-1 border-b border-subtle"):
+                            ui.label("Resource").classes("font-bold text-secondary-navy")
+                            ui.label(f"[{ev.resource_type}] {ev.resource_name}").classes("font-bold text-primary-navy")
+
+                        with ui.row().classes("w-full justify-between items-center py-1 border-b border-subtle"):
+                            ui.label("Outcome").classes("font-bold text-secondary-navy")
+                            render_status_badge(ev.status)
+
+                        with ui.column().classes("w-full gap-1 pt-2"):
+                            ui.label("Forensic Payload / Details").classes("font-bold text-secondary-navy")
+                            with ui.card().classes("w-full p-3 bg-canvas border border-subtle rounded font-mono text-[11px] leading-relaxed break-all"):
+                                ui.label(ev.details or "No additional diagnostic parameters recorded for this operation.")
+
+                    with ui.row().classes("w-full justify-end pt-3 border-t border-subtle"):
+                        ui.button("Close", on_click=dialog.close).props("outline dense no-caps").classes(
+                            "text-xs font-bold text-primary-navy px-4 py-1.5 rounded"
+                        )
+                dialog.open()
+
+            # --- Main Table Rendering ---
+            def render_table() -> None:
                 content_container.clear()
                 with content_container:
-                    try:
-                        events = api_client.get_activity_log()
-                    except Exception as err:
-                        render_alert(
-                            normalize_error(err, context="activity"),
-                            level="negative",
-                        )
-                        return
-
-                    # Filter events
-                    filtered = []
-                    for ev in events:
-                        # Category filter
+                    filtered: list[ActivityEventDTO] = []
+                    for ev in events_cache:
                         rtype = (ev.resource_type or "").upper()
                         act = (ev.action or "").upper()
-                        if (
-                            category_filter == "COURSES"
-                            and "COURSE" not in rtype
-                            and "COURSE" not in act
-                            and "KNOWLEDGE_BASE" not in rtype
-                        ):
+
+                        # Category filter
+                        if category_filter == "COURSES" and "COURSE" not in rtype and "COURSE" not in act and "KNOWLEDGE_BASE" not in rtype:
                             continue
-                        if (
-                            category_filter == "DOCUMENTS"
-                            and "DOCUMENT" not in rtype
-                            and "DOCUMENT" not in act
-                        ):
+                        if category_filter == "DOCUMENTS" and "DOCUMENT" not in rtype and "DOCUMENT" not in act:
                             continue
-                        if (
-                            category_filter == "INDEXING"
-                            and "INDEX" not in act
-                            and "VECTOR" not in act
-                        ):
+                        if category_filter == "INDEXING" and "INDEX" not in act and "VECTOR" not in act:
                             continue
-                        if (
-                            category_filter == "ADMINS"
-                            and "ADMIN" not in rtype
-                            and "ADMIN" not in act
-                            and "USER" not in rtype
-                        ):
+                        if category_filter == "ADMINS" and "ADMIN" not in rtype and "ADMIN" not in act and "USER" not in rtype:
                             continue
 
-                        # Text search
+                        # Outcome filter
+                        if outcome_filter == "SUCCESS" and ev.status != "SUCCESS":
+                            continue
+                        if outcome_filter == "FAILED" and ev.status != "FAILED":
+                            continue
+
+                        # Search filter
                         if search_query:
                             q = search_query.lower()
                             match = (
@@ -115,206 +256,113 @@ def register_activity_page() -> None:
 
                         filtered.append(ev)
 
-                    # Summary metric cards
-                    with ui.row().classes("w-full gap-4 mb-2"):
-                        with ui.card().classes(
-                            "flex-1 p-4 bg-white border border-slate-200 rounded-lg shadow-xs"
-                        ):
-                            ui.label("TOTAL AUDIT EVENTS").classes(
-                                "text-[10px] font-bold text-slate-400 tracking-wider"
-                            )
-                            ui.label(str(len(events))).classes("text-2xl font-bold text-slate-800")
-                            ui.label("Recorded system operations").classes(
-                                "text-[11px] text-slate-500"
-                            )
+                    record_count_badge.text = f"{len(filtered)} of {len(events_cache)} records"
 
-                        with ui.card().classes(
-                            "flex-1 p-4 bg-white border border-slate-200 rounded-lg shadow-xs"
-                        ):
-                            ui.label("SUCCESSFUL").classes(
-                                "text-[10px] font-bold text-emerald-600 tracking-wider"
-                            )
-                            success_count = sum(1 for e in events if e.status == "SUCCESS")
-                            ui.label(str(success_count)).classes(
-                                "text-2xl font-bold text-emerald-700"
-                            )
-                            ui.label("Completed without errors").classes(
-                                "text-[11px] text-slate-500"
-                            )
-
-                        with ui.card().classes(
-                            "flex-1 p-4 bg-white border border-slate-200 rounded-lg shadow-xs"
-                        ):
-                            ui.label("FAILED / ATTENTION").classes(
-                                "text-[10px] font-bold text-rose-600 tracking-wider"
-                            )
-                            failed_count = sum(1 for e in events if e.status == "FAILED")
-                            ui.label(str(failed_count)).classes("text-2xl font-bold text-rose-700")
-                            ui.label("Failed operations or errors").classes(
-                                "text-[11px] text-slate-500"
-                            )
-
-                    # Filter Toolbar
-                    with ui.card().classes(
-                        "w-full p-4 bg-white border border-slate-200 rounded-lg shadow-xs gap-3"
-                    ):
-                        with ui.row().classes(
-                            "w-full justify-between items-center flex-wrap gap-3"
-                        ):
-                            # Search input
-                            search_input = (
-                                ui.input(
-                                    placeholder="Search by actor, action, or resource...",
-                                    value=search_query,
-                                )
-                                .props("outlined dense clearable")
-                                .classes("w-full md:w-80 text-xs")
-                            )
-
-                            def on_search_change(e: Any) -> None:
-                                nonlocal search_query
-                                search_query = (e.value or "").strip()
-                                render_activity_view()
-
-                            search_input.on("update:model-value", on_search_change)
-
-                            # Category chips
-                            with ui.row().classes("gap-1.5 flex-wrap"):
-
-                                def set_cat(c: str) -> None:
-                                    nonlocal category_filter
-                                    category_filter = c
-                                    render_activity_view()
-
-                                for cat_id, cat_lbl in [
-                                    ("ALL", "All Events"),
-                                    ("COURSES", "Courses"),
-                                    ("DOCUMENTS", "Documents"),
-                                    ("INDEXING", "Indexing"),
-                                    ("ADMINS", "Administrators"),
-                                ]:
-                                    btn_props = "dense no-caps"
-                                    if category_filter == cat_id:
-                                        btn_props += " color=primary"
-                                    else:
-                                        btn_props += " outline color=slate-7"
-                                    ui.button(
-                                        cat_lbl,
-                                        on_click=lambda c=cat_id: set_cat(c),
-                                    ).props(btn_props).classes("text-xs px-2.5 py-1")
-
-                        # Table
-                        if not filtered:
-                            render_empty_state(
-                                icon="history_toggle_off",
-                                title="No Events Found",
-                                description="No administrative activity matches the active search filters.",
-                            )
+                    if not filtered:
+                        if not events_cache:
+                            render_empty_state("history", "No Audit Events Recorded", "The activity ledger is currently empty.")
                         else:
-                            with ui.element("div").classes("responsive-table-wrapper mt-2"):
-                                with ui.element("table").classes(
-                                    "w-full text-left text-xs border-collapse"
-                                ):
-                                    with ui.element("thead").classes(
-                                        "bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200"
-                                    ):
-                                        with ui.element("tr"):
-                                            with ui.element("th").classes("py-2.5 px-3"):
-                                                ui.label("Timestamp")
-                                            with ui.element("th").classes("py-2.5 px-3"):
-                                                ui.label("Actor")
-                                            with ui.element("th").classes("py-2.5 px-3"):
-                                                ui.label("Action")
-                                            with ui.element("th").classes("py-2.5 px-3"):
-                                                ui.label("Resource")
-                                            with ui.element("th").classes("py-2.5 px-3"):
-                                                ui.label("Status")
-                                            with ui.element("th").classes("py-2.5 px-3"):
-                                                ui.label("Details")
+                            render_empty_state(
+                                "filter_list_off",
+                                "No Records Match Filter",
+                                "No audit entries found matching the active search parameters.",
+                                action_label="Reset Filters",
+                                on_action=lambda: (switch_category("ALL"), switch_outcome("ALL")),
+                            )
+                        return
 
-                                    with ui.element("tbody").classes(
-                                        "divide-y divide-slate-100 text-slate-800"
+                    # Render High-Density Scannable Table
+                    with ui.card().classes(
+                        "w-full p-0 bg-surface-elevated border border-subtle rounded shadow-none overflow-hidden"
+                    ):
+                        with ui.element("div").classes("w-full overflow-x-auto"):
+                            with ui.element("table").classes("w-full text-left text-sm border-collapse"):
+                                with ui.element("thead"):
+                                    with ui.element("tr").classes(
+                                        "border-b border-subtle bg-canvas text-secondary-navy font-bold text-xs uppercase tracking-wider"
                                     ):
-                                        for ev in filtered:
-                                            with ui.element("tr").classes(
-                                                "hover:bg-slate-50 transition-colors"
-                                            ):
-                                                # Time
-                                                with ui.element("td").classes(
-                                                    "py-2.5 px-3 text-slate-500 font-mono whitespace-nowrap"
-                                                ):
-                                                    ui.label(
-                                                        str(ev.timestamp)[:19].replace("T", " ")
-                                                    )
+                                        ui.element("th").classes("py-3.5 px-4").text = "Timestamp (UTC)"
+                                        ui.element("th").classes("py-3.5 px-4").text = "Actor"
+                                        ui.element("th").classes("py-3.5 px-4").text = "Action"
+                                        ui.element("th").classes("py-3.5 px-4").text = "Resource Target"
+                                        ui.element("th").classes("py-3.5 px-4").text = "Status"
+                                        ui.element("th").classes("py-3.5 px-4 text-right").text = "Inspection"
 
-                                                # Actor
-                                                with ui.element("td").classes(
-                                                    "py-2.5 px-3 font-semibold text-slate-900"
-                                                ):
-                                                    initials = (
-                                                        "".join(
-                                                            p[0].upper()
-                                                            for p in (ev.actor_name or "A").split()[
-                                                                :2
-                                                            ]
+                                with ui.element("tbody"):
+                                    for ev in filtered:
+                                        with ui.element("tr").classes(
+                                            "border-b border-subtle hover:bg-surface transition-colors"
+                                        ):
+                                            # Timestamp
+                                            with ui.element("td").classes("py-3.5 px-4 text-secondary-navy font-mono text-xs whitespace-nowrap"):
+                                                ui.label(str(ev.timestamp)[:19].replace("T", " "))
+
+                                            # Actor
+                                            with ui.element("td").classes("py-3.5 px-4"):
+                                                with ui.row().classes("items-center gap-2.5"):
+                                                    initials = "".join(
+                                                        p[0].upper() for p in (ev.actor_name or "A").split()[:2]
+                                                    ) or "A"
+                                                    with ui.element("div").classes(
+                                                        "w-7 h-7 rounded bg-primary-navy text-inverted flex items-center justify-center font-bold text-[10px] shrink-0"
+                                                    ):
+                                                        ui.label(initials)
+                                                    with ui.column().classes("gap-0"):
+                                                        ui.label(ev.actor_name or ev.actor_email).classes(
+                                                            "font-bold text-primary-navy text-xs"
                                                         )
-                                                        or "A"
-                                                    )
-                                                    with ui.row().classes("items-center gap-2"):
-                                                        with ui.element("div").classes(
-                                                            "w-6 h-6 rounded-full bg-slate-700 text-white flex items-center justify-center font-bold text-[9px] shrink-0"
-                                                        ):
-                                                            ui.label(initials)
-                                                        with ui.column().classes("gap-0"):
-                                                            ui.label(
-                                                                ev.actor_name or ev.actor_email
+                                                        if ev.actor_name and ev.actor_email:
+                                                            ui.label(ev.actor_email).classes(
+                                                                "text-[11px] text-secondary-navy font-mono font-normal"
                                                             )
-                                                            if ev.actor_name and ev.actor_email:
-                                                                ui.label(ev.actor_email).classes(
-                                                                    "text-[10px] text-slate-400 font-mono"
-                                                                )
 
-                                                # Action
-                                                with ui.element("td").classes("py-2.5 px-3"):
-                                                    action_clean = ev.action.replace(
-                                                        "_", " "
-                                                    ).title()
-                                                    ui.badge(
-                                                        action_clean, color="slate-800"
-                                                    ).classes("text-[10px] font-semibold")
+                                            # Action
+                                            with ui.element("td").classes("py-3.5 px-4"):
+                                                action_clean = ev.action.replace("_", " ").title()
+                                                ui.badge(action_clean, color="canvas").props(
+                                                    "text-color=secondary-navy"
+                                                ).classes("text-xs font-semibold px-2 py-0.5 border border-subtle")
 
-                                                # Resource
-                                                with ui.element("td").classes(
-                                                    "py-2.5 px-3 text-slate-700"
-                                                ):
-                                                    with ui.row().classes("items-center gap-1.5"):
-                                                        ui.badge(
-                                                            ev.resource_type.upper(),
-                                                            color="slate-600",
-                                                        ).classes("text-[9px]")
-                                                        ui.label(ev.resource_name).classes(
-                                                            "font-medium text-slate-900 max-w-[200px] truncate"
-                                                        )
+                                            # Resource Target
+                                            with ui.element("td").classes("py-3.5 px-4"):
+                                                with ui.row().classes("items-center gap-2"):
+                                                    ui.badge(ev.resource_type.upper(), color="canvas").props(
+                                                        "text-color=secondary-navy"
+                                                    ).classes("text-[10px] font-bold px-1.5 py-0 border border-subtle")
+                                                    ui.label(ev.resource_name).classes(
+                                                        "font-bold text-primary-navy max-w-[200px] truncate text-xs"
+                                                    ).tooltip(ev.resource_name)
 
-                                                # Status
-                                                with ui.element("td").classes("py-2.5 px-3"):
-                                                    if ev.status == "SUCCESS":
-                                                        ui.badge(
-                                                            "SUCCESS", color="emerald-700"
-                                                        ).classes("text-[10px] font-bold")
-                                                    elif ev.status == "FAILED":
-                                                        ui.badge(
-                                                            "FAILED", color="rose-700"
-                                                        ).classes("text-[10px] font-bold")
-                                                    else:
-                                                        ui.badge(
-                                                            ev.status, color="amber-700"
-                                                        ).classes("text-[10px]")
+                                            # Status
+                                            with ui.element("td").classes("py-3.5 px-4"):
+                                                render_status_badge(ev.status)
 
-                                                # Details
-                                                with ui.element("td").classes(
-                                                    "py-2.5 px-3 text-slate-500 max-w-[260px] truncate"
-                                                ):
-                                                    ui.label(ev.details or "—")
+                                            # Inspection
+                                            with ui.element("td").classes("py-3.5 px-4 text-right"):
+                                                ui.button(
+                                                    "Inspect",
+                                                    icon="visibility",
+                                                    on_click=lambda _, e=ev: open_event_modal(e),
+                                                ).props("flat dense no-caps").classes(
+                                                    "text-xs font-bold text-primary-navy hover:underline"
+                                                )
 
-            render_activity_view()
+            def refresh_activity() -> None:
+                nonlocal events_cache
+                try:
+                    events_cache = api_client.get_activity_log()
+                except Exception as err:
+                    content_container.clear()
+                    with content_container:
+                        render_alert(
+                            f"Failed to load activity ledger: {normalize_error(err, context='activity')}",
+                            level="negative",
+                            action_label="Retry",
+                            on_action=lambda: refresh_activity(),
+                        )
+                    return
+
+                render_toolbar()
+                render_table()
+
+            refresh_activity()

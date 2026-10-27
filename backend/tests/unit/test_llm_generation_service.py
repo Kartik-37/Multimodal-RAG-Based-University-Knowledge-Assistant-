@@ -304,3 +304,92 @@ class TestLLMGenerationServiceUnit:
         assert "</think>" not in cleaned
         assert "Checking chunks" not in cleaned
         assert 'This Act may be called "Kaushalya the Skill University Act 2021" [source_2].' in cleaned
+
+    def test_sanitize_llm_answer_preserves_valid_step_by_step_answers(self) -> None:
+        """Verify that legitimate step-by-step educational answers are preserved while internal CoT is removed."""
+        raw = (
+            "<think>\n"
+            "Need to explain the automated failover sequence in steps.\n"
+            "</think>\n"
+            "Step 1: Analyze the prompt and user request.\n"
+            "Step 2: Review the retrieved evidence in source_1.\n"
+            "Step 1: The Health Monitor detects a node failure [source_1].\n"
+            "Step 2: The Failover Controller evaluates quorum and triggers failover [source_1].\n"
+            "Step 3: The Standby Node is promoted to primary [source_1].\n"
+            "The user question is: Explain the failover sequence in steps."
+        )
+
+        cleaned = _sanitize_llm_answer(raw)
+
+        # 1. Internal CoT and prompt echoes must be stripped
+        assert "<think>" not in cleaned
+        assert "</think>" not in cleaned
+        assert "Analyze the prompt" not in cleaned
+        assert "Review the retrieved evidence" not in cleaned
+        assert "The user question is" not in cleaned
+
+        # 2. Legitimate numbered educational steps must be preserved
+        assert "Step 1: The Health Monitor detects a node failure [source_1]." in cleaned
+        assert "Step 2: The Failover Controller evaluates quorum and triggers failover [source_1]." in cleaned
+        assert "Step 3: The Standby Node is promoted to primary [source_1]." in cleaned
+
+        # 3. Citation tags canonicalized
+        assert "[source_1]" in cleaned
+        assert "source_1" in _SOURCE_REF_REGEX.findall(cleaned)
+
+    def test_sanitize_llm_answer_preserves_concise_sequence_statement(self) -> None:
+        """Verify that concise sequence answers beginning with 'The sequence is:' or 'The workflow is:' are preserved."""
+        raw_sequence = (
+            "We are given the user question about failover sequence.\n"
+            "Let's inspect the evidence.\n"
+            "- Source 1: Shows failover diagram on page 2.\n"
+            "The sequence is: When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller, "
+            "which promotes the Standby Node [SOURCE_1]."
+        )
+
+        cleaned_seq = _sanitize_llm_answer(raw_sequence)
+        assert cleaned_seq.startswith("The sequence is: When a heartbeat timeout occurs,")
+        assert "Health Monitor" in cleaned_seq
+        assert "Failover Controller" in cleaned_seq
+        assert "Standby Node" in cleaned_seq
+        assert "[source_1]" in cleaned_seq
+        assert "We are given the user question" not in cleaned_seq
+        assert "- Source 1:" not in cleaned_seq
+
+        raw_workflow = (
+            "The workflow is: The student registers for courses, the Advisor approves the schedule, "
+            "and the Registrar finalizes enrollment [source_2]."
+        )
+        cleaned_wf = _sanitize_llm_answer(raw_workflow)
+        assert cleaned_wf.startswith("The workflow is: The student registers for courses,")
+        assert "[source_2]" in cleaned_wf
+
+    def test_sanitize_llm_answer_strips_source_headers_and_scaffolding(self) -> None:
+        """Verify that source header lines, label prefixes, and context scaffolding are cleanly stripped."""
+        raw_scaffolded = (
+            "- Flowchart on Page 2 of failover_protocol.pdf\n"
+            "- Summary: When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller, which then promotes the Standby Node [source_1].\n"
+            "- Page 2 of failover_protocol.pdf, Figure 2: Automated Failover Protocol Workflow Diagram\n"
+            "- Describes the context: High availability clusters use active-passive configurations.\n"
+        )
+        cleaned = _sanitize_llm_answer(raw_scaffolded)
+        assert "- Flowchart on Page 2" not in cleaned
+        assert "Figure 2: Automated Failover" not in cleaned
+        assert "Describes the context" not in cleaned
+        assert "When a heartbeat timeout occurs, the Health Monitor triggers the Failover Controller, which then promotes the Standby Node [source_1]." in cleaned
+        assert "[source_1]" in cleaned
+
+    def test_sanitize_llm_answer_strips_trailing_user_question_and_precision_scaffolding(self) -> None:
+        """Verify trailing meta-commentary discussing the question or precision is cleanly stripped."""
+        raw = (
+            "The sequence is: 1. A heartbeat timeout occurs [source_1].\n"
+            "2. The Health Monitor triggers the Failover Controller [source_1].\n"
+            "3. The Failover Controller promotes the Standby Node to become the active primary server [source_2].\n"
+            'However, the user question specifically asks for the sequence "from Health Monitor to Standby Node" [source_1]. We must be precise.'
+        )
+        cleaned = _sanitize_llm_answer(raw)
+        assert "However, the user question" not in cleaned
+        assert "We must be precise" not in cleaned
+        assert "1. A heartbeat timeout occurs [source_1]." in cleaned
+        assert "2. The Health Monitor triggers the Failover Controller [source_1]." in cleaned
+        assert "3. The Failover Controller promotes the Standby Node" in cleaned

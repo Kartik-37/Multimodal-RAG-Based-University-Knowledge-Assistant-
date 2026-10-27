@@ -19,10 +19,12 @@ import csv
 import io
 import logging
 import re
+import shutil
 import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -55,6 +57,7 @@ class ValidatedUpload:
     content: bytes
     file_size_bytes: int
     content_hash: str  # SHA-256 hex
+    file_obj: Any = None
 
 
 class StorageService:
@@ -79,13 +82,28 @@ class StorageService:
         # Limit display length
         return clean[:255]
 
-    def _detect_and_validate_file_structure(self, extension: str, content: bytes) -> str:
+    def _detect_and_validate_file_structure(
+        self,
+        extension: str,
+        content: bytes = b"",
+        file_obj: Any = None,
+    ) -> str:
         """
         Deeply inspect file header/magic bytes and structural integrity.
+        Supports both memory buffers and seekable file streams to avoid memory pressure on large files.
         Rejects renamed or disguised files (e.g. executables renamed to .pdf).
         """
         if extension == ".pdf":
-            if not content.startswith(PDF_MAGIC_BYTES):
+            if file_obj is not None and hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+                sig = file_obj.read(len(PDF_MAGIC_BYTES))
+                file_obj.seek(0)
+                if not sig.startswith(PDF_MAGIC_BYTES):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid PDF file: Missing '%PDF-' file signature.",
+                    )
+            elif not content.startswith(PDF_MAGIC_BYTES):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid PDF file: Missing '%PDF-' file signature.",
@@ -93,75 +111,139 @@ class StorageService:
             return "application/pdf"
 
         if extension == ".docx":
-            if not content.startswith(ZIP_MAGIC_BYTES):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid DOCX file: Missing valid ZIP archive signature.",
-                )
-            # Verify internal DOCX structure (word/document.xml)
-            try:
-                with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                    namelist = zf.namelist()
-                    if "word/document.xml" not in namelist:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Invalid DOCX file: Missing internal 'word/document.xml' structure.",
-                        )
-            except zipfile.BadZipFile as err:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid DOCX file: Corrupted or unreadable archive.",
-                ) from err
+            if file_obj is not None and hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+                sig = file_obj.read(len(ZIP_MAGIC_BYTES))
+                if not sig.startswith(ZIP_MAGIC_BYTES):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid DOCX file: Missing valid ZIP archive signature.",
+                    )
+                file_obj.seek(0)
+                try:
+                    with zipfile.ZipFile(file_obj) as zf:
+                        namelist = zf.namelist()
+                        if "word/document.xml" not in namelist:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Invalid DOCX file: Missing internal 'word/document.xml' structure.",
+                            )
+                except zipfile.BadZipFile as err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid DOCX file: Corrupted or unreadable archive.",
+                    ) from err
+                finally:
+                    file_obj.seek(0)
+            else:
+                if not content.startswith(ZIP_MAGIC_BYTES):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid DOCX file: Missing valid ZIP archive signature.",
+                    )
+                try:
+                    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                        namelist = zf.namelist()
+                        if "word/document.xml" not in namelist:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Invalid DOCX file: Missing internal 'word/document.xml' structure.",
+                            )
+                except zipfile.BadZipFile as err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid DOCX file: Corrupted or unreadable archive.",
+                    ) from err
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
         if extension in (".txt", ".md"):
-            # Check for binary null bytes which indicate non-text files (e.g. binaries/executables)
-            if b"\x00" in content:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid text file ({extension}): Contains binary null bytes.",
-                )
-            # Verify decodability as UTF-8 (or fallback Latin-1)
-            try:
-                content.decode("utf-8")
-            except UnicodeDecodeError:
-                try:
-                    content.decode("latin-1")
-                except UnicodeDecodeError as err:
+            if file_obj is not None and hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+                while True:
+                    chunk = file_obj.read(64 * 1024)
+                    if not chunk:
+                        break
+                    if b"\x00" in chunk:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Invalid text file ({extension}): Contains binary null bytes.",
+                        )
+                file_obj.seek(0)
+            else:
+                if b"\x00" in content:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid text file: Cannot decode content as UTF-8 or Latin-1.",
-                    ) from err
+                        detail=f"Invalid text file ({extension}): Contains binary null bytes.",
+                    )
+                try:
+                    content.decode("utf-8")
+                except UnicodeDecodeError:
+                    try:
+                        content.decode("latin-1")
+                    except UnicodeDecodeError as err:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid text file: Cannot decode content as UTF-8 or Latin-1.",
+                        ) from err
             return "text/markdown" if extension == ".md" else "text/plain"
 
         if extension == ".csv":
-            if b"\x00" in content:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid CSV file: Contains binary null bytes.",
-                )
-            try:
-                decoded = content.decode("utf-8-sig")
-            except UnicodeDecodeError as err:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid CSV file: Cannot decode content as UTF-8.",
-                ) from err
-
-            # Verify it parses as tabular CSV
-            try:
-                reader = csv.reader(io.StringIO(decoded))
-                rows = list(reader)
-                if not rows or len(rows[0]) == 0:
+            if file_obj is not None and hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+                first_block = file_obj.read(64 * 1024)
+                if b"\x00" in first_block:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid CSV file: File is empty or has no tabular columns.",
+                        detail="Invalid CSV file: Contains binary null bytes.",
                     )
-            except csv.Error as err:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid CSV file format: {err}",
-                ) from err
+                try:
+                    decoded = first_block.decode("utf-8-sig")
+                except UnicodeDecodeError as err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid CSV file: Cannot decode content as UTF-8.",
+                    ) from err
+                try:
+                    reader = csv.reader(io.StringIO(decoded))
+                    rows = list(reader)
+                    if not rows or len(rows[0]) == 0:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid CSV file: File is empty or has no tabular columns.",
+                        )
+                except csv.Error as err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid CSV file format: {err}",
+                    ) from err
+                finally:
+                    file_obj.seek(0)
+            else:
+                if b"\x00" in content:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid CSV file: Contains binary null bytes.",
+                    )
+                try:
+                    decoded = content.decode("utf-8-sig")
+                except UnicodeDecodeError as err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid CSV file: Cannot decode content as UTF-8.",
+                    ) from err
+                try:
+                    reader = csv.reader(io.StringIO(decoded))
+                    rows = list(reader)
+                    if not rows or len(rows[0]) == 0:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid CSV file: File is empty or has no tabular columns.",
+                        )
+                except csv.Error as err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid CSV file format: {err}",
+                    ) from err
             return "text/csv"
 
         raise HTTPException(
@@ -172,6 +254,7 @@ class StorageService:
     async def validate_and_read_upload(self, file: UploadFile) -> ValidatedUpload:
         """
         Validate upload file parameters, size, content hash, and format structure.
+        Streams bounded 64 KiB chunks to handle 100 MiB documents without memory bloat.
         """
         raw_filename = file.filename or ""
         clean_name = self._sanitize_filename(raw_filename)
@@ -185,9 +268,29 @@ class StorageService:
                 detail=f"Unsupported file extension '{ext}'. Allowed extensions: {allowed_list}",
             )
 
-        # Read content while enforcing MAX_UPLOAD_SIZE_BYTES
-        content = await file.read()
-        file_size = len(content)
+        # Read content while enforcing MAX_UPLOAD_SIZE_BYTES in 64 KiB chunks
+        import hashlib
+
+        hasher = hashlib.sha256()
+        file_size = 0
+        chunk_size = 64 * 1024
+        first_chunk = b""
+
+        await file.seek(0)
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            if not first_chunk:
+                first_chunk = chunk
+            file_size += len(chunk)
+            if file_size > settings.MAX_UPLOAD_SIZE_BYTES:
+                max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File size exceeds maximum allowed limit of {max_mb} MiB.",
+                )
+            hasher.update(chunk)
 
         if file_size == 0:
             raise HTTPException(
@@ -195,22 +298,13 @@ class StorageService:
                 detail="Uploaded file is empty (0 bytes).",
             )
 
-        if file_size > settings.MAX_UPLOAD_SIZE_BYTES:
-            max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File size exceeds maximum allowed limit of {max_mb} MB.",
-            )
+        # Rewind seek pointer for structural inspection
+        await file.seek(0)
 
-        # Validate file structural integrity and magic bytes
-        mime_type = self._detect_and_validate_file_structure(ext, content)
+        # Validate file structural integrity and magic bytes without expanding entire file in memory
+        mime_type = self._detect_and_validate_file_structure(ext, content=first_chunk, file_obj=file.file)
 
-        # Compute SHA-256 hash for deduplication and content integrity
-        import hashlib
-
-        content_hash = hashlib.sha256(content).hexdigest()
-
-        # Canonical file_type without leading dot (e.g. "pdf")
+        content_hash = hasher.hexdigest()
         canonical_type = ext.lstrip(".")
 
         return ValidatedUpload(
@@ -218,9 +312,10 @@ class StorageService:
             file_type=canonical_type,
             extension=ext,
             mime_type=mime_type,
-            content=content,
+            content=first_chunk if file_size <= 1024 * 1024 else b"",
             file_size_bytes=file_size,
             content_hash=content_hash,
+            file_obj=file.file,
         )
 
     def save_file(
@@ -228,10 +323,12 @@ class StorageService:
         knowledge_base_id: uuid.UUID,
         document_id: uuid.UUID,
         extension: str,
-        content: bytes,
+        content: bytes | None = None,
+        file_obj: Any = None,
     ) -> str:
         """
         Save file content to secure storage directory under an unpredictable UUID key.
+        Streams from file_obj when available in 64 KiB chunks to avoid memory amplification.
         Returns the relative storage_key string.
         """
         # Create knowledge-base specific directory
@@ -253,8 +350,15 @@ class StorageService:
                 detail="Path traversal detected in destination filename.",
             )
 
-        # Write binary content atomically to disk
-        target_file.write_bytes(content)
+        if file_obj is not None and hasattr(file_obj, "read"):
+            if hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+            with open(target_file, "wb") as out_f:
+                shutil.copyfileobj(file_obj, out_f, length=64 * 1024)
+        elif content is not None:
+            target_file.write_bytes(content)
+        else:
+            raise ValueError("Either content or file_obj must be provided to save_file.")
 
         # Relative storage key stored in database (e.g. "storage/kb_uuid/doc_uuid.pdf")
         storage_key = f"storage/{knowledge_base_id}/{document_id}{extension}"

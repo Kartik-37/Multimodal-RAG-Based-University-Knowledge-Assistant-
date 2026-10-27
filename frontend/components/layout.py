@@ -1,12 +1,13 @@
 """
 Application Shell Layout Component with Unified Responsive Navigation.
 
-Provides a restrained, academic chrome including desktop navigation, mobile drawer,
-active knowledge base selection, and role-tailored links. Reuses a single navigation
-definition across desktop and mobile form factors.
+Provides a restrained, academic chrome utilizing the Ivory/Gold/Navy design system.
+Uses single primary navigation systems (Top for Student, Sidebar for Admin)
+to avoid cognitive overload.
 """
 
-from collections.abc import Generator
+import re
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -14,155 +15,113 @@ from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.error_handler import normalize_error
 from frontend.client.models import UserDTO
 from frontend.security.access_control import has_admin_permission
 from frontend.state.app_state import state
 
 
-def get_nav_items(user: UserDTO | None) -> list[tuple[str, str, str]]:
-    """
-    Unified navigation items definition shared identically across desktop and mobile.
-
-    Returns:
-        List of tuples: (Label, Route, Material Icon Name)
-    """
-    if not user:
-        return []
-
-    if user.role == "ADMIN":
-        items: list[tuple[str, str, str]] = [
-            ("Dashboard", "/dashboard", "dashboard"),
-        ]
-        if has_admin_permission(user, Permission.COURSE_VIEW):
-            items.append(("Courses", "/knowledge-bases", "menu_book"))
-        if has_admin_permission(user, Permission.DOCUMENT_VIEW):
-            items.append(("Documents", "/documents", "description"))
-        if has_admin_permission(user, Permission.ADMIN_CHAT):
-            items.append(("Admin Chat", "/chat", "chat"))
-        if has_admin_permission(user, Permission.ADMIN_VIEW):
-            items.append(("Administrators", "/administrators", "admin_panel_settings"))
-        items.append(("Profile", "/profile", "account_circle"))
-        return items
-
-    # Student navigation
-    return [
-        ("Home", "/dashboard", "home"),
-        ("Ask Assistant", "/chat", "chat"),
-        ("Courses", "/knowledge-bases", "menu_book"),
-        ("Profile", "/profile", "account_circle"),
-    ]
-
-
 def get_sidebar_sections(user: UserDTO | None) -> list[dict[str, Any]]:
+    """Grouped navigation sections for the Admin sidebar.
+
+    Authoritative single source of truth for administrator navigation.
+    Information Architecture:
+    - Overview: /dashboard
+    - Content: Courses (/knowledge-bases), Documents (/documents)
+    - Administration: Administrators & Permissions (/administrators), Activity & Audit (/activity)
+    - Operations & Tools: System Health (/system-health), Test Assistant (/chat)
     """
-    Categorized navigation sections for the application sidebar.
-    Organizes links into distinct functional sections for clear operational separation.
-
-    Returns:
-        List of section dicts: [{'title': 'Section Name', 'items': [...]}]
-    """
-    if not user:
-        return []
-
-    is_admin = user.role == "ADMIN"
-    is_main = user.admin_role == "MAIN_ADMIN"
-    sections: list[dict[str, Any]] = []
-
-    if is_admin:
-        academic_items: list[tuple[str, str, str]] = [("Dashboard", "/dashboard", "dashboard")]
-        if is_main or has_admin_permission(user, Permission.COURSE_VIEW):
-            academic_items.append(("Courses", "/knowledge-bases", "menu_book"))
-        if is_main or has_admin_permission(user, Permission.DOCUMENT_VIEW):
-            academic_items.append(("Documents", "/documents", "description"))
-            academic_items.append(("Indexing", "/indexing", "sync"))
-        sections.append({"title": "Academic Management", "items": academic_items})
-
-        if is_main or has_admin_permission(user, Permission.ADMIN_CHAT):
-            sections.append({"title": "Assistant", "items": [("Admin Chat", "/chat", "chat")]})
-
-        admin_items: list[tuple[str, str, str]] = []
-        if is_main or has_admin_permission(user, Permission.ADMIN_VIEW):
-            admin_items.append(("Administrators", "/administrators", "admin_panel_settings"))
-        if is_main or has_admin_permission(user, Permission.ADMIN_VIEW):
-            admin_items.append(("Activity & Audit", "/activity", "history"))
-        admin_items.append(("System Health", "/system-health", "health_and_safety"))
-        admin_items.append(("My Profile", "/profile", "account_circle"))
-        sections.append({"title": "Administration", "items": admin_items})
-    else:
-        # Unified clean student navigation without awkward divided sections
-        sections.append(
-            {
-                "title": "Navigation",
-                "items": [
-                    ("Home", "/dashboard", "home"),
-                    ("Ask Assistant", "/chat", "chat"),
-                    ("Courses", "/knowledge-bases", "menu_book"),
-                    ("My Profile", "/profile", "account_circle"),
-                ],
-            }
-        )
-
-    return sections
-
-
-def get_admin_nav_groups(user: UserDTO | None) -> list[dict[str, Any]]:
-    """Grouped navigation hierarchy for the redesigned admin application shell."""
     if not user or user.role != "ADMIN":
         return []
 
     is_main = user.admin_role == "MAIN_ADMIN"
-    groups: list[dict[str, Any]] = []
+    sections: list[dict[str, Any]] = []
 
     # 1. Overview
-    overview_items = [("Dashboard", "/dashboard", "dashboard")]
-    groups.append({"title": "Overview", "items": overview_items})
+    sections.append({
+        "title": "Overview",
+        "items": [("Overview", "/dashboard", "dashboard")],
+    })
 
-    # 2. Knowledge
-    knowledge_items = []
+    # 2. Content
+    content_items: list[tuple[str, str, str]] = []
     if is_main or has_admin_permission(user, Permission.COURSE_VIEW):
-        knowledge_items.append(("Courses", "/knowledge-bases", "menu_book"))
-    if is_main or has_admin_permission(user, Permission.DOCUMENT_VIEW):
-        knowledge_items.append(("Documents", "/documents", "description"))
-        knowledge_items.append(("Indexing", "/indexing", "sync"))
-    if knowledge_items:
-        groups.append({"title": "Knowledge", "items": knowledge_items})
+        content_items.append(("Courses", "/knowledge-bases", "menu_book"))
+    if (
+        is_main
+        or has_admin_permission(user, Permission.DOCUMENT_VIEW)
+        or has_admin_permission(user, Permission.DOCUMENT_INDEX)
+        or has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
+    ):
+        content_items.append(("Documents", "/documents", "description"))
+    if content_items:
+        sections.append({"title": "Content", "items": content_items})
 
-    # 3. Communication
-    comm_items = []
-    if is_main or has_admin_permission(user, Permission.ADMIN_CHAT):
-        comm_items.append(("Admin Chat", "/chat", "chat"))
-    if comm_items:
-        groups.append({"title": "Communication", "items": comm_items})
-
-    # 4. Administration
-    admin_items = []
+    # 3. Administration
+    admin_items: list[tuple[str, str, str]] = []
     if is_main or has_admin_permission(user, Permission.ADMIN_VIEW):
-        admin_items.append(("Administrators", "/administrators", "admin_panel_settings"))
+        admin_items.append(("Administrators & Permissions", "/administrators", "admin_panel_settings"))
+        admin_items.append(("Activity & Audit", "/activity", "history"))
     if admin_items:
-        groups.append({"title": "Administration", "items": admin_items})
+        sections.append({"title": "Administration", "items": admin_items})
 
-    # 5. System
-    system_items = []
+    # 4. Operations & Tools
+    ops_items: list[tuple[str, str, str]] = []
     if is_main or has_admin_permission(user, Permission.ADMIN_VIEW):
-        system_items.append(("Activity / Audit", "/activity", "history"))
-    system_items.append(("System Health", "/system-health", "health_and_safety"))
-    groups.append({"title": "System", "items": system_items})
+        ops_items.append(("System Health", "/system-health", "health_and_safety"))
+    if is_main or has_admin_permission(user, Permission.ADMIN_CHAT):
+        ops_items.append(("Test Assistant", "/chat", "chat"))
+    if ops_items:
+        sections.append({"title": "Operations & Tools", "items": ops_items})
 
-    return groups
+    return sections
 
 
-def _get_user_initials(name: str) -> str:
-    """Extract 1 or 2 uppercase initials for avatar representation."""
-    parts = name.strip().split()
-    if not parts:
-        return "AD"
-    if len(parts) == 1:
-        return parts[0][:2].upper()
-    return (parts[0][0] + parts[-1][0]).upper()
+def get_user_initials(full_name: str | None, email: str | None = None) -> str:
+    """
+    Derive user initials deterministically from full name or email.
+
+    Rules:
+    - Strips parenthesized role suffixes like (Student), (Admin), (Faculty).
+    - Ignores punctuation and leading/trailing whitespace.
+    - Two or more words: first letter of first word + first letter of last word (e.g. Alex Rivera -> AR).
+    - Single word: first two letters (e.g. Morgan -> MO).
+    - Empty or whitespace: safe single-letter fallback from email prefix or 'U'.
+    - Always uppercase and never punctuation.
+    """
+    raw = (full_name or "").strip()
+    if raw:
+        # Remove parenthesized substrings such as (Student), (Admin), (Faculty)
+        cleaned = re.sub(r"\(.*?\)", "", raw).strip()
+        # Find words containing alphabetic characters
+        words = [w for w in re.split(r"\s+", cleaned) if w]
+        # Filter each word to its alphabetic characters
+        alpha_words = [re.sub(r"[^A-Za-z]", "", w) for w in words]
+        alpha_words = [w for w in alpha_words if w]
+
+        if len(alpha_words) >= 2:
+            return (alpha_words[0][0] + alpha_words[-1][0]).upper()
+        elif len(alpha_words) == 1:
+            w = alpha_words[0]
+            if len(w) >= 2:
+                return w[:2].upper()
+            return w[:1].upper()
+
+    if email and email.strip():
+        clean_email = email.strip()
+        prefix = clean_email.split("@")[0]
+        alpha_prefix = re.sub(r"[^A-Za-z]", "", prefix)
+        if len(alpha_prefix) >= 1:
+            return alpha_prefix[:1].upper()
+
+    return "U"
+
+
+def _get_user_initials(name: str, email: str | None = None) -> str:
+    return get_user_initials(name, email)
 
 
 def _handle_logout() -> None:
-    """Log out current user, reset state, and redirect to login."""
     api_client.logout()
     state.clear_chat()
     state.active_kb = None
@@ -171,328 +130,308 @@ def _handle_logout() -> None:
     ui.navigate.to("/login")
 
 
-def _render_student_navbar(active_route: str, user: UserDTO) -> None:
-    """Render single, refined top navigation bar for students with mobile overlay drawer."""
-    initials = _get_user_initials(user.full_name)
-    student_nav = [
-        ("Home", "/dashboard", "home"),
-        ("Ask Assistant", "/chat", "chat"),
+def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
+    """
+    Unified Application Shell Sidebar.
+
+    Transforms application navigation into a premier, editorial-academic left sidebar:
+    - Top header: App branding & identity
+    - Primary action: + New Chat
+    - Upper section: Application navigation links (Home, Ask Assistant, Courses, Profile, + Admin tools)
+    - Lower section: Persistent Chat History (Recent Chats) with active highlighting and deletion
+    - Base: User profile badge with role and sign out
+    """
+    initials = get_user_initials(user.full_name, user.email)
+    is_admin = user.role == "ADMIN"
+
+    # Define Navigation Links for Student
+    student_nav_links: list[tuple[str, str, str]] = [
+        ("Assistant", "/chat", "chat"),
         ("Courses", "/knowledge-bases", "menu_book"),
         ("Profile", "/profile", "account_circle"),
     ]
 
-    # Mobile Drawer: Only rendered on screens < 768px as an overlay when toggled
-    with (
-        ui.left_drawer(value=False)
-        .props("side=left breakpoint=768 width=260 overlay")
-        .classes(
-            "bg-[#FAF6F0] text-[#0E1D61] p-0 flex flex-col justify-between z-40 border-r border-[#D8CFBF] shadow-none md:hidden"
-        )
-    ) as mobile_drawer:
-        with ui.column().classes("w-full p-4 gap-4"):
-            with (
-                ui.row()
-                .classes("w-full items-center gap-3 pb-3 border-b border-[#D8CFBF] cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/dashboard"))
-            ):
-                with ui.element("div").classes(
-                    "w-9 h-9 rounded-lg bg-[#0E1D61] flex items-center justify-center text-[#B89A5A] shrink-0"
-                ):
-                    ui.icon("school", size="20px")
-                with ui.column().classes("gap-0 min-w-0 leading-tight"):
-                    ui.label("RAG Assistant").classes(
-                        "font-bold text-[#0E1D61] text-sm tracking-tight truncate font-editorial"
-                    )
-                    ui.label("Student Workspace").classes(
-                        "text-[10px] font-medium text-[#3A4B7C] truncate"
-                    )
-
-            with ui.column().classes("w-full gap-1.5 my-2"):
-                for label, route, icon in student_nav:
-                    is_active = (active_route == route) or (
-                        route != "/dashboard" and active_route.startswith(route)
-                    )
-                    cls = "w-full justify-start text-xs py-2 px-3 rounded-md font-semibold transition-colors "
-                    if is_active:
-                        cls += "!bg-[#F3EBDD] !text-[#0E1D61] border border-[#B89A5A]"
-                    else:
-                        cls += "text-[#3A4B7C] hover:bg-[#F5F0E8] hover:text-[#0E1D61] font-medium"
-                    ui.button(
-                        label,
-                        icon=icon,
-                        on_click=lambda r=route: [mobile_drawer.toggle(), ui.navigate.to(r)],
-                    ).props("flat no-caps dense").classes(cls)
-
-        with ui.column().classes(
-            "w-full p-4 gap-2 border-t border-[#D8CFBF] bg-[#F5F0E8] shrink-0"
-        ):
-            with (
-                ui.row()
-                .classes(
-                    "items-center justify-between w-full p-2 rounded-md hover:bg-[#FAF6F0] cursor-pointer transition-colors border border-transparent hover:border-[#D8CFBF]"
-                )
-                .on("click", lambda: ui.navigate.to("/profile"))
-            ):
-                with ui.row().classes("items-center gap-2.5 min-w-0"):
-                    with ui.element("div").classes(
-                        "w-7 h-7 rounded-full bg-[#0E1D61] border border-[#B89A5A] flex items-center justify-center text-[11px] font-bold text-[#FAF6F0] shrink-0"
-                    ):
-                        ui.label(initials)
-                    with ui.column().classes("gap-0 min-w-0"):
-                        ui.label(user.full_name).classes(
-                            "text-xs font-semibold text-[#0E1D61] truncate max-w-[125px]"
-                        )
-                        ui.label(user.email).classes(
-                            "text-[10px] text-[#6B7B9E] truncate max-w-[125px]"
-                        )
-            ui.button(
-                "Sign Out",
-                icon="logout",
-                on_click=_handle_logout,
-            ).props("flat dense no-caps").classes(
-                "w-full text-xs text-[#9B2226] hover:bg-[#FDE8E8] rounded-md transition-colors py-1.5 font-semibold"
-            )
-
-    # Top Application Bar: Single desktop navigation system
+    # Mobile Header for screens < 1024px
     with ui.header().classes(
-        "w-full bg-[#FAF6F0] text-[#0E1D61] px-4 sm:px-8 py-2.5 items-center justify-between border-b border-[#D8CFBF] shadow-none z-30"
+        "w-full bg-surface-elevated text-primary-navy px-4 py-2.5 items-center justify-between border-b border-subtle shadow-none z-30 lg:hidden"
     ):
-        # Left: Brand Logo & Mobile Toggle
         with ui.row().classes("items-center gap-3"):
-            ui.button(icon="menu", on_click=mobile_drawer.toggle).props(
-                "flat round dense"
-            ).classes("md:hidden text-[#0E1D61] hover:text-[#1B2D7C]").tooltip("Toggle Menu")
+            ui.button(icon="menu").props("flat round dense").classes(
+                "nav-mobile-toggle text-primary-navy"
+            ).on("click", lambda: sidebar_drawer.toggle())
             with (
                 ui.row()
-                .classes("items-center gap-2.5 cursor-pointer no-underline")
-                .on("click", lambda: ui.navigate.to("/dashboard"))
+                .classes("items-center gap-2 cursor-pointer no-underline")
+                .on("click", lambda: ui.navigate.to("/dashboard" if is_admin else "/chat"))
             ):
-                with ui.element("div").classes(
-                    "w-8 h-8 rounded-md bg-[#0E1D61] flex items-center justify-center text-[#B89A5A] shrink-0"
-                ):
-                    ui.icon("school", size="18px")
-                with ui.column().classes("gap-0 leading-tight"):
-                    ui.label("RAG Assistant").classes(
-                        "text-sm sm:text-base font-bold tracking-tight text-[#0E1D61] font-editorial"
-                    )
-                    ui.label("Student Workspace").classes(
-                        "text-[10px] font-medium text-[#3A4B7C] hidden sm:block"
-                    )
-
-        # Center: Desktop Navigation Links (ONE navigation system, clean and prominent)
-        with ui.row().classes("hidden md:flex items-center gap-2"):
-            for label, route, icon in student_nav:
-                is_active = (active_route == route) or (
-                    route != "/dashboard" and active_route.startswith(route)
+                ui.icon("school", size="20px").classes("text-gold")
+                ui.label("RAG Assistant").classes(
+                    "text-base font-bold font-editorial text-primary-navy"
                 )
-                link_cls = (
-                    "px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer no-underline "
-                )
-                if is_active:
-                    link_cls += "bg-[#F3EBDD] text-[#0E1D61] font-bold border border-[#B89A5A]"
-                else:
-                    link_cls += "text-[#3A4B7C] hover:text-[#0E1D61] hover:bg-[#F5F0E8]"
-                with ui.link(target=route).classes(link_cls):
-                    ui.icon(icon, size="16px").classes(
-                        "text-[#B89A5A]" if is_active else "text-[#6B7B9E]"
-                    )
-                    ui.label(label)
-
-        # Right: User Access & Sign Out
-        with ui.row().classes("items-center gap-2 sm:gap-3"):
-            with (
-                ui.row()
-                .classes(
-                    "items-center gap-2 py-1 px-2.5 rounded-full hover:bg-[#F5F0E8] cursor-pointer transition-colors border border-transparent hover:border-[#D8CFBF]"
-                )
-                .on("click", lambda: ui.navigate.to("/profile"))
+        with (
+            ui.row()
+            .classes("items-center gap-2 cursor-pointer")
+            .on("click", lambda: ui.navigate.to("/profile"))
+        ):
+            with ui.element("div").classes(
+                "w-7 h-7 rounded-full bg-gold-light border border-gold flex items-center justify-center text-[11px] font-bold text-primary-navy"
             ):
-                with ui.element("div").classes(
-                    "w-7 h-7 rounded-full bg-[#0E1D61] border border-[#B89A5A] flex items-center justify-center text-[11px] font-bold text-[#FAF6F0] shrink-0"
-                ):
-                    ui.label(initials)
-                ui.label(user.full_name).classes(
-                    "hidden lg:inline text-xs font-semibold text-[#0E1D61] truncate max-w-[130px]"
-                )
+                ui.label(initials)
 
-            ui.button(
-                "Sign Out",
-                icon="logout",
-                on_click=_handle_logout,
-            ).props("flat dense no-caps").classes(
-                "text-xs font-semibold text-[#9B2226] hover:bg-[#FDE8E8] px-2.5 py-1 rounded-md"
-            ).tooltip("Sign Out")
-
-
-def _render_admin_navbar(active_route: str, user: UserDTO) -> None:
-    """Render admin navigation with collapsible sidebar rail."""
-    sidebar_sections = get_sidebar_sections(user)
-    is_main = getattr(user, "admin_role", None) == "MAIN_ADMIN"
-    role_label = "MAIN ADMIN" if is_main else "FACULTY ADMIN"
-    initials = _get_user_initials(user.full_name)
-
+    # Unified Left Sidebar Drawer
     with (
-        ui.left_drawer(value=True)
-        .props("side=left breakpoint=1024 width=260")
+        ui.left_drawer()
+        .props("side=left breakpoint=1024 width=280 show-if-above")
         .classes(
-            "bg-white text-slate-800 p-0 flex flex-col justify-between z-20 border-r border-slate-200/90 shadow-none slim-sidebar-rail"
+            "bg-surface text-primary-navy p-0 flex flex-col justify-between z-40 border-r border-subtle shadow-none h-full"
         )
     ) as sidebar_drawer:
-        with ui.column().classes("w-full p-4 gap-4"):
-            with (
-                ui.row()
-                .classes("w-full items-center gap-3 pb-3 border-b border-slate-100 cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/dashboard"))
-            ):
-                with ui.element("div").classes(
-                    "w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs shrink-0"
+        # Top & Middle Content Container
+        with ui.column().classes("w-full flex-1 overflow-hidden flex flex-col p-3 gap-2.5 min-h-0"):
+            # Header Branding
+            with ui.row().classes("w-full items-center justify-between pb-2 border-b border-subtle shrink-0"):
+                with (
+                    ui.row()
+                    .classes("items-center gap-2.5 cursor-pointer no-underline")
+                    .on("click", lambda: ui.navigate.to("/dashboard" if is_admin else "/chat"))
                 ):
-                    ui.icon("school", size="20px")
-                with ui.column().classes("gap-0 min-w-0 leading-tight"):
-                    ui.label("RAG Assistant").classes(
-                        "font-bold text-slate-900 text-sm tracking-tight truncate"
-                    )
-                    ui.label("Administrator Portal").classes(
-                        "text-[10px] font-medium text-slate-500 truncate"
-                    )
+                    ui.icon("school", size="22px").classes("text-gold")
+                    with ui.column().classes("gap-0 leading-tight"):
+                        ui.label("RAG Assistant").classes(
+                            "font-bold text-primary-navy text-sm font-editorial"
+                        )
+                        ui.label(
+                            "Admin Portal" if is_admin else "University Assistant"
+                        ).classes("text-[10px] font-medium text-secondary-navy uppercase tracking-wider")
 
-            with ui.column().classes("w-full gap-3.5 my-1"):
-                for section in sidebar_sections:
-                    with ui.column().classes("w-full gap-1"):
-                        with ui.row().classes("items-center gap-1.5 px-3 mb-0.5"):
-                            ui.label(section["title"].upper()).classes(
-                                "text-[10px] font-bold text-slate-400 tracking-wider"
+                ui.button(icon="chevron_left", on_click=sidebar_drawer.toggle).props(
+                    "flat round dense"
+                ).classes("lg:hidden text-secondary-navy hover:text-primary-navy")
+
+            if is_admin:
+                # -------------------------------------------------------------
+                # ADMINISTRATOR NAVIGATION (Authoritative Grouped Architecture)
+                # -------------------------------------------------------------
+                with ui.column().classes("w-full flex-1 overflow-y-auto gap-3 pr-1 min-h-0"):
+                    sections = get_sidebar_sections(user)
+                    for sec in sections:
+                        with ui.column().classes("w-full gap-0.5 shrink-0"):
+                            ui.label(sec["title"].upper()).classes(
+                                "text-[10px] font-bold text-secondary-navy/70 tracking-widest px-3 pt-2 pb-0.5 uppercase font-sans"
                             )
-                        for label, route, icon in section["items"]:
-                            is_active = active_route == route or (
-                                route != "/dashboard" and active_route.startswith(route)
-                            )
-                            btn_cls = "w-full justify-start text-xs py-2 px-3 rounded-xl transition-all gap-2.5 sidebar-link "
-                            if is_active:
-                                btn_cls += "sidebar-link-active bg-blue-50 text-blue-700 font-semibold shadow-2xs border-l-[3px] border-blue-600"
-                            else:
-                                btn_cls += (
-                                    "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                            for label, route, icon in sec["items"]:
+                                is_active = (active_route == route) or (
+                                    route != "/dashboard" and active_route.startswith(route)
                                 )
-                            ui.button(
-                                label,
-                                icon=icon,
-                                on_click=lambda r=route: ui.navigate.to(r),
-                            ).props("flat no-caps dense").classes(btn_cls).tooltip(label)
+                                btn_cls = "w-full text-xs sm:text-sm py-2 rounded-r-lg transition-colors gap-2.5 "
+                                if is_active:
+                                    btn_cls += "bg-surface-elevated text-primary-navy font-bold border-l-2 border-gold shadow-none pl-2.5"
+                                else:
+                                    btn_cls += "text-secondary-navy hover:bg-surface-elevated/60 hover:text-primary-navy font-medium pl-3 border-l-2 border-transparent"
 
-        with ui.column().classes(
-            "w-full p-3 gap-2 border-t border-slate-100 bg-slate-50/70 shrink-0"
-        ):
+                                def on_admin_nav_click(r=route):
+                                    ui.run_javascript("""
+                                        if (window.innerWidth < 1024) {
+                                            const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
+                                            if (closeBtn) closeBtn.click();
+                                        }
+                                    """)
+                                    ui.navigate.to(r)
+
+                                ui.button(
+                                    label,
+                                    icon=icon,
+                                    on_click=on_admin_nav_click,
+                                ).props("flat no-caps dense align=left").classes(btn_cls)
+            else:
+                # -------------------------------------------------------------
+                # STUDENT NAVIGATION (Approved Chat-First & Persistent History)
+                # -------------------------------------------------------------
+                def handle_new_chat() -> None:
+                    state.start_new_conversation()
+                    ui.run_javascript("""
+                        if (window.innerWidth < 1024) {
+                            const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
+                            if (closeBtn) closeBtn.click();
+                        }
+                    """)
+                    if active_route != "/chat":
+                        ui.navigate.to("/chat")
+                    else:
+                        ui.run_javascript("window.history.replaceState({}, '', '/chat');")
+
+                with (
+                    ui.button(
+                        "New Chat",
+                        icon="add",
+                        on_click=handle_new_chat,
+                    )
+                    .props("no-caps dense align=left")
+                    .classes(
+                        "w-full py-2.5 px-3.5 rounded-lg bg-surface-navy text-inverted font-semibold text-xs sm:text-sm hover:bg-surface-navy/90 transition-all flex items-center justify-start gap-2 border border-gold/40 shadow-none shrink-0 my-0.5"
+                    )
+                    .props('aria-label="New chat"')
+                ):
+                    pass
+
+                # Navigation Links
+                with ui.column().classes("w-full gap-0.5 shrink-0 pb-2 border-b border-subtle/70"):
+                    ui.label("NAVIGATION").classes(
+                        "text-[10px] font-bold text-gold tracking-widest px-2.5 pb-1 uppercase font-sans"
+                    )
+                    for label, route, icon in student_nav_links:
+                        is_active = (active_route == route) or (
+                            route != "/dashboard" and active_route.startswith(route)
+                        )
+                        btn_cls = "w-full text-xs sm:text-sm py-2 px-3 rounded-lg transition-colors gap-2.5 "
+                        if is_active:
+                            btn_cls += "bg-surface-elevated text-primary-navy font-bold border border-gold/40 shadow-none"
+                        else:
+                            btn_cls += "text-secondary-navy hover:bg-surface-elevated/70 hover:text-primary-navy font-medium"
+
+                        def on_student_nav_click(r=route):
+                            ui.run_javascript("""
+                                if (window.innerWidth < 1024) {
+                                    const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
+                                    if (closeBtn) closeBtn.click();
+                                }
+                            """)
+                            ui.navigate.to(r)
+
+                        ui.button(
+                            label,
+                            icon=icon,
+                            on_click=on_student_nav_click,
+                        ).props("flat no-caps dense align=left").classes(btn_cls)
+
+                # Recent Chat History for Student
+                with ui.column().classes("w-full flex-1 overflow-hidden flex flex-col min-h-0"):
+                    with ui.row().classes("w-full items-center justify-between px-2 pt-1 pb-1 shrink-0"):
+                        ui.label("RECENT CHATS").classes(
+                            "text-[10px] font-bold text-gold tracking-widest uppercase font-sans"
+                        )
+
+                    history_list = ui.column().classes("w-full flex-1 overflow-y-auto gap-1 pr-1 min-h-[120px]")
+
+                    def render_conversations_list() -> None:
+                        history_list.clear()
+                        with history_list:
+                            convs = []
+                            try:
+                                convs = api_client.get_conversations()
+                            except Exception:
+                                pass
+
+                            if not convs:
+                                ui.label("No saved chats yet").classes(
+                                    "text-xs text-secondary-navy/60 italic px-2 py-2"
+                                )
+                                return
+
+                            for c in convs:
+                                is_active = (
+                                    active_route == "/chat"
+                                    and state.active_conversation_id == c.id
+                                )
+                                row_cls = (
+                                    "w-full items-center justify-between px-2 py-1.5 rounded-lg transition-colors cursor-pointer group "
+                                )
+                                if is_active:
+                                    row_cls += "bg-surface-elevated text-primary-navy font-semibold border border-gold/50"
+                                else:
+                                    row_cls += "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated/60"
+
+                                def on_click_conv(conv_id=c.id):
+                                    try:
+                                        state.load_conversation(conv_id)
+                                    except Exception as exc:
+                                        clean_err = normalize_error(exc, context="chat")
+                                        ui.notify(f"Could not load conversation: {clean_err}", type="warning")
+                                        return
+                                    ui.run_javascript("""
+                                        if (window.innerWidth < 1024) {
+                                            const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
+                                            if (closeBtn) closeBtn.click();
+                                        }
+                                    """)
+                                    if active_route != "/chat":
+                                        ui.navigate.to(f"/chat?conversation_id={conv_id}")
+                                    else:
+                                        ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={conv_id}');")
+
+                                with ui.row().classes(row_cls).on("click", on_click_conv):
+                                    with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                        ui.icon("chat_bubble_outline", size="14px").classes(
+                                            "text-gold shrink-0" if is_active else "text-secondary-navy/70 shrink-0"
+                                        )
+                                        display_title = c.title
+                                        if len(display_title) > 22:
+                                            display_title = display_title[:20] + "..."
+                                        ui.label(display_title).classes(
+                                            "text-xs truncate font-sans"
+                                        )
+
+                                    def on_delete(e: Any, conv_id=c.id):
+                                        if hasattr(e, "stop_propagation"):
+                                            e.stop_propagation()
+                                        state.delete_conversation(conv_id)
+                                        render_conversations_list()
+
+                                    ui.button(icon="delete_outline", on_click=on_delete).props(
+                                        "flat round dense"
+                                    ).classes(
+                                        "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity"
+                                    ).props('aria-label="Delete conversation"')
+
+                    render_conversations_list()
+                    state.subscribe(render_conversations_list)
+
+        # Base: User Profile & Logout
+        with ui.column().classes("w-full p-2.5 border-t border-subtle bg-surface-elevated shrink-0 gap-2"):
             with (
                 ui.row()
-                .classes(
-                    "items-center justify-between w-full p-2 rounded-xl hover:bg-white cursor-pointer transition-colors border border-transparent hover:border-slate-200/60"
-                )
+                .classes("items-center justify-between w-full cursor-pointer")
                 .on("click", lambda: ui.navigate.to("/profile"))
             ):
-                with ui.row().classes("items-center gap-2.5 min-w-0"):
+                with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
                     with ui.element("div").classes(
-                        "w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-2xs"
+                        "w-8 h-8 rounded-full bg-gold-light border border-gold flex items-center justify-center text-xs font-bold text-primary-navy shrink-0"
                     ):
                         ui.label(initials)
-                    with ui.column().classes("gap-0 min-w-0"):
+                    with ui.column().classes("gap-0 min-w-0 flex-1"):
                         ui.label(user.full_name).classes(
-                            "text-xs font-semibold text-slate-800 truncate max-w-[125px]"
+                            "text-xs font-bold text-primary-navy truncate max-w-[130px]"
                         )
-                        ui.label(user.email).classes(
-                            "text-[10px] text-slate-500 truncate max-w-[125px]"
+                        ui.label(user.role.title()).classes(
+                            "text-[10px] text-secondary-navy truncate"
                         )
-                ui.badge(role_label, color="blue-1").props("text-color=blue-8").classes(
-                    "text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-blue-200"
-                )
-
-            ui.button(
-                "Sign Out",
-                icon="logout",
-                on_click=_handle_logout,
-            ).props("flat dense no-caps").classes(
-                "w-full text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition-colors py-1 font-medium"
-            )
-
-    # Top Bar for Admin
-    with ui.header().classes(
-        "w-full bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-6 py-2.5 items-center justify-between border-b border-slate-200/80 shadow-2xs z-30"
-    ):
-        with ui.row().classes("items-center gap-3"):
-            ui.button(icon="menu", on_click=sidebar_drawer.toggle).props(
-                "flat round dense"
-            ).classes("text-slate-600 hover:text-slate-900").tooltip("Toggle Menu")
-            with (
-                ui.row()
-                .classes("items-center gap-2 cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/dashboard"))
-            ):
-                ui.icon("school", size="sm").classes("text-blue-600 md:hidden")
-                ui.label("RAG Assistant").classes(
-                    "text-sm sm:text-base font-bold tracking-tight text-slate-900"
-                )
-            ui.badge("Grounded RAG", color="blue-1").props("text-color=blue-9").classes(
-                "text-[10px] font-bold px-2 py-0.5 hidden sm:inline-flex border border-blue-200"
-            )
-
-        with ui.row().classes("items-center gap-2.5"):
-            with (
-                ui.row()
-                .classes(
-                    "items-center gap-2 bg-slate-100 hover:bg-slate-200/80 rounded-full px-2.5 py-1 cursor-pointer transition-colors"
-                )
-                .on("click", lambda: ui.navigate.to("/profile"))
-            ):
-                with ui.element("div").classes(
-                    "w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                ):
-                    ui.label(initials)
-                ui.label(user.full_name).classes(
-                    "hidden sm:inline text-xs font-semibold text-slate-700 truncate max-w-[120px]"
-                )
-
-            ui.button(
-                icon="logout",
-                on_click=_handle_logout,
-            ).props("flat round dense").classes("text-slate-400 hover:text-rose-600").tooltip(
-                "Sign Out"
-            )
+                ui.button(icon="logout", on_click=_handle_logout).props("flat round dense").classes(
+                    "text-secondary-navy hover:text-primary-navy shrink-0"
+                ).tooltip("Sign Out")
 
 
 def _render_navbar(active_route: str) -> None:
-    """Render appropriate navbar based on user authentication state and role."""
     user = state.current_user
     if user:
-        if user.role == "ADMIN":
-            _render_admin_navbar(active_route, user)
-        else:
-            _render_student_navbar(active_route, user)
+        _render_app_sidebar(active_route, user)
     else:
-        # Public Unauthenticated Header
+        # Public Unauthenticated Header (minimal)
         with ui.header().classes(
-            "w-full bg-[#FAF6F0] text-[#0E1D61] px-4 sm:px-8 py-3 items-center justify-between border-b border-[#D8CFBF] shadow-none z-30"
+            "w-full bg-surface-elevated text-primary-navy px-4 sm:px-8 py-4 items-center justify-between border-b border-subtle shadow-none z-30"
         ):
             with (
                 ui.row()
-                .classes("items-center gap-2.5 cursor-pointer no-underline")
+                .classes("items-center gap-3 cursor-pointer no-underline")
                 .on("click", lambda: ui.navigate.to("/login"))
             ):
-                with ui.element("div").classes(
-                    "w-8 h-8 rounded-md bg-[#0E1D61] flex items-center justify-center text-[#B89A5A]"
-                ):
-                    ui.icon("school", size="18px")
+                ui.icon("school", size="1.25rem").classes("text-gold")
                 ui.label("RAG Assistant").classes(
-                    "text-base font-bold tracking-tight text-[#0E1D61] font-editorial"
+                    "text-xl font-bold tracking-tight text-primary-navy font-editorial"
                 )
 
-            with ui.row().classes("items-center gap-2"):
-                ui.button("Sign In", icon="login", on_click=lambda: ui.navigate.to("/login")).props(
-                    "flat dense no-caps"
-                ).classes("text-xs text-[#0E1D61] hover:text-[#1B2D7C] font-semibold")
-                ui.button(
-                    "Register", icon="person_add", on_click=lambda: ui.navigate.to("/register")
-                ).props("no-caps dense").classes(
-                    "text-xs !bg-[#0E1D61] hover:!bg-[#1B2D7C] !text-[#FAF6F0] font-semibold px-3 py-1.5 rounded-md"
+            with ui.row().classes("items-center gap-4"):
+                ui.link("Sign In", "/login").classes(
+                    "text-sm font-semibold text-primary-navy hover:text-gold no-underline"
                 )
 
 
@@ -502,14 +441,8 @@ def _resolve_breadcrumbs(
     custom_crumbs: list[tuple[str, str | None]] | None = None,
     custom_back_route: str | None = None,
     custom_back_label: str | None = None,
+    is_student: bool = False,
 ) -> tuple[list[tuple[str, str | None]], str | None, str | None]:
-    """
-    Compute truthful institutional breadcrumbs and back button destination.
-    Guarantees every page has clear navigation path orientation.
-
-    Returns:
-        (breadcrumbs_list, back_route, back_label)
-    """
     if custom_crumbs is not None:
         back_route = custom_back_route
         back_label = custom_back_label
@@ -518,65 +451,55 @@ def _resolve_breadcrumbs(
             back_label = custom_crumbs[-2][0]
         return custom_crumbs, back_route, back_label
 
-    route_clean = active_route.split("?")[0].rstrip("/") or "/dashboard"
+    root_label = "Assistant" if is_student else "Dashboard"
+    root_route = "/chat" if is_student else "/dashboard"
 
-    if route_clean in ("/dashboard", ""):
+    route_clean = active_route.split("?")[0].rstrip("/") or root_route
+    if route_clean in ("/dashboard", "") and not is_student:
         return [("Dashboard", None)], None, None
+    if route_clean == "/chat" and is_student:
+        return [("Assistant", None)], None, None
 
     route_map: dict[str, tuple[list[tuple[str, str | None]], str, str]] = {
         "/knowledge-bases": (
-            [("Dashboard", "/dashboard"), ("Courses", None)],
-            "/dashboard",
-            "Dashboard",
+            [(root_label, root_route), ("Courses", None)],
+            root_route,
+            root_label,
         ),
         "/documents": (
-            [("Dashboard", "/dashboard"), ("Courses", "/knowledge-bases"), ("Documents", None)],
+            [(root_label, root_route), ("Courses", "/knowledge-bases"), ("Documents", None)],
             "/knowledge-bases",
             "Courses",
         ),
         "/indexing": (
-            [
-                ("Dashboard", "/dashboard"),
-                ("Documents", "/documents"),
-                ("Indexing Operations", None),
-            ],
+            [(root_label, root_route), ("Documents", "/documents"), ("Indexing", None)],
             "/documents",
             "Documents",
         ),
-        "/chat": (
-            [("Dashboard", "/dashboard"), ("Assistant Chat", None)],
-            "/dashboard",
-            "Dashboard",
-        ),
+        "/chat": ([(root_label, root_route), ("Assistant", None)], root_route, root_label),
         "/administrators": (
-            [("Dashboard", "/dashboard"), ("Administrators", None)],
-            "/dashboard",
-            "Dashboard",
+            [(root_label, root_route), ("Administrators", None)],
+            root_route,
+            root_label,
         ),
-        "/activity": (
-            [("Dashboard", "/dashboard"), ("Activity & Audit", None)],
-            "/dashboard",
-            "Dashboard",
-        ),
+        "/activity": ([(root_label, root_route), ("Activity", None)], root_route, root_label),
         "/system-health": (
-            [("Dashboard", "/dashboard"), ("System Health", None)],
-            "/dashboard",
-            "Dashboard",
+            [(root_label, root_route), ("System Health", None)],
+            root_route,
+            root_label,
         ),
-        "/profile": (
-            [("Dashboard", "/dashboard"), ("My Profile", None)],
-            "/dashboard",
-            "Dashboard",
-        ),
+        "/profile": ([(root_label, root_route), ("Profile", None)], root_route, root_label),
     }
 
     if route_clean in route_map:
         crumbs, b_route, b_label = route_map[route_clean]
         return crumbs, custom_back_route or b_route, custom_back_label or b_label
 
-    # Fallback for dynamic or unlisted routes
-    crumbs = [("Dashboard", "/dashboard"), (title or "Page", None)]
-    return crumbs, custom_back_route or "/dashboard", custom_back_label or "Dashboard"
+    return (
+        [(root_label, root_route), (title or "Page", None)],
+        custom_back_route or root_route,
+        custom_back_label or root_label,
+    )
 
 
 @contextmanager
@@ -588,114 +511,62 @@ def page_layout(
     breadcrumbs: list[tuple[str, str | None]] | None = None,
     back_route: str | None = None,
     back_label: str | None = None,
-    show_back: bool = True,
-    show_breadcrumb: bool = True,
+    show_back: bool = False,
+    show_breadcrumb: bool = False,
+    header_actions_fn: Callable[[], None] | None = None,
 ) -> Generator[None, None, None]:
-    """
-    Context manager rendering consistent page chrome with institutional breadcrumbs,
-    accessible back button, and route authentication guards.
-    """
+    """Context manager rendering consistent page chrome with semantic design tokens."""
     _render_navbar(active_route)
 
     user = state.current_user
     if require_auth and user is None:
         with ui.column().classes(
-            "w-full max-w-md mx-auto mt-16 p-6 items-center text-center bg-white border border-slate-200 rounded-lg shadow-sm"
+            "w-full max-w-md mx-auto mt-24 p-8 items-center text-center bg-surface-elevated border border-subtle rounded shadow-sm"
         ):
-            ui.icon("lock", size="3rem").classes("text-slate-400 mb-2")
-            ui.label("Authentication Required").classes("text-xl font-bold text-slate-800")
-            ui.label("You must be signed in to access this university resource.").classes(
-                "text-sm text-slate-600 mb-4"
+            ui.icon("lock", size="3rem").classes("text-gold mb-4")
+            ui.label("Authentication Required").classes(
+                "text-2xl font-bold text-primary-navy font-editorial"
             )
-            with ui.row().classes("gap-3"):
+            ui.label("You must be signed in to access this resource.").classes(
+                "text-sm text-secondary-navy mb-8"
+            )
+            with ui.row().classes("gap-4 w-full"):
                 ui.button("Sign In", icon="login", on_click=lambda: ui.navigate.to("/login")).props(
-                    "color=primary"
-                ).classes("px-4 py-2 text-sm font-medium")
-                ui.button(
-                    "Register",
-                    icon="person_add",
-                    on_click=lambda: ui.navigate.to("/register"),
-                ).props("outline color=primary").classes("px-4 py-2 text-sm font-medium")
+                    "no-caps"
+                ).classes("w-full bg-surface-navy text-inverted font-bold py-2 rounded")
         with ui.element("div").classes("hidden"):
             yield
         return
 
-    # Resolve truthful navigation breadcrumbs and back button target
-    resolved_crumbs, resolved_back, resolved_back_label = _resolve_breadcrumbs(
-        active_route=active_route,
-        title=title,
-        custom_crumbs=breadcrumbs,
-        custom_back_route=back_route,
-        custom_back_label=back_label,
+    container_width = (
+        "w-full max-w-full"
+        if active_route == "/chat"
+        else ("max-w-7xl" if (user and user.role == "ADMIN") else "max-w-5xl")
     )
-
-    # Responsive main content container with consistent padding (at least 2rem)
-    container_width = "max-w-7xl" if (user and user.role == "ADMIN") else "max-w-6xl"
+    padding_style = (
+        "padding: 0 !important; height: calc(100dvh - 3.5rem); max-height: calc(100dvh - 3.5rem); overflow: hidden;"
+        if active_route == "/chat"
+        else "padding: 2rem 1rem !important;"
+    )
+    gap_class = "gap-0" if active_route == "/chat" else "gap-6"
     with (
         ui.column()
-        .classes(f"w-full {container_width} mx-auto main-page-container gap-6")
-        .style("padding: 2rem !important;")
+        .classes(f"w-full {container_width} mx-auto main-page-container {gap_class}")
+        .style(padding_style)
     ):
-        # Institutional Breadcrumb and Back Navigation Strip
-        is_root_dashboard = active_route.split("?")[0].rstrip("/") in ("/dashboard", "")
-        is_student = (user is not None) and (user.role == "STUDENT")
-        should_render_breadcrumbs = (
-            (breadcrumbs is not None and show_breadcrumb)
-            if is_student
-            else (show_breadcrumb and resolved_crumbs and (not is_root_dashboard or len(resolved_crumbs) > 1))
-        )
-        if should_render_breadcrumbs and resolved_crumbs:
-            with ui.row().classes(
-                "w-full items-center justify-between text-xs py-1.5 px-3 bg-[#FAF6F0] border border-[#D8CFBF] rounded-md shadow-none"
-            ):
-                with ui.row().classes("items-center gap-2 flex-wrap min-w-0"):
-                    if show_back and resolved_back:
-                        ui.button(
-                            f"Back to {resolved_back_label}" if resolved_back_label else "Back",
-                            icon="arrow_back",
-                            on_click=lambda r=resolved_back: ui.navigate.to(r),
-                        ).props("flat dense no-caps").classes(
-                            "text-xs font-semibold text-[#0E1D61] hover:text-[#1B2D7C] px-2 py-0.5 rounded hover:bg-[#F5F0E8] transition-colors"
-                        )
-                        ui.label("/").classes("text-[#D8CFBF] font-light select-none")
-
-                    # Breadcrumb trail
-                    with ui.row().classes("items-center gap-1.5 flex-wrap min-w-0"):
-                        for idx, (crumb_title, crumb_url) in enumerate(resolved_crumbs):
-                            is_last = idx == len(resolved_crumbs) - 1
-                            if idx > 0:
-                                ui.icon("chevron_right", size="14px").classes(
-                                    "text-[#D8CFBF] select-none"
-                                )
-
-                            if crumb_url and not is_last:
-                                ui.link(
-                                    crumb_title,
-                                    crumb_url,
-                                ).classes(
-                                    "text-[#3A4B7C] hover:text-[#0E1D61] font-medium hover:underline transition-colors"
-                                )
-                            else:
-                                ui.label(crumb_title).classes(
-                                    "text-[#0E1D61] font-bold truncate max-w-[220px] sm:max-w-none"
-                                )
-
-                if not is_root_dashboard and show_back:
-                    with ui.link(
-                        target="/dashboard",
-                    ).classes(
-                        "text-[#6B7B9E] hover:text-[#0E1D61] items-center gap-1 hidden sm:flex text-[11px] font-medium transition-colors"
-                    ):
-                        ui.icon("home", size="14px")
-                        ui.label("Dashboard")
-
         if title:
-            with ui.column().classes("gap-1"):
-                ui.label(title).classes(
-                    "text-2xl sm:text-3xl font-bold tracking-tight text-[#0E1D61] font-editorial"
-                )
-                if subtitle:
-                    ui.label(subtitle).classes("text-sm text-[#3A4B7C] max-w-3xl leading-relaxed")
+            with ui.row().classes("w-full justify-between items-start gap-4 mb-2"):
+                with ui.column().classes("gap-1 min-w-0 flex-1"):
+                    ui.label(title).classes(
+                        "text-2xl sm:text-4xl font-bold tracking-tight text-primary-navy font-editorial"
+                    )
+                    if subtitle:
+                        ui.label(subtitle).classes(
+                            "text-xs sm:text-base text-secondary-navy max-w-3xl leading-relaxed"
+                        )
+                if header_actions_fn:
+                    with ui.row().classes("items-center gap-2 self-start pt-1 shrink-0"):
+                        header_actions_fn()
 
         yield
 
@@ -706,134 +577,85 @@ def auth_layout(
     page_type: str = "landing",
 ) -> Generator[None, None, None]:
     """
-    Dedicated authentication and public layout for sign-in, registration, and portal entry.
-
-    Provides a clean editorial academic header with contextual actions,
-    flexible container sizing, and an anchored institutional footer.
+    Dedicated authentication and public layout using the strict design tokens.
     """
-    # Editorial academic top header
     with ui.header().classes(
-        "w-full bg-[#0E1D61] text-[#FAF6F0] px-4 sm:px-8 py-3 items-center justify-between border-b border-[#0E1D61] shadow-none z-30"
+        "w-full bg-surface-elevated text-primary-navy px-4 sm:px-8 py-4 items-center justify-between border-b border-subtle shadow-none z-30 box-border"
     ):
         with (
             ui.row()
-            .classes("items-center gap-2.5 sm:gap-3 cursor-pointer no-underline")
+            .classes("items-center gap-3 cursor-pointer no-underline")
             .on("click", lambda: ui.navigate.to("/login"))
         ):
-            with ui.element("div").classes(
-                "w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-[#1B2D7C] text-[#B89A5A] flex items-center justify-center font-bold"
-            ):
-                ui.icon("school", size="18px")
-            with ui.column().classes("gap-0"):
+            ui.icon("school", size="1.35rem").classes("text-gold")
+            with ui.column().classes("gap-0 leading-tight"):
                 ui.label("RAG Assistant").classes(
-                    "text-sm sm:text-lg font-bold tracking-tight text-[#FAF6F0] leading-tight font-editorial"
+                    "text-xl font-bold tracking-tight text-primary-navy font-editorial"
                 )
-                ui.label("University Knowledge Assistant").classes(
-                    "text-[10px] font-semibold text-[#B89A5A] leading-none hidden sm:inline"
+                ui.label("University Knowledge Platform").classes(
+                    "text-[10px] uppercase font-bold tracking-widest text-secondary-navy hidden sm:block"
                 )
 
-        with ui.row().classes("items-center gap-1.5 sm:gap-3"):
+        with ui.row().classes("items-center gap-4 text-sm font-semibold"):
             if page_type == "landing":
-                with (
-                    ui.link("Sign In", "/student/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C]"
-                    )
-                ):
-                    pass
-                with (
-                    ui.link("Faculty & Admin", "/admin/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden md:inline-block"
-                    )
-                ):
-                    pass
-                ui.button(
-                    "Register",
-                    on_click=lambda: ui.navigate.to("/register"),
-                ).props("no-caps dense").classes(
-                    "px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md !bg-[#B89A5A] hover:!bg-[#9E8347] !text-[#0E1D61] shadow-none transition-colors"
+                ui.link("Student Portal", "/student/login").classes(
+                    "text-secondary-navy hover:text-primary-navy no-underline transition-colors hidden sm:block"
                 )
+                ui.link("Faculty Administration", "/admin/login").classes(
+                    "text-secondary-navy hover:text-primary-navy no-underline transition-colors hidden sm:block"
+                )
+                ui.button("Sign In", icon="login", on_click=lambda: ui.navigate.to("/student/login")).props(
+                    "no-caps dense"
+                ).classes("px-4 py-1.5 text-xs font-bold rounded bg-surface-navy text-inverted shadow-none")
             elif page_type == "student":
-                with (
-                    ui.link("Home", "/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
-                    )
-                ):
-                    pass
-                with (
-                    ui.link("Admin Sign In", "/admin/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
-                    )
-                ):
-                    pass
-                ui.button(
-                    "Register",
-                    on_click=lambda: ui.navigate.to("/register"),
-                ).props("outline no-caps dense").classes(
-                    "px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-md border border-[#B89A5A] !text-[#FAF6F0] hover:bg-[#1B2D7C]"
+                ui.link("Faculty Admin", "/admin/login").classes(
+                    "text-secondary-navy hover:text-primary-navy no-underline transition-colors"
+                )
+                ui.link("Home", "/login").classes(
+                    "text-primary-navy hover:text-gold no-underline transition-colors"
                 )
             elif page_type == "admin":
-                with (
-                    ui.link("Home", "/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
-                    )
-                ):
-                    pass
-                with (
-                    ui.link("Student Portal", "/student/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C]"
-                    )
-                ):
-                    pass
+                ui.link("Student Gateway", "/student/login").classes(
+                    "text-secondary-navy hover:text-primary-navy no-underline transition-colors"
+                )
+                ui.link("Home", "/login").classes(
+                    "text-primary-navy hover:text-gold no-underline transition-colors"
+                )
             elif page_type == "register":
-                with (
-                    ui.link("Home", "/login")
-                    .classes(
-                        "text-xs sm:text-sm font-medium text-[#FAF6F0]/85 hover:text-[#FAF6F0] transition-colors no-underline px-2.5 py-1.5 rounded-md hover:bg-[#1B2D7C] hidden sm:inline-block"
-                    )
-                ):
-                    pass
-                ui.button(
-                    "Student Sign In",
-                    on_click=lambda: ui.navigate.to("/student/login"),
-                ).props("outline no-caps dense").classes(
-                    "px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-md border border-[#B89A5A] !text-[#FAF6F0] hover:bg-[#1B2D7C]"
+                ui.link("Student Sign In", "/student/login").classes(
+                    "text-secondary-navy hover:text-primary-navy no-underline transition-colors"
+                )
+                ui.link("Home", "/login").classes(
+                    "text-primary-navy hover:text-gold no-underline transition-colors"
+                )
+            else:
+                ui.link("Sign In", "/student/login").classes(
+                    "text-secondary-navy hover:text-primary-navy no-underline transition-colors"
+                )
+                ui.link("Home", "/login").classes(
+                    "text-primary-navy hover:text-gold no-underline transition-colors"
                 )
 
-    # Main content flow with balanced vertical spacing and institutional footer
     with ui.column().classes(
-        "w-full min-h-[calc(100vh-60px)] flex flex-col justify-between overflow-x-hidden bg-[#E8E0D2]"
+        "w-full min-h-[calc(100vh-140px)] flex flex-col justify-between bg-canvas"
     ):
-        with (
-            ui.column()
-            .classes(
-                f"w-full {max_width_class} mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-grow box-border"
-            )
+        with ui.column().classes(
+            f"w-full {max_width_class} mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 md:pt-8 pb-6 md:pb-10 flex-grow box-border"
         ):
             yield
+
         with ui.element("footer").classes(
-            "w-full bg-[#FAF6F0] border-t border-[#D8CFBF] mt-auto box-border"
+            "w-full border-t border-subtle mt-auto bg-canvas"
         ):
-            with ui.column().classes("w-full max-w-6xl mx-auto px-4 sm:px-8 py-6 gap-3"):
-                with ui.row().classes("w-full justify-between items-center gap-4 flex-wrap"):
-                    with ui.row().classes("items-center gap-2"):
-                        with ui.element("div").classes(
-                            "w-6 h-6 rounded bg-[#0E1D61] text-[#B89A5A] flex items-center justify-center"
-                        ):
-                            ui.icon("school", size="14px")
-                        ui.label("RAG Assistant").classes("text-sm font-bold text-[#0E1D61] font-editorial")
-                        ui.label("•").classes("text-[#D8CFBF]")
-                        ui.label("Multimodal RAG-Based University Knowledge Assistant").classes(
-                            "text-xs text-[#3A4B7C] font-medium"
+            with ui.column().classes(f"w-full {max_width_class} mx-auto px-4 py-6 md:py-8 box-border"):
+                with ui.row().classes(
+                    "w-full justify-between items-center gap-3 sm:gap-4 flex-col sm:flex-row text-center sm:text-left"
+                ):
+                    with ui.row().classes("items-center justify-center sm:justify-start gap-2"):
+                        ui.icon("school", size="18px").classes("text-gold shrink-0")
+                        ui.label("RAG Assistant © 2026").classes(
+                            "font-editorial font-bold text-primary-navy text-sm"
                         )
-                    with ui.row().classes("items-center gap-2 flex-wrap"):
-                        ui.badge("Multi-Format Text RAG", color="amber-1").props("text-color=brown-9").classes("text-[11px] font-semibold px-2 py-0.5 border border-[#B89A5A]")
-                        ui.label("PDF • DOCX • TXT • Markdown • CSV").classes("text-xs text-[#3A4B7C] font-mono")
-                with ui.row().classes("w-full justify-between items-center pt-3 border-t border-[#D8CFBF] text-xs text-[#6B7B9E] gap-2 flex-wrap"):
-                    ui.label("© 2026 RAG Assistant • Institutional Academic Resource")
-                    ui.label("Server-Side RBAC Enforced • Zero Plaintext Session Persistence")
+                    ui.label("Multimodal RAG-Based University Knowledge Assistant").classes(
+                        "text-xs md:text-sm text-secondary-navy font-medium text-center sm:text-right"
+                    )
