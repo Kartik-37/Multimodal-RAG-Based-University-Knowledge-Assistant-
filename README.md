@@ -4,8 +4,8 @@
 
 A secure, production-grade Retrieval-Augmented Generation (RAG) system designed for university course knowledge and academic assistance.
 
-> **Current Implementation Scope:** Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV).  
-> **Roadmap Note:** Genuine Multimodal RAG (vision-language models, OCR pipelines, image embeddings, visual retrieval) is a planned future phase. The official academic project title is preserved.
+> **Current Implementation Scope:** Visual PDF Evidence + Multi-Format Text RAG (PDF, DOCX, TXT, Markdown, CSV).
+> **Roadmap Note:** General audio, video, web scraping, and direct CLIP pixel-vector embeddings remain deferred to future milestones. The official academic project title is preserved.
 
 ---
 
@@ -54,12 +54,19 @@ The **Multimodal RAG-Based University Knowledge Assistant** delivers grounded ac
 
 ## 3. Project Status & Roadmap
 
-- **Phase 1: Security & Backend Correctness Hardening** — **COMPLETED & VERIFIED** (572 tests passed in the non-real_ollama regression suite; tests marked real_ollama were excluded from this verification).
+- **Phase 1: Security & Backend Correctness Hardening** — **COMPLETED & VERIFIED**.
 - **Phase 2: Scope Control & Project Context Consistency** — **COMPLETED & VERIFIED**.
-- **Phase 3: Test Suite Rewrite** — **PENDING** (Recreating behavior-focused frontend test contracts).
-- **Phase 4: Frontend Rebuild from Scratch** — **PENDING** (Restrained, beautiful, responsive NiceGUI interface).
-- **Multimodal RAG** — **FUTURE / DEFERRED** (Vision models, image retrieval, and OCR pipelines).
-- **Persistent Chat History** — **FUTURE / DEFERRED** (Durable Conversation/Message database models).
+- **Phase 3: Test Suite Rewrite** — **COMPLETED & VERIFIED** (Contract-based frontend tests).
+- **Phase 4: Frontend Rebuild from Scratch** — **COMPLETED & VERIFIED** (Restrained NiceGUI interface with Ivory `#E8E0D2`, Gold `#B89A5A`, Deep Atlas Navy `#0E1D61`).
+- **Persistent Chat History** — **COMPLETED & VERIFIED** (Database-backed `Conversation` and `Message` models with tenant isolation).
+- **Admin Panel Redesign (Parts 10A, 10B.1, 10B.2)** — **COMPLETED & VERIFIED** (Service Health Board, consolidated documents table, administrator course grants).
+- **Phase 11A / 11A.1 / 11A.2: Multimodal RAG for Visual PDF Evidence** — **COMPLETED & CANONICALLY VERIFIED**:
+  - Full lightweight scan of PDF pages, structural relevance scoring, decorative line false-positive elimination, and top candidate ranking (`VISION_MAX_PAGES_PER_DOC = 3`).
+  - Pre-render scale matrix bounding (`VISION_MAX_IMAGE_PIXELS = 1536×1536`) allocating bounded Pixmaps without peak memory spikes.
+  - Real local vision inference with `qwen2.5vl:3b` generating structured visual evidence (`source_modality="visual"`, `visual_type="flowchart"`).
+  - Memory-safe sequential execution: vision model unloaded to preserve RAM before text embedding (`qwen3-embedding:0.6b`) and generation (`qwen3:4b`).
+  - End-to-end verified live student chat path (`scripts/verify_multimodal_chat_real.py`) with hybrid retrieval, cross-encoder reranking, and grounded answers citing Page 2 visual flowchart (`#page=2&view=FitH`).
+  - 46/46 unit tests passing across multimodal, citation validation, and LLM generation suites.
 
 ---
 
@@ -69,6 +76,7 @@ The **Multimodal RAG-Based University Knowledge Assistant** delivers grounded ac
 - Python >= 3.11 (tested on Python 3.14)
 - PostgreSQL 16 with `pgvector`
 - Local Ollama daemon running with `qwen3:4b` and `qwen3-embedding:0.6b`
+- Vision model (optional for real vision inference): `ollama pull qwen2.5vl:3b`
 
 ### Running Automated Checks
 ```powershell
