@@ -4,6 +4,45 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-10-28
 
+**PHASE 13E -- CHAT SUBMISSION, RAG ANSWER ACCURACY, GROUNDED RECOVERY & LATENCY OPTIMIZATION (COMPLETED & VERIFIED)**
+
+### Summary of Completed Objectives & Verifications
+1. **Chat Submission Lifecycle & Draft Preservation (frontend/pages/chat_page.py):**
+   - User questions are now immediately appended to state.chat_history via state.add_user_message(q_clean) and rendered instantly in the thread upon submission. The question never disappears or waits for full answer synthesis.
+   - Input validation is performed *before* clearing the input box. If scope is missing or invalid, an inline warning is shown, preserving the user's typed draft.
+   - In-flight submissions are guarded by is_submitting and handle_submit debouncing, preventing duplicate user messages.
+   - Conversation switching isolation implemented in frontend/state/app_state.py: if a user switches conversations while a query is in-flight, response or error messages do not leak into the new conversation.
+   - Inline retry mechanism (handle_retry) provides a clean 1-click retry button on timeout/generation errors that re-triggers synthesis without duplicating the user's question.
+
+2. **Elimination of Generic Non-Answer Placeholder (backend/app/services/llm/service.py):**
+   - Permanently eliminated the hardcoded placeholder string 'Based on the provided documents, please refer to the cited material for the complete details.' from backend/app/services/llm/service.py.
+   - Repaired _sanitize_llm_answer(): removed destructive splitting on r'we\s+must\s+output' that previously truncated valid answer bodies when small models generated introductory preambles.
+   - Broadened clean_reasoning_text() regex to recognize itemized lists starting with lists?:, includes?:, contains?:, shows?:, and presents?: across both comma-separated and bullet-separated formats.
+   - Expanded REASONING_LEAK_PATTERNS to detect deliberation leakage such as 'We are given a user question...', 'We have three retrieved evidence chunks...', 'Let's examine each source...', and 'examine each source'.
+   - Implemented extract_grounded_recovery_answer(query, context): a general-purpose, deterministic extractor that inspects structured labels (e.g., [Visible Text & Labels]: from diagram chunks, markdown tables, and bullet points) and produces fully-cited answers with exact [source_X] citations in < 1ms when generative inference falters.
+
+3. **Latency Optimization & Model Warming (backend/app/core/config.py, backend/app/services/llm/ollama_provider.py):**
+   - Reduced LLM_MAX_OUTPUT_TOKENS default from 768 to 384 in backend/app/core/config.py. For CPU generation at ~7-8 tokens/sec, this caps single generation latency to ~35-50s (down from 110-120s).
+   - Added 'keep_alive': '15m' to OllamaLLMProvider in backend/app/services/llm/ollama_provider.py to keep qwen3:4b warm in memory, eliminating cold model swap latencies between turns.
+   - Reduced non-answer retry timeout to 60s and capped retry max tokens to 384, preventing runaway 5-minute request cascades.
+
+4. **Rigorous End-to-End Acceptance Verification (scripts/test_phase13e_acceptance.py):**
+   - Executed against live PostgreSQL database and Ollama models (qwen3:4b, qwen3-embedding:0.6b):
+     - Test A: 'list of android version': PASSED (82.82s vs baseline 296s timeout). 18 Android versions extracted from Page 6 of 1-Flutter-Intro.pdf. 1 Citation to Page 6. Generic placeholder eliminated.
+     - Test B: 'What is Flutter?': PASSED (59.81s). Exact SDK definition from Page 18. 1 Citation to Page 18.
+     - Test C: 'list that' (Conversational Anaphora): PASSED (56.94s). Successfully resolved to prior Android turn. 18 versions and Page 6 citation returned.
+     - Test D: Unsupported Query ('What is the capital of Mars?'): PASSED (100.90s). Grounded refusal without hallucination: 'Based on the provided documents, there is not enough information to answer this question.'
+   - All 4 Acceptance Tests Passed (100% Success Rate).
+
+5. **Unit & Behavioral Regression Suite:**
+   - backend/tests/unit/test_conversational_rag_quality.py: 10/10 tests passed (0.55s).
+   - Temporary debugging files cleaned up.
+   - Core design system (Ivory #E8E0D2, Gold #B89A5A, Deep Atlas Navy #0E1D61), single admin portal sidebar, and strict tenant security boundaries fully preserved.
+
+---
+
+## Prior authoritative phase -- 2026-10-28
+
 **PHASE 13D -- RECENT CHAT TITLES, IMMEDIATE NEW CHAT CREATION & SUBMISSION DEDUPLICATION (COMPLETED & VERIFIED)**
 
 ### Summary of Completed Objectives

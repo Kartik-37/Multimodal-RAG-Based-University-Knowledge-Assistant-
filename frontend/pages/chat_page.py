@@ -366,6 +366,30 @@ def register_chat_page() -> None:
                         return False, "Please select a specific document before asking questions"
                 return True, ""
 
+            def handle_retry() -> None:
+                if is_submitting["value"] or state.is_generating:
+                    return
+                user_msgs = [m for m in state.chat_history if getattr(m, "role", "") == "user"]
+                if not user_msgs:
+                    return
+                last_q = user_msgs[-1].content
+                # Remove trailing error assistant message if present
+                if state.chat_history and state.chat_history[-1].role == "assistant":
+                    state.chat_history.pop()
+                state.clear_generation_error()
+                render_messages()
+                state.start_background_generation(
+                    kb_id=active_scope["kb_id"]
+                    if active_scope["scope"] in ("COURSE", "DOCUMENT")
+                    else None,
+                    question=last_q,
+                    document_id=active_scope["doc_id"]
+                    if active_scope["scope"] == "DOCUMENT"
+                    else None,
+                    scope=active_scope["scope"],
+                )
+                render_action_btn()
+
             def send_message(question_text: str) -> None:
                 q_clean = question_text.strip()
                 if not q_clean or is_submitting["value"] or state.is_generating:
@@ -377,7 +401,17 @@ def register_chat_page() -> None:
 
                 is_submitting["value"] = True
                 try:
-                    # 1. If no active conversation exists, create one immediately
+                    # 1. Immediately append user question to visible thread and clear composer
+                    state.add_user_message(q_clean)
+                    try:
+                        input_box.value = ""
+                        input_box.disable()
+                    except Exception:
+                        pass
+                    render_action_btn()
+                    render_messages()
+
+                    # 2. If no active conversation exists, create one immediately
                     if not state.active_conversation_id:
                         initial_title = generate_conversation_title(q_clean)
                         try:
@@ -392,19 +426,12 @@ def register_chat_page() -> None:
                         except Exception:
                             pass
                     else:
-                        # 2. If this is the first question in a 'New chat', update the title immediately
+                        # 3. If this is the first question in a 'New chat', update the title immediately
                         user_msgs = [m for m in state.chat_history if getattr(m, "role", "") == "user"]
-                        if len(user_msgs) == 0:
+                        if len(user_msgs) <= 1:
                             new_title = generate_conversation_title(q_clean)
                             state.update_active_conversation_title(new_title)
 
-                    state.add_user_message(q_clean)
-                    render_action_btn()
-                    try:
-                        input_box.disable()
-                    except Exception:
-                        pass
-                    render_messages()
                     render_evidence()
                     state.start_background_generation(
                         kb_id=active_scope["kb_id"]
@@ -426,7 +453,10 @@ def register_chat_page() -> None:
                 val = (input_box.value or "").strip()
                 if not val:
                     return
-                input_box.value = ""
+                scope_valid, scope_reason = is_scope_valid()
+                if not scope_valid:
+                    ui.notify(scope_reason, type="warning")
+                    return
                 send_message(val)
 
             input_box.on("keydown.enter.prevent", handle_submit)
@@ -1021,18 +1051,34 @@ def register_chat_page() -> None:
                                             "text-sm sm:text-base text-primary-navy font-sans leading-relaxed break-words"
                                         )
                             else:
-                                with ui.column().classes(
-                                    "w-full max-w-3xl gap-2.5 bg-canvas py-1"
-                                ):
-                                    # Markdown answer content
-                                    clean_content = sanitize_markdown_text(
-                                        format_citation_links(
-                                            msg.content, msg.citations, message_id=msg.id
+                                is_err = msg.id.startswith("msg-err-") or ("timed out" in (msg.content or "").lower() and not msg.citations)
+                                if is_err:
+                                    with ui.card().classes(
+                                        "w-full max-w-3xl p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none"
+                                    ):
+                                        with ui.row().classes("items-center justify-between w-full"):
+                                            with ui.row().classes("items-center gap-2"):
+                                                ui.icon("error_outline", size="20px").classes("text-rose-700")
+                                                ui.label("Answer Generation Issue").classes("text-xs font-bold text-rose-800 uppercase tracking-wider")
+                                            ui.button(
+                                                "Retry",
+                                                icon="refresh",
+                                                on_click=handle_retry,
+                                            ).props("flat dense no-caps").classes("text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-100/70 px-2.5 py-1 rounded-md")
+                                        ui.label(msg.content).classes("text-sm text-rose-900 font-sans leading-relaxed")
+                                else:
+                                    with ui.column().classes(
+                                        "w-full max-w-3xl gap-2.5 bg-canvas py-1"
+                                    ):
+                                        # Markdown answer content
+                                        clean_content = sanitize_markdown_text(
+                                            format_citation_links(
+                                                msg.content, msg.citations, message_id=msg.id
+                                            )
                                         )
-                                    )
-                                    ui.markdown(clean_content).classes(
-                                        "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans"
-                                    )
+                                        ui.markdown(clean_content).classes(
+                                            "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans"
+                                        )
 
                                     # Cited Sources Tray
                                     if msg.citations:

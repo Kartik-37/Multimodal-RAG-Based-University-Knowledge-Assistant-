@@ -161,7 +161,7 @@ class Settings(BaseSettings):
         description="Sampling temperature for grounded generation (low values favor evidence-bounded responses).",
     )
     LLM_MAX_OUTPUT_TOKENS: int = Field(
-        default=768,
+        default=384,
         ge=1,
         le=4096,
         description="Maximum generation token budget for the model response.",

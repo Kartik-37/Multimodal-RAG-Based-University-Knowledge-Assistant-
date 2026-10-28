@@ -41,6 +41,9 @@ def test_detect_reasoning_leak_generic_preamble():
     we_can_answer = "We can answer by listing the Android versions as described in [1]."
     assert is_reasoning_or_non_answer(we_can_answer, "List of Android Version") is True
 
+    we_are_given = 'We are given a user question: "What is the capital of Mars?" We have three retrieved evidence chunks [source_1], [source_2]. Let\'s examine each source:'
+    assert is_reasoning_or_non_answer(we_are_given, "What is the capital of Mars?") is True
+
     valid_list = (
         "Android versions from the infographic [source_1]:\n"
         "- Android 1.0 (2008) [source_1]\n"

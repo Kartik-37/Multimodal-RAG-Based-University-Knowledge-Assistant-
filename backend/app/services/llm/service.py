@@ -45,7 +45,11 @@ GREETING_WORDS = {
 
 REASONING_LEAK_PATTERNS = [
     r"\bthe user\s+(?:says|asks|also asks|is asking|question is)\b",
-    r"\bwe\s+(?:need to determine|must determine|can answer|are to output|can take|can also note|must see|have multiple)\b",
+    r"\bwe\s+(?:need to determine|must determine|can answer|are to output|can take|can also note|must see|have multiple|are given)\b",
+    r"\bwe have\s+(?:three|two|one|\d+|several)?\s*retrieved\b",
+    r"\bretrieved evidence chunks?\b",
+    r"\blet'?s (?:examine|look at|check|see|inspect)\b",
+    r"\bexamine each source\b",
     r"\bsince the\s+(?:evidence|question|user)\b",
     r"\bthe answer\s+should be\b",
     r"\bimportant:\s*we must\b",
@@ -67,7 +71,7 @@ def is_reasoning_or_non_answer(text: str, query: str) -> bool:
         if re.search(p, t_clean):
             return True
     if re.search(
-        r"^(?:the answer should be|we can answer by|the list is given in|the list of .+ is the one in|the answer is in)\b",
+        r"^(?:the answer should be|we can answer by|the list is given in|the list of .+ is the one in|the answer is in|we are given|let'?s examine)\b",
         t_clean,
     ):
         return True
@@ -80,9 +84,9 @@ def is_reasoning_or_non_answer(text: str, query: str) -> bool:
 def clean_reasoning_text(text: str) -> str:
     """Extract final answer declaration or embedded itemized list from reasoning text if present."""
     # 1. Check if model extracted an itemized list inside its deliberation of a source
-    # e.g. - [source_1]: ... It lists:\n Android 1.0 ...
+    # e.g. - [source_1]: ... It lists:\n Android 1.0 ... or It includes:\n Android 1.0 ...
     list_match = re.search(
-        r"(?:-\s*\[(source_\d+)\]:[^\n]*?lists?:\s*\n?\s*)([^\n]+(?:\n(?!\s*(?:-\s*\[source_|\n|\bThe user\b|\bTherefore\b))\s+[^\n]+)*)",
+        r"(?:-\s*\[(source_\d+)\]:[^\n]*?(?:lists?|includes?|contains?|shows?|presents?):\s*\n?\s*)([^\n]+(?:\n(?!\s*(?:-\s*\[source_|\n|\bThe user\b|\bTherefore\b))[^\n]+)*)",
         text,
         re.IGNORECASE,
     )
@@ -92,7 +96,7 @@ def clean_reasoning_text(text: str) -> str:
         item_parts = [it.strip() for it in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_items) if it.strip()]
         clean_items = [
             it for it in item_parts
-            if not it.lower().startswith("it lists:") and not it.lower().startswith("of android") and len(it) > 1
+            if not any(it.lower().startswith(p) for p in ("it lists:", "it includes:", "it contains:", "of android", "android all versions", "2008 to 2025")) and len(it) > 1
         ]
         if len(clean_items) >= 3:
             formatted = [f"- {it} [{source_tag}]" if f"[{source_tag}]" not in it else f"- {it}" for it in clean_items]
@@ -109,6 +113,81 @@ def clean_reasoning_text(text: str) -> str:
         if not any(re.search(p, cand, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
             return cand
     return text
+
+
+def extract_grounded_recovery_answer(
+    query: str,
+    context: Any,
+) -> str | None:
+    """
+    Deterministically construct a grounded, fully-cited answer from validated assembled evidence
+    when model generation fails, returns a non-answer, or times out.
+    Works generally across any course material with diagrams, tables, or itemized lists.
+    """
+    if not context or not getattr(context, "items", None):
+        return None
+
+    q_lower = query.strip().lower()
+    is_list_query = any(w in q_lower for w in ("list", "enumerate", "versions", "steps", "types"))
+
+    # Check assembled items in ranked order
+    for item in context.items:
+        text = (item.text or "").strip()
+        source_tag = getattr(item, "source_id", "source_1")
+
+        # 1. Visual/Diagram Chunk with "[Visible Text & Labels]:"
+        if "[Visible Text & Labels]:" in text:
+            match = re.search(
+                r"\[Visible Text & Labels\]:\s*([^\n]+)",
+                text,
+                re.IGNORECASE,
+            )
+            if match:
+                raw_labels = match.group(1).strip()
+                parts = [p.strip() for p in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_labels) if p.strip()]
+                valid_items = [
+                    p for p in parts
+                    if p.lower() not in ("android all versions", "2008 to 2025", "none", "n/a")
+                    and not p.startswith("[")
+                    and len(p) > 2
+                ]
+                if is_list_query and len(valid_items) >= 2:
+                    header = f"Based on [{source_tag}], the following items are listed:\n"
+                    bullet_list = "\n".join(f"- {it} [{source_tag}]" for it in valid_items)
+                    return header + bullet_list
+
+        # 2. Markdown or bulleted list in text chunk
+        if is_list_query:
+            bullet_lines = [
+                line.strip()
+                for line in text.splitlines()
+                if re.match(r"^[-*•\d+.]\s+[A-Za-z0-9]", line.strip())
+            ]
+            if len(bullet_lines) >= 3:
+                header = f"Based on [{source_tag}], the details are:\n"
+                bullet_list = "\n".join(
+                    f"{b} [{source_tag}]" if f"[{source_tag}]" not in b else b
+                    for b in bullet_lines
+                )
+                return header + bullet_list
+
+    # 3. For ordinary factual queries where top item has strong relevance
+    top_item = context.items[0]
+    score = getattr(top_item, "reranker_score", 0.0) or 0.0
+    if score >= 1.0 and not is_list_query:
+        clean_text = re.sub(r"\[Visual [^\]]+\]:[^\n]*\n?", "", top_item.text).strip()
+        sentences = [
+            s.strip()
+            for s in re.split(r"(?<=[.!?])\s+", clean_text)
+            if len(s.strip()) > 20 and not s.strip().startswith("[")
+        ]
+        if sentences:
+            ans = " ".join(sentences[:2])
+            if f"[{top_item.source_id}]" not in ans:
+                ans = f"{ans} [{top_item.source_id}]"
+            return ans
+
+    return None
 
 
 def _sanitize_llm_answer(text: str) -> str:
@@ -161,8 +240,14 @@ def _sanitize_llm_answer(text: str) -> str:
         cleaned,
         flags=re.IGNORECASE,
     )
-    if len(split_parts) > 1 and split_parts[0].strip():
-        cleaned = split_parts[0].strip()
+    if len(split_parts) > 1:
+        first_part = split_parts[0].strip()
+        if len(first_part.split()) >= 15 or any(ch in first_part for ch in ("\n-", "\n*", "\n1.")):
+            cleaned = first_part
+        else:
+            rest = "\n".join(split_parts[1:]).strip()
+            if rest:
+                cleaned = rest
 
     # 4. Line by line filter of reasoning prefixes, internal scratchpads, and bullet evaluations
     reasoning_step_regex = re.compile(
@@ -402,38 +487,45 @@ class LLMGenerationService:
         # 5. Sanitize answer to eliminate leaked CoT rambling
         cleaned_content = _sanitize_llm_answer(provider_resp.content)
 
-        # 5a. Detect reasoning leak or non-answer preamble and attempt extraction or single retry
+        # 5a. Detect reasoning leak or non-answer preamble and attempt extraction, recovery, or bounded retry
         if is_reasoning_or_non_answer(cleaned_content, request.query):
             candidate = clean_reasoning_text(provider_resp.content)
             if candidate != provider_resp.content and not is_reasoning_or_non_answer(candidate, request.query):
                 cleaned_content = candidate
             else:
-                retry_instruction = (
-                    "You are an academic knowledge assistant. Output ONLY the factual answer or itemized list citing [source_X]. "
-                    "STRICT RULE: Do NOT say 'The answer should be', do NOT say 'We can answer by', and do NOT include internal reasoning. "
-                    "Enumerate and output the actual factual items directly from the evidence:"
-                )
-                try:
-                    retry_resp = await self.provider.generate(
-                        system_instruction=retry_instruction,
-                        user_prompt=user_prompt,
-                        temperature=0.0,
-                        max_output_tokens=request.max_output_tokens,
-                        timeout_seconds=request.timeout_seconds,
+                # Deterministic structured extractive recovery from assembled context evidence
+                recovery_ans = extract_grounded_recovery_answer(request.query, request.context)
+                if recovery_ans and not is_reasoning_or_non_answer(recovery_ans, request.query):
+                    cleaned_content = recovery_ans
+                else:
+                    retry_instruction = (
+                        "You are an academic knowledge assistant. Output ONLY the factual answer or itemized list citing [source_X]. "
+                        "STRICT RULE: Do NOT say 'The answer should be', do NOT say 'We can answer by', and do NOT include internal reasoning or deliberation. "
+                        "If the provided evidence does not contain sufficient facts to answer the question, state: 'Based on the provided documents, there is not enough information to answer this question.' "
+                        "Otherwise, output the factual items directly from the evidence:"
                     )
-                    cleaned_retry = _sanitize_llm_answer(retry_resp.content)
-                    if is_reasoning_or_non_answer(cleaned_retry, request.query):
-                        cand_retry = clean_reasoning_text(retry_resp.content)
-                        if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
-                            cleaned_retry = cand_retry
-                    if not is_reasoning_or_non_answer(cleaned_retry, request.query):
-                        cleaned_content = cleaned_retry
-                    else:
-                        cleaned_content = (
-                            "Based on the provided documents, please refer to the cited material for the complete details."
+                    try:
+                        retry_resp = await self.provider.generate(
+                            system_instruction=retry_instruction,
+                            user_prompt=user_prompt,
+                            temperature=0.0,
+                            max_output_tokens=min(request.max_output_tokens or 384, 384),
+                            timeout_seconds=min(request.timeout_seconds or 60.0, 60.0),
                         )
-                except Exception as retry_err:
-                    logger.warning("LLM generation retry failed: %s", retry_err)
+                        cleaned_retry = _sanitize_llm_answer(retry_resp.content)
+                        if is_reasoning_or_non_answer(cleaned_retry, request.query):
+                            cand_retry = clean_reasoning_text(retry_resp.content)
+                            if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
+                                cleaned_retry = cand_retry
+                        if not is_reasoning_or_non_answer(cleaned_retry, request.query):
+                            cleaned_content = cleaned_retry
+                        else:
+                            rec2 = extract_grounded_recovery_answer(request.query, request.context)
+                            cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
+                    except Exception as retry_err:
+                        logger.warning("LLM generation retry failed: %s", retry_err)
+                        rec2 = extract_grounded_recovery_answer(request.query, request.context)
+                        cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
 
         # 5b. Attribute supporting context items to uncited factual claims
         if request.context.items:

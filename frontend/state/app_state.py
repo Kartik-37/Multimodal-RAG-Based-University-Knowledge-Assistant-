@@ -189,6 +189,10 @@ class AppState:
                 if self._generation_id != current_gen_id or self._is_cancelled:
                     return
 
+                # If student or admin switched conversations while query was in-flight, do not leak into new chat
+                if target_conv_id and self._active_conversation_id != target_conv_id:
+                    return
+
                 # Link active_conversation_id from API response metadata or latest conversation
                 if resp.conversation_id:
                     self._active_conversation_id = resp.conversation_id
@@ -204,6 +208,10 @@ class AppState:
                 return
             except Exception as e:
                 if self._generation_id != current_gen_id or self._is_cancelled:
+                    return
+
+                # If student or admin switched conversations while query was in-flight, do not leak into new chat
+                if target_conv_id and self._active_conversation_id != target_conv_id:
                     return
                 clean_err = normalize_error(e, context="chat")
                 self._generation_error = clean_err
