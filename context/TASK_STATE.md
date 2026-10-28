@@ -2,9 +2,77 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase — 2026-10-27
+## Current authoritative phase -- 2026-10-28
 
-**PHASE 13A — VISUAL RAG ACCURACY, UPLOAD PERFORMANCE & PROCESSING UI REPAIR**
+**PHASE 13C -- UNIFIED ADMINISTRATOR SIDEBAR NAVIGATION & ARTIFACT CLEANUP (COMPLETED & VERIFIED)**
+
+### Summary of Completed Objectives
+1. **Canonical Admin Portal Sidebar Unification (`frontend/components/layout.py`):**
+   - Consolidated administrator navigation into one authoritative sidebar produced by `get_sidebar_sections(user: UserDTO | None)`.
+   - Replaced and permanently eliminated the competing, alternative 3-link `admin_chat_nav` ("Dashboard", "Knowledge Bases", "Knowledge Chat") that was previously hardcoded when an administrator accessed `/chat`.
+   - All administrator routes (`/dashboard`, `/knowledge-bases`, `/documents`, `/administrators`, `/activity`, `/system-health`, and `/chat`) now reuse the identical application shell and primary sidebar without layout jumping, nested navigation containers, or duplicate headers.
+
+2. **Integrated Persistent Recent Chats in Canonical Admin Sidebar (`frontend/components/layout.py`):**
+   - Retained the four canonical administrator navigation groups:
+     - `OVERVIEW`: Overview (`/dashboard`)
+     - `CONTENT`: Courses (`/knowledge-bases`), Documents (`/documents`)
+     - `ADMINISTRATION`: Administrators & Permissions (`/administrators`), Activity & Audit (`/activity`)
+     - `OPERATIONS & TOOLS`: System Health (`/system-health`), Test Assistant (`/chat`)
+   - When on Knowledge Chat (`/chat`), seamlessly nested directly under the active "Test Assistant" item:
+     - Primary "+ New Chat" button (`state.start_new_conversation()`)
+     - Collapsible "Recent Chats" section (`ui.expansion("Recent Chats", icon="history", value=True)`) containing recent conversation titles with active highlighting, state subscriptions, hover delete capability, and `.tooltip(c.title)` to ensure long conversation titles never break layout geometry.
+   - When on other admin routes (`/dashboard`, `/knowledge-bases`, etc.), the sidebar cleanly displays the authoritative grouped navigation matching the Administrator Overview baseline.
+
+3. **Workspace Header Quick Action (`frontend/pages/chat_page.py`):**
+   - Added a direct "+ New Chat" button to the chat header right row for immediate accessibility from both the primary sidebar and the conversational canvas.
+
+4. **Student Experience Preserved:**
+   - Student navigation (`Assistant`, `Courses`, `Profile` + `Recent Chats`) remains 100% intact and isolated (`render_chat_history_sidebar(student_nav_links)`).
+
+5. **Safe Cleanup of Ephemeral Test & Debugging Artifacts:**
+   - Audited and safely removed 31 temporary debugging scripts, test runners, one-off model experiments, and scratch PNGs:
+     - Diagnostic scripts: `test_candidate_logic.py`, `test_cdp_hover.py`, `test_cdp_input.py`, `test_chat_direct.py`, `test_clean_logic.py`, `test_conversational_followup.py`, `test_css_rules.py`, `test_db.py`, `test_leak_detect.py`, `test_query_baseline.py`, `test_query_page6_answer.py`, `test_turns_and_persistence.py`, `test_vision_page6.py`, `test_vision_pages.py`, `unified_verification.py`, `verify_phase13b.py`, `verify_phase13b_browser.py`, `inspect_raw_generation.py`, `inspect_view_switcher.py`, `baseline_audit.py`, `check_chunks.py`, `check_chunks_db.py`, `audit_flutter_pdf.py`, `inventory_documents.py`, `delete_test_records.py`, `deletion_manifest.json`.
+     - Temporary PNGs: `scratch/hover_check_normal.png`, `scratch/switcher_hover.png`, `scratch/switcher_normal.png`.
+   - Strictly preserved valuable regression tests (`backend/tests/unit/test_conversational_rag_quality.py`), migrations (`alembic/versions/c3d4e5f6a7b8_add_document_id_to_conversations.py`), database backups (`scratch/db_backup/`), launcher (`run_project.bat`).
+
+6. **Targeted Verification & Behavioral Suite:**
+   - `backend/tests/frontend/unit/test_admin_overview_and_navigation_contracts.py`: 19/19 passed (0.49s).
+   - `backend/tests/frontend/unit/test_navigation_contracts.py`: 24/24 passed (0.33s).
+   - `backend/tests/frontend/unit/test_student_dashboard_contracts.py` & `test_student_profile_contracts.py`: 52/52 passed (1.06s).
+   - `backend/tests/unit/test_conversational_rag_quality.py`: 6/6 passed (0.12s).
+   - Full live server route smoke verification: all 9 core routes (`/login`, `/admin/login`, `/student/login`, `/dashboard`, `/chat`, `/knowledge-bases`, `/documents`, `/system-health`, `/profile`) responded with HTTP 200.
+
+---
+
+## Prior authoritative phase -- 2026-10-28
+
+**PHASE 13B -- FINAL UI REPAIR, ADMIN CHAT HISTORY & CONVERSATIONAL RAG RELIABILITY (COMPLETED & VERIFIED)**
+
+### Summary of Completed Objectives
+1. **View Switcher Hover Defect Resolved (rontend/components/theme.py):**
+   - Root cause: Quasar .q-btn--flat hover pseudo-elements (.q-focus-helper:before, .q-focus-helper:after) superimposed a grey rectangle over the solid navy pill.
+   - Fix: Suppressed .q-focus-helper pseudo-elements in .view-switcher-container and enforced #1B2D7C uniform solid hover on .view-switcher-pill-active.
+   - Captured 5 authentic screenshots in screenshot/phase13b_switcher_*.
+
+2. **Admin Chat & Student Chat Harmonization (rontend/pages/chat_page.py):**
+   - Standardized header, removed duplicate question title, corrected typography to Plus Jakarta Sans (safe-markdown font-sans).
+
+3. **Admin Course / Document Scope Selector Repaired (rontend/pages/chat_page.py):**
+   - Re-anchored popover (offset [0, 56]) above composer card; in-place mode switching; explicit selection required; send disabled when scope incomplete.
+
+4. **Visible, Persistent Admin Chat History (ackend/app/models/conversation.py, ackend/app/schemas/conversation.py, rontend/state/app_state.py):**
+   - Added document_id field to Conversation model; restored turns, citations, and scope on reopening; user tenancy isolated.
+
+5. **Conversational Follow-Up & Quality Safeguards (ackend/app/api/v1/endpoints/chat.py, ackend/app/services/llm/service.py):**
+   - Implemented resolve_conversational_query, non-answer detection, retry, and visual retrieval for 1-Flutter-Intro.pdf Page 6 infographic.
+
+6. **Progress Bar Number Suppression (rontend/components/theme.py):**
+   - Removed white number overlay inside progress bars via CSS.
+
+7. **Test Suite Execution:**
+   - 6/6 unit tests passed in test_conversational_rag_quality.py.
+
+---
 
 ### Phase 1: Baseline Audit & Failure Reproduction Findings
 

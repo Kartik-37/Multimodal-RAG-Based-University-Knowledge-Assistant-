@@ -219,12 +219,12 @@ def register_system_health_page() -> None:
                             ).classes("text-xs font-mono text-secondary-navy")
 
                         # Desktop Column Header Row (Hidden on mobile)
-                        with ui.element("div").classes(
-                            "diagnostics-desktop-header w-full px-5 py-2.5 border-b border-[#EBE4D8] bg-canvas/30 text-xs font-bold uppercase tracking-wider text-secondary-navy flex flex-row no-wrap flex-nowrap"
-                        ):
-                            ui.label("Service & Purpose").classes("diagnostics-col-service w-[40%]")
-                            ui.label("Status").classes("diagnostics-col-status w-[18%]")
-                            ui.label("Telemetry Diagnostics").classes("diagnostics-col-diagnostic w-[42%]")
+                        # with ui.element("div").classes(
+                        #     "diagnostics-desktop-header w-full px-5 py-2.5 border-b border-[#EBE4D8] bg-canvas/30 text-xs font-bold uppercase tracking-wider text-secondary-navy flex flex-row no-wrap flex-nowrap"
+                        # ):
+                        #     ui.label("Service & Purpose").classes("diagnostics-col-service w-[40%]")
+                        #     ui.label("Status").classes("diagnostics-col-status w-[18%]")
+                        #     ui.label("Telemetry Diagnostics").classes("diagnostics-col-diagnostic w-[42%]")
 
                         # Subsystem Items List: Responsive flex items without wide tables
                         with ui.column().classes("w-full divide-y divide-[#EBE4D8] gap-0"):

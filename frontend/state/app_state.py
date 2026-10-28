@@ -39,6 +39,7 @@ class AppState:
         self._reader_context: dict[str, Any] = {}
         self._active_scope: str = "ALL_COURSES"
         self._active_kb_id: str | None = None
+        self._active_doc_id: str | None = None
 
     @property
     def reader_context(self) -> dict[str, Any]:
@@ -119,15 +120,31 @@ class AppState:
     def active_kb_id(self, value: str | None) -> None:
         self._active_kb_id = value
 
-    def set_scope(self, scope: str = "ALL_COURSES", kb_id: str | None = None) -> None:
-        """Update active scope and course ID filter."""
+    @property
+    def active_doc_id(self) -> str | None:
+        """Active document ID filter, or None."""
+        return getattr(self, "_active_doc_id", None)
+
+    @active_doc_id.setter
+    def active_doc_id(self, value: str | None) -> None:
+        self._active_doc_id = value
+
+    def set_scope(
+        self,
+        scope: str = "ALL_COURSES",
+        kb_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> None:
+        """Update active scope, course ID, and document ID filter."""
         self._active_scope = scope
         self._active_kb_id = kb_id
+        self._active_doc_id = doc_id
 
     def reset_scope(self) -> None:
         """Reset scope to ALL_COURSES."""
         self._active_scope = "ALL_COURSES"
         self._active_kb_id = None
+        self._active_doc_id = None
 
     @property
     def generation_error(self) -> str | None:
@@ -172,8 +189,10 @@ class AppState:
                 if self._generation_id != current_gen_id or self._is_cancelled:
                     return
 
-                # If this was a fresh new chat, link active_conversation_id
-                if not self._active_conversation_id:
+                # Link active_conversation_id from API response metadata or latest conversation
+                if resp.conversation_id:
+                    self._active_conversation_id = resp.conversation_id
+                elif not self._active_conversation_id:
                     convs = api_client.get_conversations()
                     if convs:
                         self._active_conversation_id = convs[0].id
@@ -245,6 +264,7 @@ class AppState:
         self._generation_error = None
         self._active_scope = "ALL_COURSES"
         self._active_kb_id = None
+        self._active_doc_id = None
         self.notify()
 
     def load_conversation(self, conv_id: str) -> None:
@@ -257,6 +277,10 @@ class AppState:
         self._active_conversation_id = detail.id
         self._chat_history = list(detail.messages)
         self._generation_error = None
+        if getattr(detail, "scope", None):
+            self._active_scope = detail.scope
+            self._active_kb_id = detail.knowledge_base_id
+            self._active_doc_id = getattr(detail, "document_id", None)
         # Select latest citation if present
         latest_cits = [
             m.citations
@@ -458,8 +482,21 @@ class _SessionAppStateProxy:
     def active_kb_id(self, value: str | None) -> None:
         self._get_state().active_kb_id = value
 
-    def set_scope(self, scope: str = "ALL_COURSES", kb_id: str | None = None) -> None:
-        self._get_state().set_scope(scope, kb_id)
+    @property
+    def active_doc_id(self) -> str | None:
+        return self._get_state().active_doc_id
+
+    @active_doc_id.setter
+    def active_doc_id(self, value: str | None) -> None:
+        self._get_state().active_doc_id = value
+
+    def set_scope(
+        self,
+        scope: str = "ALL_COURSES",
+        kb_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> None:
+        self._get_state().set_scope(scope, kb_id, doc_id)
 
     def reset_scope(self) -> None:
         self._get_state().reset_scope()

@@ -159,11 +159,11 @@ GLOBAL_THEME_CSS = """
 }
 
 /* Flat Buttons (including view switchers and icon buttons) */
-.q-btn--flat.text-primary:not(.filter-pill-selected):not(.bg-primary-navy) {
+.q-btn--flat.text-primary:not(.filter-pill-selected):not(.bg-primary-navy):not(.view-switcher-pill-active) {
     color: #0E1D61 !important;
 }
 
-.q-btn--flat:not(.filter-pill-selected):not(.bg-primary-navy):hover {
+.q-btn--flat:not(.filter-pill-selected):not(.bg-primary-navy):not(.view-switcher-pill):not(.view-switcher-pill-active):hover {
     background-color: rgba(14, 29, 97, 0.06) !important;
     color: #0E1D61 !important;
     box-shadow: none !important;
@@ -437,6 +437,15 @@ div[class*="reconnect"] {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
+    visibility: hidden !important;
+}
+
+/* Phase 8: Suppress unwanted white number inside progress bars */
+.q-linear-progress .absolute-center,
+.q-linear-progress .q-linear-progress__model + div,
+.q-linear-progress > .text-white {
+    display: none !important;
+    opacity: 0 !important;
     visibility: hidden !important;
 }
 
@@ -873,37 +882,104 @@ div[class*="reconnect"] {
     gap: 4px;
 }
 
+/* Suppress all focus-helper, pseudo-elements, and Quasar hover overlays in view switcher */
+.view-switcher-container .q-focus-helper,
+.view-switcher-container .q-focus-helper::before,
+.view-switcher-container .q-focus-helper::after,
+.view-switcher-container .q-btn::before,
+.view-switcher-container .q-btn::after,
+.view-switcher-pill .q-focus-helper,
+.view-switcher-pill .q-focus-helper::before,
+.view-switcher-pill .q-focus-helper::after,
+.view-switcher-pill::before,
+.view-switcher-pill::after,
+.view-switcher-pill:hover::before,
+.view-switcher-pill:hover::after,
+.view-switcher-pill:hover .q-focus-helper,
+.view-switcher-pill:hover .q-focus-helper::before,
+.view-switcher-pill:hover .q-focus-helper::after,
+.view-switcher-pill-active .q-focus-helper,
+.view-switcher-pill-active .q-focus-helper::before,
+.view-switcher-pill-active .q-focus-helper::after,
+.view-switcher-pill-active::before,
+.view-switcher-pill-active::after,
+.view-switcher-pill-active:hover::before,
+.view-switcher-pill-active:hover::after,
+.view-switcher-pill-active:hover .q-focus-helper,
+.view-switcher-pill-active:hover .q-focus-helper::before,
+.view-switcher-pill-active:hover .q-focus-helper::after {
+    display: none !important;
+    content: none !important;
+    opacity: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    border: none !important;
+}
+
 .view-switcher-pill {
     padding: 6px 14px;
     font-size: 0.8125rem;
     font-weight: 600;
-    border-radius: 6px;
-    color: var(--color-atlas-navy-muted);
-    transition: all 0.15s ease-in-out;
+    border-radius: 6px !important;
+    color: var(--color-atlas-navy-muted) !important;
+    transition: background-color 0.15s ease, color 0.15s ease !important;
     cursor: pointer;
     text-decoration: none;
-    border: none;
-    background: transparent;
+    border: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
 }
 
 .view-switcher-pill:hover:not(.view-switcher-pill-active) {
-    background-color: rgba(14, 29, 97, 0.05);
-    color: var(--color-atlas-navy);
+    background: rgba(14, 29, 97, 0.06) !important;
+    background-color: rgba(14, 29, 97, 0.06) !important;
+    color: var(--color-atlas-navy) !important;
 }
 
+/* Active solid pill */
 .view-switcher-pill-active,
-.view-switcher-pill-active .q-btn__content,
-.view-switcher-pill-active .q-btn__content * {
-    background-color: var(--color-atlas-navy) !important;
+.view-switcher-pill.view-switcher-pill-active,
+.q-btn.view-switcher-pill-active {
+    background: #0E1D61 !important;
+    background-color: #0E1D61 !important;
     color: #FFFFFF !important;
     font-weight: 700 !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
 }
 
+.view-switcher-pill-active *,
+.view-switcher-pill-active .q-btn__wrapper,
+.view-switcher-pill-active .q-btn__content,
+.view-switcher-pill-active .q-icon,
+.view-switcher-pill-active span {
+    color: #FFFFFF !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* Active solid pill on hover: smooth uniform navy #1B2D7C without ANY overlay */
 .view-switcher-pill-active:hover,
-.view-switcher-pill-active:hover .q-btn__content,
-.view-switcher-pill-active:hover .q-btn__content * {
+.view-switcher-pill.view-switcher-pill-active:hover,
+.q-btn.view-switcher-pill-active:hover {
+    background: #1B2D7C !important;
     background-color: #1B2D7C !important;
     color: #FFFFFF !important;
+    box-shadow: none !important;
+}
+
+.view-switcher-pill-active:hover *,
+.view-switcher-pill-active:hover .q-btn__wrapper,
+.view-switcher-pill-active:hover .q-btn__content,
+.view-switcher-pill-active:hover .q-icon,
+.view-switcher-pill-active:hover span {
+    color: #FFFFFF !important;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 @media (max-width: 639px) {
@@ -911,6 +987,14 @@ div[class*="reconnect"] {
         padding: 5px 10px;
         font-size: 0.75rem;
     }
+}
+
+/* Linear Progress bar text suppression */
+.q-linear-progress div:not(.q-linear-progress__track):not(.q-linear-progress__model) {
+    display: none !important;
+}
+.q-linear-progress__value {
+    display: none !important;
 }
 
 /* Progressive Disclosure Expandable Document Details */

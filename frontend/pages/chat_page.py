@@ -296,6 +296,22 @@ def register_chat_page() -> None:
 
             ui.on("citation_click", handle_citation_click)
 
+            def on_custom_submit(e: Any) -> None:
+                text = ""
+                raw = getattr(e, "args", e)
+                if isinstance(raw, list) and len(raw) > 0:
+                    raw = raw[0]
+                if isinstance(raw, str):
+                    text = raw
+                elif isinstance(raw, dict):
+                    text = str(raw.get("question") or "")
+                print(f"[DEBUG on_custom_submit] received text: '{text}'", flush=True)
+                if text:
+                    input_box.value = text
+                    send_message(text)
+
+            ui.on("submit_chat_question", on_custom_submit)
+
             def render_evidence() -> None:
                 evidence_container.clear()
                 with evidence_container:
@@ -322,9 +338,26 @@ def register_chat_page() -> None:
                 render_action_btn()
                 render_messages()
 
+            def is_scope_valid() -> tuple[bool, str]:
+                if active_scope["scope"] == "COURSE" and not active_scope.get("kb_id"):
+                    return False, "Please select a specific course before asking questions"
+                if active_scope["scope"] == "DOCUMENT":
+                    if not active_scope.get("kb_id"):
+                        return False, "Please select a course before asking questions in Document scope"
+                    if not active_scope.get("doc_id"):
+                        return False, "Please select a specific document before asking questions"
+                return True, ""
+
             def send_message(question_text: str) -> None:
                 q_clean = question_text.strip()
+                print(f"[DEBUG send_message] called with: '{q_clean}', is_generating={state.is_generating}, scope={active_scope['scope']}, kb_id={active_scope.get('kb_id')}, doc_id={active_scope.get('doc_id')}", flush=True)
                 if not q_clean or state.is_generating:
+                    print(f"[DEBUG send_message] early return: q_clean='{q_clean}', is_generating={state.is_generating}", flush=True)
+                    return
+                scope_valid, scope_reason = is_scope_valid()
+                print(f"[DEBUG send_message] scope_valid={scope_valid}, scope_reason='{scope_reason}'", flush=True)
+                if not scope_valid:
+                    ui.notify(scope_reason, type="warning")
                     return
                 state.add_user_message(q_clean)
                 render_action_btn()
@@ -370,14 +403,18 @@ def register_chat_page() -> None:
                         )
                     else:
                         # Normal Send Action
-                        (
+                        scope_valid, scope_reason = is_scope_valid()
+                        btn_cls = "w-9 h-9 sm:w-10 sm:h-10 bg-surface-navy text-inverted shrink-0 hover:bg-surface-navy/90 transition-transform shadow-none"
+                        if not scope_valid:
+                            btn_cls += " opacity-40 cursor-not-allowed"
+                        btn = (
                             ui.button(icon="arrow_upward", on_click=handle_submit)
                             .props("round dense")
-                            .classes(
-                                "w-9 h-9 sm:w-10 sm:h-10 bg-surface-navy text-inverted shrink-0 hover:bg-surface-navy/90 transition-transform shadow-none"
-                            )
+                            .classes(btn_cls)
                             .props('aria-label="Send question"')
                         )
+                        if not scope_valid:
+                            btn.props(f'title="{html.escape(scope_reason, quote=True)}"')
 
             # Polling Generation Status to toggle button & re-enable input
             was_generating = {"value": state.is_generating}
@@ -453,7 +490,7 @@ def register_chat_page() -> None:
 
                             # Attached Scope Popover Menu
                             with ui.menu().props(
-                                ':offset="[0, 8]"'
+                                'anchor="top start" self="bottom start" :offset="[0, 56]"'
                             ).classes(
                                 "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[290px] sm:w-[340px] max-w-[calc(100vw-2rem)]"
                             ) as scope_menu:
@@ -638,43 +675,226 @@ def register_chat_page() -> None:
                                     )
                                     update_menu_options()
                     else:
-                        # Admin scope switcher in composer bottom toolbar
-                        admin_scope_options = {
-                            "ALL_COURSES": "All Published Courses",
-                            "COURSE": "Specific Course",
-                            "DOCUMENT": "Specific Document",
-                        }
+                        # Polished Admin Scope Pill Trigger and Upward Popover Menu
+                        admin_mode = active_scope.get("scope", "ALL_COURSES")
+                        selected_kb = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
 
-                        def on_admin_scope_change(e: Any) -> None:
-                            active_scope["scope"] = e.value
-                            active_scope["doc_id"] = None
-                            active_scope["selected_doc"] = None
-                            if (
-                                e.value == "COURSE"
-                                and not active_scope["kb_id"]
-                                and kbs
-                            ):
-                                active_scope["kb_id"] = kbs[0].id
-                                load_docs_for_current_kb()
-                            elif e.value == "DOCUMENT":
-                                if not active_scope["kb_id"] and kbs:
-                                    active_scope["kb_id"] = kbs[0].id
-                                load_docs_for_current_kb()
-                                if active_scope["docs"]:
-                                    active_scope["selected_doc"] = active_scope["docs"][0]
-                                    active_scope["doc_id"] = active_scope["docs"][0].id
-                            else:
-                                active_scope["kb_id"] = None
-                                active_scope["docs"] = []
-                            render_composer_scope()
+                        if admin_mode == "ALL_COURSES":
+                            pill_label = "All Published Courses"
+                            pill_icon = "public"
+                            is_custom_scope = False
+                        elif admin_mode == "COURSE":
+                            pill_label = selected_kb.name if selected_kb else "Select Course..."
+                            pill_icon = "menu_book"
+                            is_custom_scope = True
+                        else:  # DOCUMENT
+                            pill_label = active_scope["selected_doc"].original_filename if active_scope.get("selected_doc") else "Select Document..."
+                            pill_icon = "description"
+                            is_custom_scope = True
 
-                        ui.select(
-                            options=admin_scope_options,
-                            value=active_scope["scope"],
-                            on_change=on_admin_scope_change,
-                        ).props("outlined dense options-dense").classes(
-                            "text-xs min-w-[150px] bg-surface-elevated"
+                        btn_classes = (
+                            "scope-selector-btn h-[38px] sm:h-[40px] px-3.5 sm:px-4 text-[13px] sm:text-sm font-medium "
+                            "text-primary-navy bg-surface hover:bg-surface-elevated border "
+                            + ("border-gold/70 bg-gold-light/30 " if is_custom_scope else "border-subtle ")
+                            + "hover:border-gold/80 rounded-full transition-all shadow-none group flex items-center"
                         )
+                        with (
+                            ui.button()
+                            .props("no-caps outline rounded")
+                            .classes(btn_classes)
+                            .props(f'title="{html.escape(pill_label, quote=True)}"')
+                            .props('aria-label="Admin search scope selector"')
+                        ):
+                            with ui.row().classes("items-center gap-2 no-wrap"):
+                                trigger_pill_icon = ui.icon(pill_icon, size="16px").classes("text-gold shrink-0")
+                                trigger_pill_label = ui.label(pill_label).classes(
+                                    "max-w-[160px] xs:max-w-[220px] sm:max-w-[320px] md:max-w-[380px] truncate text-left font-sans text-[13px] sm:text-sm font-medium leading-none"
+                                )
+                                ui.icon("unfold_more", size="15px").classes(
+                                    "text-secondary-navy/60 group-hover:text-gold transition-colors shrink-0"
+                                )
+
+                            # Attached Upward-Opening Scope Popover Menu
+                            with ui.menu().props(
+                                'anchor="top start" self="bottom start" :offset="[0, 56]"'
+                            ).classes(
+                                "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[320px] sm:w-[380px] max-w-[calc(100vw-2rem)]"
+                            ) as admin_scope_menu:
+                                menu_content_container = ui.column().classes("w-full gap-2")
+
+                                def render_menu_content() -> None:
+                                    menu_content_container.clear()
+                                    cur_mode = active_scope.get("scope", "ALL_COURSES")
+                                    cur_kb = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
+                                    is_custom = cur_mode != "ALL_COURSES"
+
+                                    # Update trigger button label and icon
+                                    if cur_mode == "ALL_COURSES":
+                                        trigger_pill_label.text = "All Published Courses"
+                                        trigger_pill_icon.name = "public"
+                                    elif cur_mode == "COURSE":
+                                        trigger_pill_label.text = cur_kb.name if cur_kb else "Select Course..."
+                                        trigger_pill_icon.name = "menu_book"
+                                    else:
+                                        trigger_pill_label.text = active_scope["selected_doc"].original_filename if active_scope.get("selected_doc") else "Select Document..."
+                                        trigger_pill_icon.name = "description"
+
+                                    with menu_content_container:
+                                        # Header & Reset Action
+                                        with ui.row().classes("w-full items-center justify-between px-1.5 pt-0.5 pb-1 border-b border-subtle/60"):
+                                            ui.label("Admin Scope Mode").classes(
+                                                "text-[11px] font-bold font-sans uppercase tracking-wider text-secondary-navy"
+                                            )
+                                            if is_custom:
+                                                def reset_admin_scope():
+                                                    active_scope["scope"] = "ALL_COURSES"
+                                                    active_scope["kb_id"] = None
+                                                    active_scope["doc_id"] = None
+                                                    active_scope["selected_doc"] = None
+                                                    state.reset_scope()
+                                                    admin_scope_menu.close()
+                                                    render_composer_scope()
+                                                    render_header()
+                                                    render_action_btn()
+                                                ui.button(
+                                                    "Reset to All",
+                                                    on_click=reset_admin_scope,
+                                                ).props("flat dense no-caps").classes(
+                                                    "text-[11px] text-gold hover:text-primary-navy font-semibold p-0"
+                                                )
+
+                                        # 3 Segmented Scope Mode Buttons
+                                        with ui.row().classes("w-full bg-surface p-1 rounded-xl gap-1"):
+                                            def set_admin_mode(m: str):
+                                                active_scope["scope"] = m
+                                                if m == "ALL_COURSES":
+                                                    active_scope["kb_id"] = None
+                                                    active_scope["doc_id"] = None
+                                                    active_scope["selected_doc"] = None
+                                                    state.set_scope("ALL_COURSES", None, None)
+                                                    admin_scope_menu.close()
+                                                    render_composer_scope()
+                                                elif m == "COURSE":
+                                                    active_scope["doc_id"] = None
+                                                    active_scope["selected_doc"] = None
+                                                    if active_scope.get("kb_id") not in [k.id for k in kbs]:
+                                                        active_scope["kb_id"] = None
+                                                    state.set_scope("COURSE", active_scope.get("kb_id"), None)
+                                                    render_menu_content()
+                                                elif m == "DOCUMENT":
+                                                    if active_scope.get("kb_id") not in [k.id for k in kbs]:
+                                                        active_scope["kb_id"] = None
+                                                        active_scope["doc_id"] = None
+                                                        active_scope["selected_doc"] = None
+                                                    else:
+                                                        load_docs_for_current_kb()
+                                                    state.set_scope("DOCUMENT", active_scope.get("kb_id"), active_scope.get("doc_id"))
+                                                    render_menu_content()
+                                                render_header()
+                                                render_action_btn()
+
+                                            for m_key, m_lbl, m_ic in [
+                                                ("ALL_COURSES", "All Courses", "public"),
+                                                ("COURSE", "Course", "menu_book"),
+                                                ("DOCUMENT", "Document", "description"),
+                                            ]:
+                                                is_cur = (cur_mode == m_key)
+                                                mode_cls = (
+                                                    "flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg text-center transition-all "
+                                                    + ("bg-surface-navy text-inverted shadow-sm " if is_cur else "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated ")
+                                                )
+                                                with ui.row().classes(f"{mode_cls} items-center justify-center gap-1 cursor-pointer").on(
+                                                    "click", lambda mk=m_key: set_admin_mode(mk)
+                                                ):
+                                                    ui.icon(m_ic, size="13px")
+                                                    ui.label(m_lbl).classes("text-[11px]")
+
+                                        # Content based on mode
+                                        if cur_mode == "COURSE":
+                                            with ui.column().classes("w-full gap-1 pt-1"):
+                                                ui.label("Select Target Course:").classes("text-[11px] font-semibold text-secondary-navy px-1")
+                                                courses_container = ui.column().classes("w-full max-h-48 overflow-y-auto gap-0.5")
+                                                with courses_container:
+                                                    for k in kbs:
+                                                        is_sel = (active_scope.get("kb_id") == k.id)
+                                                        row_cls = (
+                                                            "bg-surface font-semibold text-primary-navy border border-gold/40"
+                                                            if is_sel
+                                                            else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
+                                                        )
+                                                        def select_course(cid=k.id):
+                                                            active_scope["kb_id"] = cid
+                                                            state.set_scope("COURSE", cid, None)
+                                                            load_docs_for_current_kb()
+                                                            admin_scope_menu.close()
+                                                            render_composer_scope()
+                                                            render_header()
+                                                            render_action_btn()
+                                                        with ui.row().classes(
+                                                            f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
+                                                        ).on("click", select_course):
+                                                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                                                ui.icon("menu_book", size="14px").classes("text-gold" if is_sel else "text-secondary-navy/70")
+                                                                ui.label(k.name).classes("text-xs font-sans truncate")
+                                                            if is_sel:
+                                                                ui.icon("check", size="15px").classes("text-gold shrink-0")
+                                        elif cur_mode == "DOCUMENT":
+                                            with ui.column().classes("w-full gap-1 pt-1"):
+                                                ui.label("Course:").classes("text-[11px] font-semibold text-secondary-navy px-1")
+                                                course_options = {k.id: k.name for k in kbs}
+                                                def on_doc_kb_change(e: Any):
+                                                    active_scope["kb_id"] = e.value
+                                                    active_scope["doc_id"] = None
+                                                    active_scope["selected_doc"] = None
+                                                    state.set_scope("DOCUMENT", e.value, None)
+                                                    load_docs_for_current_kb()
+                                                    render_menu_content()
+                                                    render_header()
+                                                    render_action_btn()
+                                                ui.select(
+                                                    options=course_options,
+                                                    value=active_scope.get("kb_id"),
+                                                    on_change=on_doc_kb_change,
+                                                    label="Select Course",
+                                                ).props("dense outlined options-dense").classes("w-full text-xs font-sans")
+
+                                                ui.label("Select Document:").classes("text-[11px] font-semibold text-secondary-navy px-1 pt-1")
+                                                doc_container = ui.column().classes("w-full max-h-40 overflow-y-auto gap-0.5")
+                                                with doc_container:
+                                                    if not active_scope.get("kb_id"):
+                                                        ui.label("Select a course above to view available documents").classes(
+                                                            "text-xs text-secondary-navy italic px-2 py-1"
+                                                        )
+                                                    elif not active_scope["docs"]:
+                                                        ui.label("No eligible documents available in this course").classes(
+                                                            "text-xs text-rose-700 italic px-2 py-1"
+                                                        )
+                                                    else:
+                                                        for doc_item in active_scope["docs"]:
+                                                            is_doc_sel = (active_scope.get("doc_id") == doc_item.id)
+                                                            row_cls = (
+                                                                "bg-surface font-semibold text-primary-navy border border-gold/40"
+                                                                if is_doc_sel
+                                                                else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
+                                                            )
+                                                            def select_doc(d=doc_item):
+                                                                active_scope["doc_id"] = d.id
+                                                                active_scope["selected_doc"] = d
+                                                                state.set_scope("DOCUMENT", active_scope["kb_id"], d.id)
+                                                                admin_scope_menu.close()
+                                                                render_composer_scope()
+                                                                render_header()
+                                                                render_action_btn()
+                                                            with ui.row().classes(
+                                                                f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
+                                                            ).on("click", select_doc):
+                                                                with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                                                    ui.icon("description", size="14px").classes("text-gold" if is_doc_sel else "text-secondary-navy/70")
+                                                                    ui.label(doc_item.original_filename).classes("text-xs font-sans truncate")
+                                                                if is_doc_sel:
+                                                                    ui.icon("check", size="15px").classes("text-gold shrink-0")
+
+                                render_menu_content()
 
             # ------------------------------------------------------------------
             # Render Header (Identity & History Toggle & New Chat)
@@ -684,6 +904,10 @@ def register_chat_page() -> None:
                 with header_container:
                     # Left: Identity Title & Scope Indicator
                     with ui.row().classes("items-center gap-2.5 min-w-0"):
+                        base_title = "Admin Knowledge Chat" if is_admin else "Academic Knowledge Assistant"
+                        ui.label(base_title).classes(
+                            "text-base sm:text-lg font-bold font-editorial text-primary-navy tracking-tight truncate shrink-0"
+                        )
 
                         active_title = None
                         if state.active_conversation_id:
@@ -693,10 +917,12 @@ def register_chat_page() -> None:
                             except Exception:
                                 pass
 
-                        title_text = active_title or ("Admin Knowledge Chat" if is_admin else "Academic Knowledge Assistant")
-                        ui.label(title_text).classes(
-                            "text-base sm:text-lg font-bold font-editorial text-primary-navy tracking-tight truncate max-w-[280px] sm:max-w-md"
-                        )
+                        if active_title:
+                            with ui.row().classes(
+                                "items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface border border-subtle text-xs text-secondary-navy truncate max-w-[200px] sm:max-w-xs hidden sm:flex"
+                            ):
+                                ui.icon("chat_bubble_outline", size="12px").classes("text-gold shrink-0")
+                                ui.label(active_title).classes("truncate font-sans text-[11px]")
 
                         # Scope badge if specific course selected
                         if active_scope.get("scope") == "COURSE" and active_scope.get("kb_id"):
@@ -707,10 +933,26 @@ def register_chat_page() -> None:
                             ):
                                 ui.icon("menu_book", size="12px").classes("text-gold")
                                 ui.label(badge_name).classes("truncate max-w-[150px]")
+                        elif active_scope.get("scope") == "DOCUMENT" and active_scope.get("selected_doc"):
+                            doc_name = active_scope["selected_doc"].original_filename
+                            with ui.row().classes(
+                                "items-center gap-1 px-2.5 py-0.5 rounded-full bg-gold-light border border-gold/40 text-[11px] font-medium text-primary-navy hidden sm:flex"
+                            ):
+                                ui.icon("description", size="12px").classes("text-gold")
+                                ui.label(doc_name).classes("truncate max-w-[150px]")
 
-                    # Header right spacer (New Chat is already accessible in sidebar)
+                    # Header right action (Quick New Chat)
                     with ui.row().classes("items-center gap-2 ml-auto shrink-0"):
-                        pass
+                        ui.button(
+                            "New Chat",
+                            icon="add",
+                            on_click=lambda: (
+                                state.start_new_conversation(),
+                                ui.run_javascript("window.history.replaceState({}, '', '/chat');"),
+                            ),
+                        ).props("flat dense no-caps").classes(
+                            "text-xs font-semibold text-primary-navy hover:text-gold hover:bg-surface-elevated px-2.5 py-1 rounded-lg border border-subtle transition-colors flex items-center gap-1"
+                        ).props('aria-label="New chat"')
 
             # ------------------------------------------------------------------
             # Render Messages & Academic Empty State
@@ -754,7 +996,7 @@ def register_chat_page() -> None:
                                         )
                                     )
                                     ui.markdown(clean_content).classes(
-                                        "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-serif"
+                                        "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans"
                                     )
 
                                     # Cited Sources Tray
@@ -857,16 +1099,23 @@ def register_chat_page() -> None:
                 """)
 
             def on_state_update() -> None:
+                active_scope["scope"] = state.active_scope
+                active_scope["kb_id"] = state.active_kb_id
+                active_scope["doc_id"] = getattr(state, "active_doc_id", None)
+                if active_scope["kb_id"]:
+                    load_docs_for_current_kb()
+                if active_scope["doc_id"] and active_scope["docs"]:
+                    active_scope["selected_doc"] = next((d for d in active_scope["docs"] if d.id == active_scope["doc_id"]), None)
+                else:
+                    active_scope["selected_doc"] = None
+
                 if state.active_conversation_id is None and not state.chat_history:
-                    active_scope["scope"] = state.active_scope
-                    active_scope["kb_id"] = state.active_kb_id
-                    active_scope["doc_id"] = None
                     try:
                         input_box.value = ""
                         input_box.enable()
                     except Exception:
                         pass
-                    render_composer_scope()
+                render_composer_scope()
                 render_header()
                 render_messages()
                 render_evidence()

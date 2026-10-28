@@ -208,6 +208,145 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                     "flat round dense"
                 ).classes("lg:hidden text-secondary-navy hover:text-primary-navy")
 
+            def handle_new_chat() -> None:
+                state.start_new_conversation()
+                ui.run_javascript("""
+                    if (window.innerWidth < 1024) {
+                        const closeBtn = document.querySelector('.q-drawer .lg\\:hidden');
+                        if (closeBtn) closeBtn.click();
+                    }
+                """)
+                if active_route != "/chat":
+                    ui.navigate.to("/chat")
+                else:
+                    ui.run_javascript("window.history.replaceState({}, '', '/chat');")
+
+            def render_conversation_items(container: ui.column) -> None:
+                container.clear()
+                with container:
+                    convs = []
+                    try:
+                        convs = api_client.get_conversations()
+                    except Exception:
+                        pass
+
+                    if not convs:
+                        ui.label("No saved chats yet").classes(
+                            "text-xs text-secondary-navy/60 italic px-2 py-2"
+                        )
+                        return
+
+                    for c in convs:
+                        is_active = (
+                            active_route == "/chat"
+                            and state.active_conversation_id == c.id
+                        )
+                        row_cls = (
+                            "w-full items-center justify-between px-2 py-1.5 rounded-lg transition-colors cursor-pointer group "
+                        )
+                        if is_active:
+                            row_cls += "bg-surface-elevated text-primary-navy font-semibold border border-gold/50"
+                        else:
+                            row_cls += "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated/60"
+
+                        def on_click_conv(conv_id=c.id):
+                            try:
+                                state.load_conversation(conv_id)
+                            except Exception as exc:
+                                clean_err = normalize_error(exc, context="chat")
+                                ui.notify(f"Could not load conversation: {clean_err}", type="warning")
+                                return
+                            ui.run_javascript("""
+                                if (window.innerWidth < 1024) {
+                                    const closeBtn = document.querySelector('.q-drawer .lg\\:hidden');
+                                    if (closeBtn) closeBtn.click();
+                                }
+                            """)
+                            if active_route != "/chat":
+                                ui.navigate.to(f"/chat?conversation_id={conv_id}")
+                            else:
+                                ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={conv_id}');")
+
+                        with ui.row().classes(row_cls).on("click", on_click_conv).tooltip(c.title):
+                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                ui.icon("chat_bubble_outline", size="14px").classes(
+                                    "text-gold shrink-0" if is_active else "text-secondary-navy/70 shrink-0"
+                                )
+                                display_title = c.title
+                                if len(display_title) > 22:
+                                    display_title = display_title[:20] + "..."
+                                ui.label(display_title).classes(
+                                    "text-xs truncate font-sans"
+                                )
+
+                            def on_delete(e: Any, conv_id=c.id):
+                                if hasattr(e, "stop_propagation"):
+                                    e.stop_propagation()
+                                state.delete_conversation(conv_id)
+                                render_conversation_items(container)
+
+                            ui.button(icon="delete_outline", on_click=on_delete).props(
+                                "flat round dense"
+                            ).classes(
+                                "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity"
+                            ).props('aria-label="Delete conversation"')
+
+            def render_chat_history_sidebar(nav_items: list[tuple[str, str, str]]) -> None:
+                with (
+                    ui.button(
+                        "New Chat",
+                        icon="add",
+                        on_click=handle_new_chat,
+                    )
+                    .props("no-caps dense align=left")
+                    .classes(
+                        "w-full py-2.5 px-3.5 rounded-lg bg-surface-navy text-inverted font-semibold text-xs sm:text-sm hover:bg-surface-navy/90 transition-all flex items-center justify-start gap-2 border border-gold/40 shadow-none shrink-0 my-0.5"
+                    )
+                    .props('aria-label="New chat"')
+                ):
+                    pass
+
+                # Navigation Links
+                with ui.column().classes("w-full gap-0.5 shrink-0 pb-2 border-b border-subtle/70"):
+                    ui.label("NAVIGATION").classes(
+                        "text-[10px] font-bold text-gold tracking-widest px-2.5 pb-1 uppercase font-sans"
+                    )
+                    for label, route, icon in nav_items:
+                        is_active = (active_route == route) or (
+                            route != "/dashboard" and active_route.startswith(route)
+                        )
+                        btn_cls = "w-full text-xs sm:text-sm py-2 px-3 rounded-lg transition-colors gap-2.5 "
+                        if is_active:
+                            btn_cls += "bg-surface-elevated text-primary-navy font-bold border border-gold/40 shadow-none"
+                        else:
+                            btn_cls += "text-secondary-navy hover:bg-surface-elevated/70 hover:text-primary-navy font-medium"
+
+                        def on_nav_click(r=route):
+                            ui.run_javascript("""
+                                if (window.innerWidth < 1024) {
+                                    const closeBtn = document.querySelector('.q-drawer .lg\\:hidden');
+                                    if (closeBtn) closeBtn.click();
+                                }
+                            """)
+                            ui.navigate.to(r)
+
+                        ui.button(
+                            label,
+                            icon=icon,
+                            on_click=on_nav_click,
+                        ).props("flat no-caps dense align=left").classes(btn_cls)
+
+                # Recent Chat History
+                with ui.column().classes("w-full flex-1 overflow-hidden flex flex-col min-h-0"):
+                    with ui.row().classes("w-full items-center justify-between px-2 pt-1 pb-1 shrink-0"):
+                        ui.label("RECENT CHATS").classes(
+                            "text-[10px] font-bold text-gold tracking-widest uppercase font-sans"
+                        )
+
+                    history_list = ui.column().classes("w-full flex-1 overflow-y-auto gap-1 pr-1 min-h-[120px]")
+                    render_conversation_items(history_list)
+                    state.subscribe(lambda: render_conversation_items(history_list))
+
             if is_admin:
                 # -------------------------------------------------------------
                 # ADMINISTRATOR NAVIGATION (Authoritative Grouped Architecture)
@@ -232,7 +371,7 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                                 def on_admin_nav_click(r=route):
                                     ui.run_javascript("""
                                         if (window.innerWidth < 1024) {
-                                            const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
+                                            const closeBtn = document.querySelector('.q-drawer .lg\\:hidden');
                                             if (closeBtn) closeBtn.click();
                                         }
                                     """)
@@ -243,148 +382,39 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                                     icon=icon,
                                     on_click=on_admin_nav_click,
                                 ).props("flat no-caps dense align=left").classes(btn_cls)
+
+                                # When Test Assistant (/chat) is rendered and user is on /chat:
+                                if route == "/chat" and active_route == "/chat":
+                                    with ui.column().classes("w-full pl-3 pr-1 py-1 gap-1 shrink-0"):
+                                        with (
+                                            ui.button(
+                                                "New Chat",
+                                                icon="add",
+                                                on_click=handle_new_chat,
+                                            )
+                                            .props("no-caps dense align=left")
+                                            .classes(
+                                                "w-full py-1.5 px-3 rounded-lg bg-surface-navy text-inverted font-semibold text-xs hover:bg-surface-navy/90 transition-all flex items-center justify-start gap-2 border border-gold/40 shadow-none my-1"
+                                            )
+                                            .props('aria-label="New chat"')
+                                        ):
+                                            pass
+
+                                        with ui.expansion("Recent Chats", icon="history", value=True).classes(
+                                            "w-full text-xs text-secondary-navy font-medium rounded-lg"
+                                        ).props(
+                                            'dense dense-toggle header-class="text-[10px] font-bold text-gold tracking-widest uppercase font-sans py-1 px-1.5"'
+                                        ):
+                                            admin_hist_list = ui.column().classes(
+                                                "w-full flex flex-col gap-1 pr-1 max-h-56 overflow-y-auto min-h-0"
+                                            )
+                                            render_conversation_items(admin_hist_list)
+                                            state.subscribe(lambda: render_conversation_items(admin_hist_list))
             else:
                 # -------------------------------------------------------------
                 # STUDENT NAVIGATION (Approved Chat-First & Persistent History)
                 # -------------------------------------------------------------
-                def handle_new_chat() -> None:
-                    state.start_new_conversation()
-                    ui.run_javascript("""
-                        if (window.innerWidth < 1024) {
-                            const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
-                            if (closeBtn) closeBtn.click();
-                        }
-                    """)
-                    if active_route != "/chat":
-                        ui.navigate.to("/chat")
-                    else:
-                        ui.run_javascript("window.history.replaceState({}, '', '/chat');")
-
-                with (
-                    ui.button(
-                        "New Chat",
-                        icon="add",
-                        on_click=handle_new_chat,
-                    )
-                    .props("no-caps dense align=left")
-                    .classes(
-                        "w-full py-2.5 px-3.5 rounded-lg bg-surface-navy text-inverted font-semibold text-xs sm:text-sm hover:bg-surface-navy/90 transition-all flex items-center justify-start gap-2 border border-gold/40 shadow-none shrink-0 my-0.5"
-                    )
-                    .props('aria-label="New chat"')
-                ):
-                    pass
-
-                # Navigation Links
-                with ui.column().classes("w-full gap-0.5 shrink-0 pb-2 border-b border-subtle/70"):
-                    ui.label("NAVIGATION").classes(
-                        "text-[10px] font-bold text-gold tracking-widest px-2.5 pb-1 uppercase font-sans"
-                    )
-                    for label, route, icon in student_nav_links:
-                        is_active = (active_route == route) or (
-                            route != "/dashboard" and active_route.startswith(route)
-                        )
-                        btn_cls = "w-full text-xs sm:text-sm py-2 px-3 rounded-lg transition-colors gap-2.5 "
-                        if is_active:
-                            btn_cls += "bg-surface-elevated text-primary-navy font-bold border border-gold/40 shadow-none"
-                        else:
-                            btn_cls += "text-secondary-navy hover:bg-surface-elevated/70 hover:text-primary-navy font-medium"
-
-                        def on_student_nav_click(r=route):
-                            ui.run_javascript("""
-                                if (window.innerWidth < 1024) {
-                                    const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
-                                    if (closeBtn) closeBtn.click();
-                                }
-                            """)
-                            ui.navigate.to(r)
-
-                        ui.button(
-                            label,
-                            icon=icon,
-                            on_click=on_student_nav_click,
-                        ).props("flat no-caps dense align=left").classes(btn_cls)
-
-                # Recent Chat History for Student
-                with ui.column().classes("w-full flex-1 overflow-hidden flex flex-col min-h-0"):
-                    with ui.row().classes("w-full items-center justify-between px-2 pt-1 pb-1 shrink-0"):
-                        ui.label("RECENT CHATS").classes(
-                            "text-[10px] font-bold text-gold tracking-widest uppercase font-sans"
-                        )
-
-                    history_list = ui.column().classes("w-full flex-1 overflow-y-auto gap-1 pr-1 min-h-[120px]")
-
-                    def render_conversations_list() -> None:
-                        history_list.clear()
-                        with history_list:
-                            convs = []
-                            try:
-                                convs = api_client.get_conversations()
-                            except Exception:
-                                pass
-
-                            if not convs:
-                                ui.label("No saved chats yet").classes(
-                                    "text-xs text-secondary-navy/60 italic px-2 py-2"
-                                )
-                                return
-
-                            for c in convs:
-                                is_active = (
-                                    active_route == "/chat"
-                                    and state.active_conversation_id == c.id
-                                )
-                                row_cls = (
-                                    "w-full items-center justify-between px-2 py-1.5 rounded-lg transition-colors cursor-pointer group "
-                                )
-                                if is_active:
-                                    row_cls += "bg-surface-elevated text-primary-navy font-semibold border border-gold/50"
-                                else:
-                                    row_cls += "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated/60"
-
-                                def on_click_conv(conv_id=c.id):
-                                    try:
-                                        state.load_conversation(conv_id)
-                                    except Exception as exc:
-                                        clean_err = normalize_error(exc, context="chat")
-                                        ui.notify(f"Could not load conversation: {clean_err}", type="warning")
-                                        return
-                                    ui.run_javascript("""
-                                        if (window.innerWidth < 1024) {
-                                            const closeBtn = document.querySelector('.q-drawer .lg\\\\:hidden');
-                                            if (closeBtn) closeBtn.click();
-                                        }
-                                    """)
-                                    if active_route != "/chat":
-                                        ui.navigate.to(f"/chat?conversation_id={conv_id}")
-                                    else:
-                                        ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={conv_id}');")
-
-                                with ui.row().classes(row_cls).on("click", on_click_conv):
-                                    with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
-                                        ui.icon("chat_bubble_outline", size="14px").classes(
-                                            "text-gold shrink-0" if is_active else "text-secondary-navy/70 shrink-0"
-                                        )
-                                        display_title = c.title
-                                        if len(display_title) > 22:
-                                            display_title = display_title[:20] + "..."
-                                        ui.label(display_title).classes(
-                                            "text-xs truncate font-sans"
-                                        )
-
-                                    def on_delete(e: Any, conv_id=c.id):
-                                        if hasattr(e, "stop_propagation"):
-                                            e.stop_propagation()
-                                        state.delete_conversation(conv_id)
-                                        render_conversations_list()
-
-                                    ui.button(icon="delete_outline", on_click=on_delete).props(
-                                        "flat round dense"
-                                    ).classes(
-                                        "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity"
-                                    ).props('aria-label="Delete conversation"')
-
-                    render_conversations_list()
-                    state.subscribe(render_conversations_list)
+                render_chat_history_sidebar(student_nav_links)
 
         # Base: User Profile & Logout
         with ui.column().classes("w-full p-2.5 border-t border-subtle bg-surface-elevated shrink-0 gap-2"):

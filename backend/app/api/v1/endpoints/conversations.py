@@ -67,6 +67,7 @@ def list_conversations(
                 title=conv.title,
                 scope=conv.scope,
                 knowledge_base_id=conv.knowledge_base_id,
+                document_id=conv.document_id,
                 message_count=int(count),
                 created_at=conv.created_at,
                 updated_at=conv.updated_at,
@@ -98,6 +99,7 @@ def create_conversation(
         title=title,
         scope=payload.scope or "ALL_COURSES",
         knowledge_base_id=payload.knowledge_base_id,
+        document_id=payload.document_id,
     )
     db.add(conv)
     db.commit()
@@ -108,6 +110,7 @@ def create_conversation(
         title=conv.title,
         scope=conv.scope,
         knowledge_base_id=conv.knowledge_base_id,
+        document_id=conv.document_id,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         messages=[],
@@ -149,6 +152,7 @@ def get_conversation(
         title=conv.title,
         scope=conv.scope,
         knowledge_base_id=conv.knowledge_base_id,
+        document_id=conv.document_id,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         messages=[

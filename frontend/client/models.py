@@ -118,6 +118,11 @@ class DocumentDTO(BaseModel):
         """Alias for kb_id for backward compatibility with course association references."""
         return self.kb_id
 
+    @property
+    def original_filename(self) -> str:
+        """Alias for filename."""
+        return self.filename
+
 
 class CitationDTO(BaseModel):
     """Retrieved source citation with provenance metadata."""
@@ -162,6 +167,7 @@ class ChatMessageDTO(BaseModel):
     grounding_status: str | None = None
     total_pipeline_ms: float | None = None
     model: str | None = None
+    conversation_id: str | None = None
 
 
 class ConversationSummaryDTO(BaseModel):
@@ -171,6 +177,7 @@ class ConversationSummaryDTO(BaseModel):
     title: str
     scope: str = "ALL_COURSES"
     knowledge_base_id: str | None = None
+    document_id: str | None = None
     message_count: int = 0
     created_at: str = ""
     updated_at: str = ""
@@ -183,6 +190,7 @@ class ConversationDetailDTO(BaseModel):
     title: str
     scope: str = "ALL_COURSES"
     knowledge_base_id: str | None = None
+    document_id: str | None = None
     created_at: str = ""
     updated_at: str = ""
     messages: list[ChatMessageDTO] = Field(default_factory=list)

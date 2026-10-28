@@ -40,6 +40,7 @@ class ConversationSummaryDTO(BaseModel):
     title: str
     scope: str = "ALL_COURSES"
     knowledge_base_id: uuid.UUID | None = None
+    document_id: uuid.UUID | None = None
     message_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -56,6 +57,7 @@ class ConversationDetailDTO(BaseModel):
     title: str
     scope: str = "ALL_COURSES"
     knowledge_base_id: uuid.UUID | None = None
+    document_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     messages: list[ChatMessageResponseDTO] = Field(default_factory=list)
@@ -69,3 +71,4 @@ class CreateConversationRequest(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     scope: str = Field(default="ALL_COURSES", max_length=50)
     knowledge_base_id: uuid.UUID | None = None
+    document_id: uuid.UUID | None = None

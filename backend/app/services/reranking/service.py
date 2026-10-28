@@ -8,6 +8,7 @@ ordering based strictly on raw CrossEncoder scores.
 """
 
 import logging
+import re
 import threading
 import uuid
 from typing import Any
@@ -224,6 +225,17 @@ class RerankingService:
             )
         )
 
+        query_words = set(re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", clean_query.lower()))
+
+        def _has_visual_title_overlap(candidate: Any) -> bool:
+            if not candidate.chunk_metadata or candidate.chunk_metadata.get("source_modality") != "visual":
+                return False
+            sec_title = (candidate.section_title or "").lower()
+            chunk_text = candidate.text[:200].lower()
+            combined = sec_title + " " + chunk_text
+            matched_words = [w for w in query_words if w in combined]
+            return len(matched_words) >= 2
+
         def _sort_key(item: tuple[float, Any]) -> tuple[float, int, str]:
             score, candidate = item
             is_visual = (
@@ -234,8 +246,9 @@ class RerankingService:
                 )
                 else 0
             )
-            # When the user explicitly requests visual/diagram evidence, give visual chunks priority
-            boosted_score = score + (1.5 if (is_visual_query and is_visual) else 0.0)
+            # When the user explicitly requests visual/diagram evidence or queries an infographic title, give visual chunks priority
+            has_title_match = is_visual and _has_visual_title_overlap(candidate)
+            boosted_score = score + (1.5 if (is_visual and (is_visual_query or has_title_match)) else 0.0)
             return (-boosted_score, candidate.chunk_index, str(candidate.chunk_id))
 
         paired = list(zip(scores, candidates, strict=True))

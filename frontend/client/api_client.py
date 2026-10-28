@@ -1664,6 +1664,7 @@ class FrontendAPIClient:
 
         grounding_data = data.get("grounding") or {}
         latency_data = data.get("latency") or {}
+        ret_conv_id = data.get("metadata", {}).get("conversation_id") or conversation_id
 
         return ChatMessageDTO(
             id=f"msg-{uuid.uuid4().hex[:8]}",
@@ -1675,6 +1676,7 @@ class FrontendAPIClient:
             grounding_status=grounding_data.get("status"),
             total_pipeline_ms=latency_data.get("total_pipeline_ms"),
             model=data.get("model"),
+            conversation_id=str(ret_conv_id) if ret_conv_id else None,
         )
 
     # --------------------------------------------------------------------------
@@ -1780,6 +1782,7 @@ class FrontendAPIClient:
         title: str = "New Conversation",
         scope: str = "ALL_COURSES",
         kb_id: str | None = None,
+        doc_id: str | None = None,
     ) -> ConversationDetailDTO:
         """Explicitly create a new conversation."""
         if not self._should_use_real_http() or not self.get_session_token():
@@ -1790,6 +1793,7 @@ class FrontendAPIClient:
                 title=title,
                 scope=scope,
                 knowledge_base_id=kb_id,
+                document_id=doc_id,
                 created_at=now,
                 updated_at=now,
                 messages=[],
@@ -1799,7 +1803,7 @@ class FrontendAPIClient:
 
         resp = self._http.post(
             "/conversations",
-            json={"title": title, "scope": scope, "knowledge_base_id": kb_id},
+            json={"title": title, "scope": scope, "knowledge_base_id": kb_id, "document_id": doc_id},
         )
         if resp.status_code != 201:
             raise ValueError("Failed to create conversation.")
@@ -1810,6 +1814,9 @@ class FrontendAPIClient:
             scope=data.get("scope", "ALL_COURSES"),
             knowledge_base_id=str(data["knowledge_base_id"])
             if data.get("knowledge_base_id")
+            else None,
+            document_id=str(data["document_id"])
+            if data.get("document_id")
             else None,
             created_at=str(data.get("created_at", "")),
             updated_at=str(data.get("updated_at", "")),

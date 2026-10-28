@@ -43,6 +43,73 @@ GREETING_WORDS = {
     "help",
 }
 
+REASONING_LEAK_PATTERNS = [
+    r"\bthe user\s+(?:says|asks|also asks|is asking|question is)\b",
+    r"\bwe\s+(?:need to determine|must determine|can answer|are to output|can take|can also note|must see|have multiple)\b",
+    r"\bsince the\s+(?:evidence|question|user)\b",
+    r"\bthe answer\s+should be\b",
+    r"\bimportant:\s*we must\b",
+    r"\bwe can answer by\b",
+    r"\bwe can answer by listing\b",
+    r"\bto answer this question,?\s*we\b",
+    r"\boption:\s*[A-Z]",
+    r"\bnot directly about\b",
+    r"\(other points, but\b",
+]
+
+
+def is_reasoning_or_non_answer(text: str, query: str) -> bool:
+    """Detect obvious internal deliberation leakage or meta preambles without answers."""
+    t_clean = text.strip().lower()
+    if not t_clean:
+        return True
+    for p in REASONING_LEAK_PATTERNS:
+        if re.search(p, t_clean):
+            return True
+    if re.search(
+        r"^(?:the answer should be|we can answer by|the list is given in|the list of .+ is the one in|the answer is in)\b",
+        t_clean,
+    ):
+        return True
+    is_list_query = any(w in query.lower() for w in ("list", "enumerate", "versions", "steps"))
+    if is_list_query and len(text.split()) < 15 and not any(ch in text for ch in (",", ";", "\n", "1.", "- ")):
+        return True
+    return False
+
+
+def clean_reasoning_text(text: str) -> str:
+    """Extract final answer declaration or embedded itemized list from reasoning text if present."""
+    # 1. Check if model extracted an itemized list inside its deliberation of a source
+    # e.g. - [source_1]: ... It lists:\n Android 1.0 ...
+    list_match = re.search(
+        r"(?:-\s*\[(source_\d+)\]:[^\n]*?lists?:\s*\n?\s*)([^\n]+(?:\n(?!\s*(?:-\s*\[source_|\n|\bThe user\b|\bTherefore\b))\s+[^\n]+)*)",
+        text,
+        re.IGNORECASE,
+    )
+    if list_match:
+        source_tag = list_match.group(1)
+        raw_items = list_match.group(2).strip()
+        item_parts = [it.strip() for it in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_items) if it.strip()]
+        clean_items = [
+            it for it in item_parts
+            if not it.lower().startswith("it lists:") and not it.lower().startswith("of android") and len(it) > 1
+        ]
+        if len(clean_items) >= 3:
+            formatted = [f"- {it} [{source_tag}]" if f"[{source_tag}]" not in it else f"- {it}" for it in clean_items]
+            return f"The items listed in [{source_tag}] are:\n" + "\n".join(formatted)
+
+    # 2. Check for explicit conclusion marker
+    conclusion_match = re.search(
+        r"(?:So the answer should be:|The answer should be:|The answer is:|Therefore,?\s*(?:the answer is:?)?)\s*(.+)$",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if conclusion_match:
+        cand = conclusion_match.group(1).strip()
+        if not any(re.search(p, cand, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
+            return cand
+    return text
+
 
 def _sanitize_llm_answer(text: str) -> str:
     """
@@ -74,7 +141,11 @@ def _sanitize_llm_answer(text: str) -> str:
                 conclusion,
                 flags=re.IGNORECASE,
             )[0].strip().rstrip("\"' \t\n")
-            if conclusion:
+            if (
+                conclusion
+                and not any(re.search(p, conclusion, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS)
+                and not re.search(r"^(?:we\s+output|we\s+can\s+output|the\s+list\s+is\s+from|the\s+answer\s+is\s+in)\b", conclusion, re.IGNORECASE)
+            ):
                 marker_raw = therefore_match.group(0).lower()
                 prefix = ""
                 if "sequence" in marker_raw and not conclusion.lower().startswith("the sequence is"):
@@ -326,10 +397,43 @@ class LLMGenerationService:
             timeout_seconds=request.timeout_seconds,
         )
         latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-        logger.info("Raw LLM response before sanitization:\n%s", provider_resp.content)
+        logger.debug("Raw LLM response before sanitization length: %d chars", len(provider_resp.content))
 
         # 5. Sanitize answer to eliminate leaked CoT rambling
         cleaned_content = _sanitize_llm_answer(provider_resp.content)
+
+        # 5a. Detect reasoning leak or non-answer preamble and attempt extraction or single retry
+        if is_reasoning_or_non_answer(cleaned_content, request.query):
+            candidate = clean_reasoning_text(provider_resp.content)
+            if candidate != provider_resp.content and not is_reasoning_or_non_answer(candidate, request.query):
+                cleaned_content = candidate
+            else:
+                retry_instruction = (
+                    "You are an academic knowledge assistant. Output ONLY the factual answer or itemized list citing [source_X]. "
+                    "STRICT RULE: Do NOT say 'The answer should be', do NOT say 'We can answer by', and do NOT include internal reasoning. "
+                    "Enumerate and output the actual factual items directly from the evidence:"
+                )
+                try:
+                    retry_resp = await self.provider.generate(
+                        system_instruction=retry_instruction,
+                        user_prompt=user_prompt,
+                        temperature=0.0,
+                        max_output_tokens=request.max_output_tokens,
+                        timeout_seconds=request.timeout_seconds,
+                    )
+                    cleaned_retry = _sanitize_llm_answer(retry_resp.content)
+                    if is_reasoning_or_non_answer(cleaned_retry, request.query):
+                        cand_retry = clean_reasoning_text(retry_resp.content)
+                        if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
+                            cleaned_retry = cand_retry
+                    if not is_reasoning_or_non_answer(cleaned_retry, request.query):
+                        cleaned_content = cleaned_retry
+                    else:
+                        cleaned_content = (
+                            "Based on the provided documents, please refer to the cited material for the complete details."
+                        )
+                except Exception as retry_err:
+                    logger.warning("LLM generation retry failed: %s", retry_err)
 
         # 5b. Attribute supporting context items to uncited factual claims
         if request.context.items:

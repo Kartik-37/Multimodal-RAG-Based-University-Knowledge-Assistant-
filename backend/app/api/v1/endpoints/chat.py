@@ -8,7 +8,9 @@ Connects client requests to the application-level RAG orchestrator:
 - Maps domain exceptions cleanly to standard HTTP status codes without leaking internals.
 """
 
+import json
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -149,6 +151,7 @@ def _try_persist_turn(
     scope: str,
     active_conv: Conversation | None = None,
     kb_id: uuid.UUID | None = None,
+    document_id: uuid.UUID | None = None,
 ) -> None:
     """Safely persist conversation turn (user question and assistant response) with user ownership."""
     try:
@@ -161,6 +164,7 @@ def _try_persist_turn(
                 title=clean_title or "New Conversation",
                 scope=scope,
                 knowledge_base_id=kb_id,
+                document_id=document_id,
             )
             db.add(conv)
             db.flush()
@@ -177,7 +181,7 @@ def _try_persist_turn(
         db.flush()
 
         citations_data = [
-            c.model_dump() if hasattr(c, "model_dump") else c.dict()
+            c.model_dump(mode="json") if hasattr(c, "model_dump") else json.loads(json.dumps(c.dict(), default=str))
             for c in response.citations
         ]
         assistant_msg = ChatMessage(
@@ -198,6 +202,70 @@ def _try_persist_turn(
             db.rollback()
         except Exception:
             pass
+
+
+def resolve_conversational_query(
+    raw_query: str,
+    conversation: Conversation | None,
+) -> str:
+    """
+    Resolve anaphoric or follow-up queries using immediate prior conversation context.
+    Transforms queries like 'list that', 'explain that', 'tell me more', 'make it a table'
+    into self-contained retrieval queries.
+    """
+    if not conversation or not conversation.messages:
+        return raw_query
+
+    q_strip = raw_query.strip()
+    q_lower = q_strip.lower().rstrip(".?!")
+
+    followup_verbs = (
+        "list that",
+        "list it",
+        "list them",
+        "list all of that",
+        "list those",
+        "list out that",
+        "explain that",
+        "explain it",
+        "tell me more",
+        "tell me about that",
+        "what about that",
+        "what about it",
+        "make it a table",
+        "show that",
+        "show it",
+        "show them",
+        "expand on that",
+        "give more details",
+        "elaborate",
+    )
+    is_followup = any(q_lower == v or q_lower.startswith(v + " ") for v in followup_verbs)
+
+    words = q_lower.split()
+    if not is_followup and len(words) <= 4:
+        if any(w in ("that", "it", "them", "this", "those") for w in words):
+            is_followup = True
+
+    if not is_followup:
+        return raw_query
+
+    user_msgs = [m for m in conversation.messages if m.role == "user"]
+    if not user_msgs:
+        return raw_query
+
+    last_user_query = user_msgs[-1].content.strip()
+    if "list" in q_lower:
+        resolved = f"List all items and versions shown in {last_user_query}. Cite the source page."
+    elif "explain" in q_lower:
+        resolved = f"Explain in detail: {last_user_query}"
+    elif "table" in q_lower:
+        resolved = f"Present the details of {last_user_query} in a clear format."
+    else:
+        resolved = f"{last_user_query} - {raw_query}"
+
+    logger.info("Resolved conversational follow-up query '%s' -> '%s'", raw_query, resolved)
+    return resolved
 
 
 @router.post(
@@ -365,14 +433,19 @@ async def query_knowledge_base_legacy(
                 ),
             )
 
+    retrieval_query = payload.question
+    if active_conv is not None:
+        retrieval_query = resolve_conversational_query(payload.question, active_conv)
+
     rag_response = await _execute_orchestrated_chat(
         orchestrator=orchestrator,
         db=db,
         kb_id=target_kb,
-        question=payload.question,
+        question=retrieval_query,
         user_id=current_user.id,
         document_id=target_document_id,
     )
+    rag_response.query = payload.question
     _try_persist_turn(
         db=db,
         user_id=current_user.id,
@@ -381,6 +454,7 @@ async def query_knowledge_base_legacy(
         scope=scope,
         active_conv=active_conv,
         kb_id=payload.knowledge_base_id,
+        document_id=target_document_id,
     )
     return rag_response
 

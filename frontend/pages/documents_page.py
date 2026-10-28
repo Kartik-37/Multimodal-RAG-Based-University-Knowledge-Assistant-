@@ -278,13 +278,17 @@ def register_documents_page() -> None:
                         "Documents",
                         icon="description",
                         on_click=lambda: switch_view("documents"),
-                    ).props("flat dense no-caps")
+                    ).props("flat dense no-caps").classes(
+                        "view-switcher-pill view-switcher-pill-active" if current_view == "documents" else "view-switcher-pill"
+                    )
 
                     proc_tab_btn = ui.button(
                         "Processing",
                         icon="sync",
                         on_click=lambda: switch_view("processing"),
-                    ).props("flat dense no-caps")
+                    ).props("flat dense no-caps").classes(
+                        "view-switcher-pill" if current_view == "documents" else "view-switcher-pill view-switcher-pill-active"
+                    )
 
                 # Right side: Scope badge / Refresh indicator (composed cleanly on single row on mobile)
                 with ui.row().classes("items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto flex-nowrap"):
@@ -443,14 +447,14 @@ def register_documents_page() -> None:
                                 is_embedding_prog = (stage_upper == "EMBEDDING" and total > 0 and processed > 0 and status not in ("FAILED", "COMPLETED"))
 
                                 if status == "COMPLETED":
-                                    ui.linear_progress(value=1.0).props('rounded color="emerald" size="6px"').classes("w-full my-2")
+                                    ui.linear_progress(value=1.0, show_value=False).props('rounded color="emerald" size="6px"').classes("w-full my-2")
                                 elif status == "FAILED":
-                                    ui.linear_progress(value=1.0).props('rounded color="negative" size="6px"').classes("w-full my-2")
+                                    ui.linear_progress(value=1.0, show_value=False).props('rounded color="negative" size="6px"').classes("w-full my-2")
                                 elif is_embedding_prog:
                                     actual_frac = min(processed / total, 0.99)
-                                    ui.linear_progress(value=actual_frac).props('rounded color="primary" size="6px"').classes("w-full my-2")
+                                    ui.linear_progress(value=actual_frac, show_value=False).props('rounded color="primary" size="6px"').classes("w-full my-2")
                                 else:
-                                    ui.linear_progress(value=None).props('indeterminate rounded color="primary" size="6px"').classes("w-full my-2")
+                                    ui.linear_progress(value=None, show_value=False).props('indeterminate rounded color="primary" size="6px"').classes("w-full my-2")
 
                                 stage_text = format_stage_label(stage, processed, total, pct, status)
                                 with ui.row().classes("w-full justify-between items-center text-xs"):
@@ -839,11 +843,11 @@ def register_documents_page() -> None:
                                         is_embedding_prog = (stage_upper == "EMBEDDING" and ad.total_chunks > 0 and ad.embedded_chunks > 0)
                                         if is_embedding_prog:
                                             emb_pct = min(ad.embedded_chunks / ad.total_chunks, 0.99)
-                                            ui.linear_progress(value=emb_pct).props(
+                                            ui.linear_progress(value=emb_pct, show_value=False).props(
                                                 'rounded color="primary" size="6px"'
                                             ).classes("w-full")
                                         else:
-                                            ui.linear_progress(value=None).props(
+                                            ui.linear_progress(value=None, show_value=False).props(
                                                 'indeterminate rounded color="primary" size="6px"'
                                             ).classes("w-full")
 
@@ -1064,13 +1068,13 @@ def register_documents_page() -> None:
                                                     if stage_str == "EMBEDDING" and doc.total_chunks > 0 and doc.embedded_chunks > 0:
                                                         actual_frac = min(doc.embedded_chunks / doc.total_chunks, 0.99)
                                                         ui.linear_progress(
-                                                            value=actual_frac
+                                                            value=actual_frac, show_value=False
                                                         ).props('rounded color="primary" size="4px"').classes("w-full")
                                                         with ui.row().classes("w-full justify-between text-[10px] text-secondary-navy font-mono"):
                                                             ui.label(f"{doc.embedded_chunks}/{doc.total_chunks} chunks")
                                                             ui.label(f"{int(actual_frac * 100)}%")
                                                     else:
-                                                        ui.linear_progress(value=None).props(
+                                                        ui.linear_progress(value=None, show_value=False).props(
                                                             'indeterminate rounded color="primary" size="4px"'
                                                         ).classes("w-full")
                                                         with ui.row().classes("w-full justify-between text-[10px] text-secondary-navy"):
