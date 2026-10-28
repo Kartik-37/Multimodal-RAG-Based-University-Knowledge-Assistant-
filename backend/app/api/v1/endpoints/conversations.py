@@ -7,6 +7,7 @@ strict tenant isolation, ordering by recent activity, and cascade deletion.
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
@@ -20,6 +21,7 @@ from backend.app.schemas.conversation import (
     ConversationDetailDTO,
     ConversationSummaryDTO,
     CreateConversationRequest,
+    UpdateConversationRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,7 +92,7 @@ def create_conversation(
     """
     Create a new persistent conversation thread owned by the authenticated user.
     """
-    title = (payload.title or "").strip() or "New Conversation"
+    title = (payload.title or "").strip() or "New chat"
     if len(title) > 255:
         title = title[:252] + "..."
 
@@ -114,6 +116,68 @@ def create_conversation(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         messages=[],
+    )
+
+
+@router.patch(
+    "/{conversation_id}",
+    response_model=ConversationSummaryDTO,
+    summary="Update conversation title or scope",
+)
+def update_conversation(
+    conversation_id: uuid.UUID,
+    payload: UpdateConversationRequest,
+    current_user: AuthenticatedUser,
+    db: DatabaseSession,
+) -> ConversationSummaryDTO:
+    """
+    Update a conversation's title or scope.
+    Strictly isolated: returns 404 if not found or unauthorized.
+    """
+    conv = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found.",
+        )
+
+    if payload.title is not None:
+        clean_title = payload.title.strip()
+        if clean_title:
+            conv.title = clean_title[:255]
+    if payload.scope is not None:
+        conv.scope = payload.scope
+    if payload.knowledge_base_id is not None:
+        conv.knowledge_base_id = payload.knowledge_base_id
+    if payload.document_id is not None:
+        conv.document_id = payload.document_id
+
+    conv.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(conv)
+
+    count = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.conversation_id == conv.id)
+        .count()
+    )
+
+    return ConversationSummaryDTO(
+        id=conv.id,
+        title=conv.title,
+        scope=conv.scope,
+        knowledge_base_id=conv.knowledge_base_id,
+        document_id=conv.document_id,
+        message_count=count,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
     )
 
 

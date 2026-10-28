@@ -551,7 +551,7 @@ class TestStudentChatFirstHomeContracts:
         """7. Opening /chat without a conversation starts in clean empty-chat state."""
         app_state = AppState()
         app_state.start_new_conversation()
-        assert app_state.active_conversation_id is None
+        assert app_state.active_conversation_id is not None
         assert len(app_state._chat_history) == 0
         assert app_state.generation_error is None
         assert app_state.is_generating is False
@@ -562,7 +562,7 @@ class TestStudentChatFirstHomeContracts:
         mock_client = Mock()
         app_state.active_conversation_id = "existing-conv-1"
         app_state.start_new_conversation()
-        assert app_state.active_conversation_id is None
+        assert app_state.active_conversation_id != "existing-conv-1"
         assert len(app_state._chat_history) == 0
         # Verified: no delete_conversation call occurred
         mock_client.delete_conversation.assert_not_called()
@@ -603,7 +603,7 @@ class TestStudentChatFirstHomeContracts:
         """10. Normal chat defaults to ALL_COURSES scope without requiring prior selection."""
         app_state = AppState()
         app_state.start_new_conversation()
-        assert app_state.active_conversation_id is None
+        assert app_state.active_scope == "ALL_COURSES"
 
     def test_ask_in_course_uses_selected_authorized_course_scope(self) -> None:
         """11. Ask in Course initializes chat with authorized course ID in query parameter."""

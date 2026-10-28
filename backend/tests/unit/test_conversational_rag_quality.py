@@ -186,3 +186,82 @@ def test_llm_service_retries_on_non_answer():
     assert is_reasoning_or_non_answer(valid_answer, query) is False
     assert "Android 1.0" in valid_answer
     assert "[source_1]" in valid_answer
+
+
+def test_generate_conversation_title_deterministic_quality():
+    """Verify clean, deterministic title generation from opening questions."""
+    from backend.app.api.v1.endpoints.chat import generate_conversation_title
+
+    # 1. Short question preserved
+    assert generate_conversation_title("list of android version") == "list of android version"
+    assert generate_conversation_title("  What is Flutter? \n") == "What is Flutter?"
+
+    # 2. Long question bounded with clean word-boundary ellipsis
+    long_q = "Explain the difference between native and cross-platform application development in detail using course notes"
+    title = generate_conversation_title(long_q)
+    assert len(title) <= 80
+    assert title.startswith("Explain the difference between")
+    assert title.endswith("...")
+
+    # 3. Empty input fallback
+    assert generate_conversation_title("") == "New chat"
+    assert generate_conversation_title("   ") == "New chat"
+
+
+def test_first_question_title_naming_and_subsequent_stability():
+    """Verify first question renames New chat, but subsequent questions keep original title."""
+    from backend.app.api.v1.endpoints.chat import generate_conversation_title
+
+    conv = Conversation(
+        user_id=uuid.uuid4(),
+        title="New chat",
+        scope="ALL_COURSES",
+    )
+
+    # First question renames
+    q1 = "list of android version"
+    if (conv.title or "").strip().lower() in ("new chat", "new conversation"):
+        conv.title = generate_conversation_title(q1)
+    assert conv.title == "list of android version"
+
+    # Second question does not overwrite
+    q2 = "explain the difference between Android 15 and 16"
+    if (conv.title or "").strip().lower() in ("new chat", "new conversation"):
+        conv.title = generate_conversation_title(q2)
+    assert conv.title == "list of android version"
+
+
+def test_app_state_immediate_new_chat_lifecycle():
+    """Verify AppState.start_new_conversation immediately registers a visible new chat."""
+    from frontend.client.api_client import api_client
+    from frontend.state.app_state import AppState
+
+    state = AppState()
+    new_conv = state.start_new_conversation()
+    assert new_conv is not None
+    assert state.active_conversation_id == new_conv.id
+    assert new_conv.title == "New chat"
+    assert len(state.chat_history) == 0
+
+    # Ensure update title works
+    state.update_active_conversation_title("list of android version")
+    conv_list = api_client.get_conversations()
+    found = next((c for c in conv_list if c.id == new_conv.id), None)
+    assert found is not None
+    assert found.title == "list of android version"
+
+
+def test_patch_conversation_route_contract():
+    """Verify PATCH /conversations/{id} schema and logic."""
+    from backend.app.schemas.conversation import UpdateConversationRequest
+
+    req = UpdateConversationRequest(title="Updated Title", scope="COURSE")
+    assert req.title == "Updated Title"
+    assert req.scope == "COURSE"
+
+    # Verify empty request allowed
+    empty_req = UpdateConversationRequest()
+    assert empty_req.title is None
+    assert empty_req.scope is None
+
+

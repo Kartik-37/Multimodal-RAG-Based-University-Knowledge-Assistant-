@@ -4,6 +4,54 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-10-28
 
+**PHASE 13D -- RECENT CHAT TITLES, IMMEDIATE NEW CHAT CREATION & SUBMISSION DEDUPLICATION (COMPLETED & VERIFIED)**
+
+### Summary of Completed Objectives
+1. **Recent Chats Title Layout & Selection Refinement (`frontend/components/layout.py`):**
+   - Implemented fixed-height (`h-9` / 36px) rows with consistent horizontal padding (`px-2.5 rounded-lg box-border`).
+   - Eliminated layout shifting by applying a 1px border to both states: `border border-gold/40 bg-surface-elevated text-primary-navy font-semibold` when selected, and `border border-transparent text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated/60` when inactive.
+   - Applied strict single-line CSS text truncation directly to the title label: `min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;` without artificial Python character slicing.
+   - Kept full un-truncated titles available in hover tooltips (`.tooltip(c.title)`).
+   - Enforced non-shrinking chat icon (`ui.icon("chat_bubble_outline", size="14px").classes("shrink-0")`).
+   - Removed excess Quasar expansion indentation in admin sidebar by specifying `content-class="q-pa-none"`.
+
+2. **Immediate Visible New Chat Creation (`frontend/state/app_state.py`, `frontend/components/layout.py`, `frontend/client/api_client.py`):**
+   - Clicking sidebar **New Chat** immediately creates a persistent conversation record in the database (`api_client.create_conversation(title="New chat", scope=current_scope, ...)`).
+   - Immediately sets `state.active_conversation_id = new_conv.id`, clears visible messages, and notifies subscribers.
+   - Instantly renders the new `New chat` row at the top of Recent Chats highlighted as selected.
+   - Updates the browser URL to `/chat?conversation_id={new_conv.id}` so page reloads restore the clean new conversation thread.
+   - Added concurrency lock `_is_creating_conversation` to prevent accidental duplicate conversation records from rapid clicks.
+
+3. **Removed Duplicate Top-Right New Chat Header Button (`frontend/pages/chat_page.py`):**
+   - Eliminated the redundant top-right "New Chat" button from `header_container`.
+   - The primary sidebar "+ New Chat" button remains the single authoritative action across desktop and mobile.
+
+4. **Deterministic First-Question Title Generation & Stability (`backend/app/api/v1/endpoints/chat.py`, `backend/app/api/v1/endpoints/conversations.py`, `frontend/pages/chat_page.py`):**
+   - Added lightweight, deterministic title generator `generate_conversation_title(question: str)` that collapses whitespace, preserves exact user wording up to 80 characters, and cleanly bounds long questions without extra model latency.
+   - Implemented `PATCH /conversations/{conversation_id}` authenticated REST endpoint for metadata updates with strict user tenancy isolation.
+   - When the user sends their opening question, `state.update_active_conversation_title(new_title)` renames the conversation in the database and refreshes the Recent Chats sidebar immediately upon user submission (without waiting for answer synthesis).
+   - Backend `_try_persist_turn` checks prior user messages count: only `prior_user_msgs == 0` or default "New chat" titles are renamed; all subsequent questions strictly preserve the conversation title and conversation ID.
+
+5. **Submission Deduplication & Duplicate Turn Resolution (`frontend/pages/chat_page.py`):**
+   - Identified root cause of duplicated turns in screenshot: previous lack of immediate DB conversation creation caused subsequent sessions to append to the prior conversation `662961d5-e8bf-4f61-8d06-871aabcccea9` (recorded 27 minutes apart in DB).
+   - Added `is_submitting` concurrency guard to `chat_page.py` ensuring neither rapid Enter keypresses nor send button clicks can trigger concurrent queries.
+   - Bound Enter key with `keydown.enter.prevent` to prevent browser form event propagation.
+   - Guarded `on_custom_submit` against in-flight submissions.
+   - Cleaned up temporary `print()` debugging statements.
+
+6. **Targeted Verification & Behavioral Suite:**
+   - `backend/tests/unit/test_conversational_rag_quality.py`: 10/10 passed (0.55s).
+   - `backend/tests/frontend/unit/test_admin_overview_and_navigation_contracts.py`: 19/19 passed (0.49s).
+   - `backend/tests/frontend/unit/test_navigation_contracts.py`: 24/24 passed (0.33s).
+   - `backend/tests/frontend/unit/test_student_dashboard_contracts.py`: 23/23 passed (0.52s).
+   - `backend/tests/frontend/unit/test_student_profile_contracts.py`: 29/29 passed (0.54s).
+   - Total test suite: **105 / 105 tests passing** (1.54s).
+   - Live backend conversation lifecycle verified via API: Create ("New chat") -> List (top position) -> Patch title ("list of android version") -> Detail check -> Delete.
+
+---
+
+## Prior authoritative phase -- 2026-10-28
+
 **PHASE 13C -- UNIFIED ADMINISTRATOR SIDEBAR NAVIGATION & ARTIFACT CLEANUP (COMPLETED & VERIFIED)**
 
 ### Summary of Completed Objectives

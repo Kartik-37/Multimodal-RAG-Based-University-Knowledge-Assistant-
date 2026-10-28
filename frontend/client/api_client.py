@@ -1779,7 +1779,7 @@ class FrontendAPIClient:
 
     def create_conversation(
         self,
-        title: str = "New Conversation",
+        title: str = "New chat",
         scope: str = "ALL_COURSES",
         kb_id: str | None = None,
         doc_id: str | None = None,
@@ -1822,6 +1822,65 @@ class FrontendAPIClient:
             updated_at=str(data.get("updated_at", "")),
             messages=[],
         )
+
+    def update_conversation(
+        self,
+        conv_id: str,
+        title: str | None = None,
+        scope: str | None = None,
+        kb_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> ConversationSummaryDTO | None:
+        """Update conversation title or scope in persistent storage."""
+        if not self._should_use_real_http() or not self.get_session_token():
+            if conv_id in self._offline_conversations:
+                conv = self._offline_conversations[conv_id]
+                if title:
+                    conv.title = title
+                if scope:
+                    conv.scope = scope
+                return ConversationSummaryDTO(
+                    id=conv.id,
+                    title=conv.title,
+                    scope=conv.scope,
+                    knowledge_base_id=conv.knowledge_base_id,
+                    message_count=len(conv.messages),
+                    created_at=conv.created_at,
+                    updated_at=conv.updated_at,
+                )
+            return None
+
+        body: dict[str, Any] = {}
+        if title is not None:
+            body["title"] = title
+        if scope is not None:
+            body["scope"] = scope
+        if kb_id is not None:
+            body["knowledge_base_id"] = kb_id
+        if doc_id is not None:
+            body["document_id"] = doc_id
+
+        try:
+            resp = self._http.patch(f"/conversations/{conv_id}", json=body)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            return ConversationSummaryDTO(
+                id=str(data["id"]),
+                title=data["title"],
+                scope=data.get("scope", "ALL_COURSES"),
+                knowledge_base_id=str(data["knowledge_base_id"])
+                if data.get("knowledge_base_id")
+                else None,
+                document_id=str(data["document_id"])
+                if data.get("document_id")
+                else None,
+                message_count=data.get("message_count", 0),
+                created_at=str(data.get("created_at", "")),
+                updated_at=str(data.get("updated_at", "")),
+            )
+        except Exception:
+            return None
 
     def delete_conversation(self, conv_id: str) -> bool:
         """Delete a conversation thread."""

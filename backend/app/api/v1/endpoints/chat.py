@@ -143,6 +143,23 @@ async def _execute_orchestrated_chat(
         kb_id_ctx.reset(kb_token)
 
 
+def generate_conversation_title(question: str) -> str:
+    """
+    Generate a clean, readable conversation title deterministically from the first question.
+    Preserves user wording, collapses whitespace, and cleanly bounds length without model latency.
+    """
+    clean = " ".join(question.strip().split())
+    if not clean:
+        return "New chat"
+    if len(clean) <= 80:
+        return clean
+    truncated = clean[:75]
+    last_space = truncated.rfind(" ")
+    if last_space > 40:
+        truncated = truncated[:last_space]
+    return truncated.rstrip(",;:- ") + "..."
+
+
 def _try_persist_turn(
     db: DatabaseSession,
     user_id: uuid.UUID,
@@ -156,12 +173,10 @@ def _try_persist_turn(
     """Safely persist conversation turn (user question and assistant response) with user ownership."""
     try:
         if active_conv is None:
-            clean_title = question.strip()
-            if len(clean_title) > 60:
-                clean_title = clean_title[:57] + "..."
+            clean_title = generate_conversation_title(question)
             conv = Conversation(
                 user_id=user_id,
-                title=clean_title or "New Conversation",
+                title=clean_title,
                 scope=scope,
                 knowledge_base_id=kb_id,
                 document_id=document_id,
@@ -170,6 +185,13 @@ def _try_persist_turn(
             db.flush()
         else:
             conv = active_conv
+            prior_user_msgs = (
+                db.query(ChatMessage)
+                .filter(ChatMessage.conversation_id == conv.id, ChatMessage.role == "user")
+                .count()
+            )
+            if prior_user_msgs == 0 or (conv.title or "").strip().lower() in ("new chat", "new conversation"):
+                conv.title = generate_conversation_title(question)
 
         user_msg = ChatMessage(
             conversation_id=conv.id,

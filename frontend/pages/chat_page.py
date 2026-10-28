@@ -30,6 +30,20 @@ from frontend.components.source_viewer import open_source_viewer
 from frontend.state.app_state import state
 
 
+def generate_conversation_title(question: str) -> str:
+    """Generate a clean, readable conversation title deterministically from the first question."""
+    clean = " ".join(question.strip().split())
+    if not clean:
+        return "New chat"
+    if len(clean) <= 80:
+        return clean
+    truncated = clean[:75]
+    last_space = truncated.rfind(" ")
+    if last_space > 40:
+        truncated = truncated[:last_space]
+    return truncated.rstrip(",;:- ") + "..."
+
+
 def format_citation_links(
     text: str, citations: list[CitationDTO], message_id: str = ""
 ) -> str:
@@ -296,7 +310,11 @@ def register_chat_page() -> None:
 
             ui.on("citation_click", handle_citation_click)
 
+            is_submitting = {"value": False}
+
             def on_custom_submit(e: Any) -> None:
+                if is_submitting["value"] or state.is_generating:
+                    return
                 text = ""
                 raw = getattr(e, "args", e)
                 if isinstance(raw, list) and len(raw) > 0:
@@ -305,7 +323,6 @@ def register_chat_page() -> None:
                     text = raw
                 elif isinstance(raw, dict):
                     text = str(raw.get("question") or "")
-                print(f"[DEBUG on_custom_submit] received text: '{text}'", flush=True)
                 if text:
                     input_box.value = text
                     send_message(text)
@@ -331,6 +348,7 @@ def register_chat_page() -> None:
             # ------------------------------------------------------------------
             def handle_stop() -> None:
                 state.stop_generating()
+                is_submitting["value"] = False
                 try:
                     input_box.enable()
                 except Exception:
@@ -350,43 +368,68 @@ def register_chat_page() -> None:
 
             def send_message(question_text: str) -> None:
                 q_clean = question_text.strip()
-                print(f"[DEBUG send_message] called with: '{q_clean}', is_generating={state.is_generating}, scope={active_scope['scope']}, kb_id={active_scope.get('kb_id')}, doc_id={active_scope.get('doc_id')}", flush=True)
-                if not q_clean or state.is_generating:
-                    print(f"[DEBUG send_message] early return: q_clean='{q_clean}', is_generating={state.is_generating}", flush=True)
+                if not q_clean or is_submitting["value"] or state.is_generating:
                     return
                 scope_valid, scope_reason = is_scope_valid()
-                print(f"[DEBUG send_message] scope_valid={scope_valid}, scope_reason='{scope_reason}'", flush=True)
                 if not scope_valid:
                     ui.notify(scope_reason, type="warning")
                     return
-                state.add_user_message(q_clean)
-                render_action_btn()
+
+                is_submitting["value"] = True
                 try:
-                    input_box.disable()
-                except Exception:
-                    pass
-                render_messages()
-                render_evidence()
-                state.start_background_generation(
-                    kb_id=active_scope["kb_id"]
-                    if active_scope["scope"] in ("COURSE", "DOCUMENT")
-                    else None,
-                    question=q_clean,
-                    document_id=active_scope["doc_id"]
-                    if active_scope["scope"] == "DOCUMENT"
-                    else None,
-                    scope=active_scope["scope"],
-                )
-                render_action_btn()
+                    # 1. If no active conversation exists, create one immediately
+                    if not state.active_conversation_id:
+                        initial_title = generate_conversation_title(q_clean)
+                        try:
+                            new_conv = api_client.create_conversation(
+                                title=initial_title,
+                                scope=active_scope["scope"],
+                                kb_id=active_scope.get("kb_id"),
+                                doc_id=active_scope.get("doc_id"),
+                            )
+                            state.active_conversation_id = new_conv.id
+                            ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={new_conv.id}');")
+                        except Exception:
+                            pass
+                    else:
+                        # 2. If this is the first question in a 'New chat', update the title immediately
+                        user_msgs = [m for m in state.chat_history if getattr(m, "role", "") == "user"]
+                        if len(user_msgs) == 0:
+                            new_title = generate_conversation_title(q_clean)
+                            state.update_active_conversation_title(new_title)
+
+                    state.add_user_message(q_clean)
+                    render_action_btn()
+                    try:
+                        input_box.disable()
+                    except Exception:
+                        pass
+                    render_messages()
+                    render_evidence()
+                    state.start_background_generation(
+                        kb_id=active_scope["kb_id"]
+                        if active_scope["scope"] in ("COURSE", "DOCUMENT")
+                        else None,
+                        question=q_clean,
+                        document_id=active_scope["doc_id"]
+                        if active_scope["scope"] == "DOCUMENT"
+                        else None,
+                        scope=active_scope["scope"],
+                    )
+                    render_action_btn()
+                finally:
+                    is_submitting["value"] = False
 
             def handle_submit() -> None:
+                if is_submitting["value"] or state.is_generating:
+                    return
                 val = (input_box.value or "").strip()
                 if not val:
                     return
                 input_box.value = ""
                 send_message(val)
 
-            input_box.on("keydown.enter", handle_submit)
+            input_box.on("keydown.enter.prevent", handle_submit)
 
             def render_action_btn() -> None:
                 action_btn_container.clear()
@@ -424,6 +467,7 @@ def register_chat_page() -> None:
                 if was_generating["value"] != is_now:
                     was_generating["value"] = is_now
                     if not is_now:
+                        is_submitting["value"] = False
                         try:
                             input_box.enable()
                         except Exception:
@@ -941,18 +985,9 @@ def register_chat_page() -> None:
                                 ui.icon("description", size="12px").classes("text-gold")
                                 ui.label(doc_name).classes("truncate max-w-[150px]")
 
-                    # Header right action (Quick New Chat)
+                    # Header right spacer (New Chat is prominently placed in primary sidebar)
                     with ui.row().classes("items-center gap-2 ml-auto shrink-0"):
-                        ui.button(
-                            "New Chat",
-                            icon="add",
-                            on_click=lambda: (
-                                state.start_new_conversation(),
-                                ui.run_javascript("window.history.replaceState({}, '', '/chat');"),
-                            ),
-                        ).props("flat dense no-caps").classes(
-                            "text-xs font-semibold text-primary-navy hover:text-gold hover:bg-surface-elevated px-2.5 py-1 rounded-lg border border-subtle transition-colors flex items-center gap-1"
-                        ).props('aria-label="New chat"')
+                        pass
 
             # ------------------------------------------------------------------
             # Render Messages & Academic Empty State
@@ -1109,7 +1144,7 @@ def register_chat_page() -> None:
                 else:
                     active_scope["selected_doc"] = None
 
-                if state.active_conversation_id is None and not state.chat_history:
+                if not state.chat_history:
                     try:
                         input_box.value = ""
                         input_box.enable()

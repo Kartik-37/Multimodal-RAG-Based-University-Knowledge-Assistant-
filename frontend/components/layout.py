@@ -209,17 +209,22 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                 ).classes("lg:hidden text-secondary-navy hover:text-primary-navy")
 
             def handle_new_chat() -> None:
-                state.start_new_conversation()
+                new_conv = state.start_new_conversation()
                 ui.run_javascript("""
                     if (window.innerWidth < 1024) {
                         const closeBtn = document.querySelector('.q-drawer .lg\\:hidden');
                         if (closeBtn) closeBtn.click();
                     }
                 """)
+                conv_id = new_conv.id if new_conv else ""
                 if active_route != "/chat":
-                    ui.navigate.to("/chat")
+                    url = f"/chat?conversation_id={conv_id}" if conv_id else "/chat"
+                    ui.navigate.to(url)
                 else:
-                    ui.run_javascript("window.history.replaceState({}, '', '/chat');")
+                    if conv_id:
+                        ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={conv_id}');")
+                    else:
+                        ui.run_javascript("window.history.replaceState({}, '', '/chat');")
 
             def render_conversation_items(container: ui.column) -> None:
                 container.clear()
@@ -232,7 +237,7 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
 
                     if not convs:
                         ui.label("No saved chats yet").classes(
-                            "text-xs text-secondary-navy/60 italic px-2 py-2"
+                            "text-xs text-secondary-navy/60 italic px-2.5 py-2"
                         )
                         return
 
@@ -242,14 +247,16 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                             and state.active_conversation_id == c.id
                         )
                         row_cls = (
-                            "w-full items-center justify-between px-2 py-1.5 rounded-lg transition-colors cursor-pointer group "
+                            "w-full h-9 items-center justify-between px-2.5 rounded-lg transition-colors cursor-pointer group box-border border "
                         )
                         if is_active:
-                            row_cls += "bg-surface-elevated text-primary-navy font-semibold border border-gold/50"
+                            row_cls += "bg-surface-elevated text-primary-navy font-semibold border-gold/40 shadow-none"
                         else:
-                            row_cls += "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated/60"
+                            row_cls += "border-transparent text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated/60"
 
                         def on_click_conv(conv_id=c.id):
+                            if state.active_conversation_id == conv_id:
+                                return
                             try:
                                 state.load_conversation(conv_id)
                             except Exception as exc:
@@ -268,15 +275,14 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                                 ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={conv_id}');")
 
                         with ui.row().classes(row_cls).on("click", on_click_conv).tooltip(c.title):
-                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                            with ui.row().classes("items-center gap-2 min-w-0 flex-1 h-full"):
                                 ui.icon("chat_bubble_outline", size="14px").classes(
                                     "text-gold shrink-0" if is_active else "text-secondary-navy/70 shrink-0"
                                 )
-                                display_title = c.title
-                                if len(display_title) > 22:
-                                    display_title = display_title[:20] + "..."
-                                ui.label(display_title).classes(
-                                    "text-xs truncate font-sans"
+                                ui.label(c.title).classes(
+                                    "text-xs font-sans truncate min-w-0 flex-1 leading-none select-none"
+                                ).style(
+                                    "min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;"
                                 )
 
                             def on_delete(e: Any, conv_id=c.id):
@@ -288,7 +294,7 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                             ui.button(icon="delete_outline", on_click=on_delete).props(
                                 "flat round dense"
                             ).classes(
-                                "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity"
+                                "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity p-0.5"
                             ).props('aria-label="Delete conversation"')
 
             def render_chat_history_sidebar(nav_items: list[tuple[str, str, str]]) -> None:
@@ -403,10 +409,10 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                                         with ui.expansion("Recent Chats", icon="history", value=True).classes(
                                             "w-full text-xs text-secondary-navy font-medium rounded-lg"
                                         ).props(
-                                            'dense dense-toggle header-class="text-[10px] font-bold text-gold tracking-widest uppercase font-sans py-1 px-1.5"'
+                                            'dense dense-toggle header-class="text-[10px] font-bold text-gold tracking-widest uppercase font-sans py-1 px-1.5" content-class="q-pa-none"'
                                         ):
                                             admin_hist_list = ui.column().classes(
-                                                "w-full flex flex-col gap-1 pr-1 max-h-56 overflow-y-auto min-h-0"
+                                                "w-full flex flex-col gap-0.5 pr-0.5 max-h-56 overflow-y-auto min-h-0"
                                             )
                                             render_conversation_items(admin_hist_list)
                                             state.subscribe(lambda: render_conversation_items(admin_hist_list))

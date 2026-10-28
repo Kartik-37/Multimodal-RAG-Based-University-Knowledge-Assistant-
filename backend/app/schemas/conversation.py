@@ -72,3 +72,15 @@ class CreateConversationRequest(BaseModel):
     scope: str = Field(default="ALL_COURSES", max_length=50)
     knowledge_base_id: uuid.UUID | None = None
     document_id: uuid.UUID | None = None
+
+
+class UpdateConversationRequest(BaseModel):
+    """
+    Payload for modifying an existing conversation thread's metadata.
+    """
+
+    title: str | None = Field(default=None, max_length=255)
+    scope: str | None = Field(default=None, max_length=50)
+    knowledge_base_id: uuid.UUID | None = None
+    document_id: uuid.UUID | None = None
+

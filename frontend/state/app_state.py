@@ -252,20 +252,63 @@ class AppState:
         self._chat_history.append(stopped_msg)
         self.notify()
 
-    def start_new_conversation(self) -> None:
+    def start_new_conversation(self) -> Any:
         """
-        Start a fresh new conversation thread in draft mode without writing fake history.
+        Immediately create a new persistent conversation with title 'New chat'
+        in the database, preserve active course/document scope, set as active,
+        and notify listeners to update Recent Chats immediately.
         """
         if self._is_generating:
             self.stop_generating()
-        self._active_conversation_id = None
-        self._chat_history.clear()
-        self._selected_citation = None
-        self._generation_error = None
-        self._active_scope = "ALL_COURSES"
-        self._active_kb_id = None
-        self._active_doc_id = None
-        self.notify()
+
+        if getattr(self, "_is_creating_conversation", False):
+            return None
+
+        self._is_creating_conversation = True
+        try:
+            current_scope = self.active_scope
+            current_kb_id = self.active_kb_id
+            current_doc_id = self.active_doc_id
+
+            new_conv = api_client.create_conversation(
+                title="New chat",
+                scope=current_scope,
+                kb_id=current_kb_id,
+                doc_id=current_doc_id,
+            )
+            self._active_conversation_id = new_conv.id
+            self._chat_history = []
+            self._selected_citation = None
+            self._generation_error = None
+            self.notify()
+            return new_conv
+        except Exception:
+            self._active_conversation_id = None
+            self._chat_history = []
+            self._selected_citation = None
+            self._generation_error = None
+            self.notify()
+            return None
+        finally:
+            self._is_creating_conversation = False
+
+    def update_active_conversation_title(self, new_title: str) -> None:
+        """
+        Update the active conversation's title in persistent storage and notify listeners.
+        """
+        if not self._active_conversation_id:
+            return
+        clean_title = new_title.strip()
+        if not clean_title:
+            return
+        try:
+            api_client.update_conversation(
+                self._active_conversation_id,
+                title=clean_title,
+            )
+            self.notify()
+        except Exception:
+            pass
 
     def load_conversation(self, conv_id: str) -> None:
         """
@@ -356,8 +399,17 @@ class AppState:
         self._chat_history.append(msg)
 
     def clear_chat(self) -> None:
-        """Legacy alias: reset conversation history and draft new chat."""
-        self.start_new_conversation()
+        """Clear conversation history, reset scope to ALL_COURSES, and reset active conversation."""
+        if self._is_generating:
+            self.stop_generating()
+        self._active_conversation_id = None
+        self._chat_history.clear()
+        self._selected_citation = None
+        self._generation_error = None
+        self._active_scope = "ALL_COURSES"
+        self._active_kb_id = None
+        self._active_doc_id = None
+        self.notify()
 
 
 _session_app_states: dict[str, AppState] = {}

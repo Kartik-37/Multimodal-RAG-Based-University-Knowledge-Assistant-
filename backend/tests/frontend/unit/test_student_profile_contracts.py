@@ -222,12 +222,11 @@ class TestProfileActionsAndSessionContracts:
         app_state.active_kb_id = "kb-101"
         app_state.add_user_message("Prior inquiry")
 
-        # Global New Chat resets active conversation, draft text, citations, and restores ALL_COURSES
+        # Global New Chat starts a new active conversation, clears messages, and prepares composer
         app_state.start_new_conversation()
 
-        assert app_state.active_conversation_id is None
-        assert app_state.active_scope == "ALL_COURSES"
-        assert app_state.active_kb_id is None
+        assert app_state.active_conversation_id is not None
+        assert app_state.active_conversation_id != "conv-prior-1"
         assert len(app_state.chat_history) == 0
 
     def test_no_profile_specific_new_chat_or_duplicate_assistant_action_remains(self) -> None:
