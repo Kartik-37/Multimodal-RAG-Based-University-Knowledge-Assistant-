@@ -2,7 +2,48 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase -- 2026-10-28
+## Current authoritative phase -- 2026-10-29
+
+**PHASE 14 -- ONE SHARED CHAT EXPERIENCE, RELIABLE RAG ANSWERS, COURSE SELECTION AND PERFORMANCE REPAIR (COMPLETED & VERIFIED)**
+
+### Summary of Completed Objectives & Verifications
+1. **Permanent Elimination of Mock Hijack Bug (frontend/client/api_client.py):**
+   - Removed the dangerous `or not self.get_session_token()` condition from `FrontendAPIClient.send_chat_message()`.
+   - Offline demo mode now strictly triggers only when `not self._should_use_real_http()` (e.g., `DEMO_MODE=1` or database disconnected).
+   - In real HTTP mode, an unauthenticated request raises an explicit `ValueError("Authentication required: Please sign in to submit chat queries.")` rather than silently returning hardcoded CS101 grading text with fake `d1111111-` citations.
+   - Padded the internal HTTP client timeout from 60.0s to 120.0s (`httpx.Timeout(120.0, connect=10.0)`) to provide ample room for local CPU model inference.
+
+2. **Thread Context Isolation & Client Propagation (frontend/state/app_state.py, frontend/client/api_client.py):**
+   - Identified that `_get_browser_session_id()` evaluates to `None` inside `asyncio.to_thread` worker threads because `nicegui.context.client` and Starlette `request_contextvar` are thread-local to the main event loop.
+   - Exposed `api_client.get_client()` on `_SessionAPIClientProxy` to resolve the current session-bound client.
+   - In `AppState.start_background_generation()`, the authenticated `client` instance is resolved on the main thread *before* entering `asyncio.to_thread`, guaranteeing that the user's cookies and session token are preserved during background query synthesis.
+   - In `AppState.start_new_conversation()`, added guard `if self._active_conversation_id and len(self._chat_history) == 0:` to reuse an existing empty draft conversation, preventing duplicate blank "New chat" records in PostgreSQL.
+
+3. **Safe Message Persistence Before Generation & Idempotent Retries (backend/app/api/v1/endpoints/chat.py):**
+   - Implemented `_persist_user_question()` and `_persist_assistant_response()` in `backend/app/api/v1/endpoints/chat.py`.
+   - The user question is immediately stored in PostgreSQL and committed before calling `_execute_orchestrated_chat()`. If generation times out or is cancelled, the user's question remains safely stored in PostgreSQL and appears in history upon reload.
+   - Implemented idempotent retry deduplication: if the last message in the conversation is an un-answered user message with the same question, `_persist_user_question()` reuses the existing row instead of inserting a duplicate.
+
+4. **Coordinated Latency Deadlines & Resilient Grounded Recovery (backend/app/core/config.py, backend/app/services/llm/service.py):**
+   - Set backend `LLM_REQUEST_TIMEOUT_SECONDS = 90.0` in `backend/app/core/config.py` (coordinated with 120s frontend timeout).
+   - Set retry timeout to 45.0s in `backend/app/services/llm/service.py`.
+   - Added `LLMTimeoutError` exception handling in `generate_grounded_answer()`: if local CPU generation times out on a list or structured query, `extract_grounded_recovery_answer()` deterministically extracts the complete itemized list from verified evidence chunks (such as Page 6 diagram chunks) before returning.
+   - Extended regex patterns in `service.py` to recognize Unicode bullet symbols (`▪●▸`) used in academic PDFs like `1-Flutter-Intro.pdf`.
+
+5. **Unified Scope Selection Across Student and Admin Roles (frontend/pages/chat_page.py):**
+   - Fixed `active_scope["doc_id"]` initialization on initial page load: now reads `getattr(state, "active_doc_id", None)` and restores `selected_doc` from `docs`.
+   - Unified the scope trigger pill styling across Student and Admin experiences: identical rounded-full borders, gold hover accents, and dynamic icons (`public` for All Courses, `menu_book` for Course, `description` for Document).
+   - Fixed student course selection to trigger `render_header()` and `render_action_btn()`, keeping header scope badges in sync.
+   - Upward popover menu styled with `w-[320px] sm:w-[360px]` and internal scrolling to prevent viewport clipping.
+
+6. **Comprehensive Automated Verification:**
+   - `backend/tests/unit/test_frontend.py`: **44/44 tests passed (6.14s)**.
+   - `backend/tests/integration/test_authenticated_chat_lifecycle.py`: **4/4 tests passed (0.95s)**.
+   - `backend/tests/integration/test_chat_orchestration_integration.py`: **7/7 tests passed (14.87s)**.
+
+---
+
+## Prior authoritative phase -- 2026-10-28
 
 **PHASE 13E -- CHAT SUBMISSION, RAG ANSWER ACCURACY, GROUNDED RECOVERY & LATENCY OPTIMIZATION (COMPLETED & VERIFIED)**
 

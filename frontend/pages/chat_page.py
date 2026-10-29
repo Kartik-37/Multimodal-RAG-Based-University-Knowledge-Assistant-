@@ -137,7 +137,7 @@ def register_chat_page() -> None:
             active_scope: dict[str, Any] = {
                 "scope": state.active_scope,
                 "kb_id": state.active_kb_id,
-                "doc_id": None,
+                "doc_id": getattr(state, "active_doc_id", None),
                 "docs": [],
                 "selected_doc": None,
             }
@@ -155,6 +155,8 @@ def register_chat_page() -> None:
 
             if active_scope["kb_id"]:
                 load_docs_for_current_kb()
+            if active_scope.get("doc_id") and active_scope.get("docs"):
+                active_scope["selected_doc"] = next((d for d in active_scope["docs"] if d.id == active_scope["doc_id"]), None)
 
             # Evidence Side Drawer / Modal
             evidence_dialog = ui.dialog().props("position=right")
@@ -521,6 +523,8 @@ def register_chat_page() -> None:
                 active_scope["kb_id"] = kb_val
                 state.set_scope(scope_val, kb_val)
                 render_composer_scope()
+                render_header()
+                render_action_btn()
 
             def render_composer_scope() -> None:
                 composer_scope_container.clear()
@@ -538,6 +542,7 @@ def register_chat_page() -> None:
                         current_label = (
                             current_course.name if current_course else "All available courses"
                         )
+                        pill_icon = "public" if is_all_courses else "menu_book"
 
                         # Scope Pill Selector Trigger inside composer bottom toolbar
                         btn_classes = (
@@ -554,7 +559,7 @@ def register_chat_page() -> None:
                             .props('aria-label="Search scope selector"')
                         ):
                             with ui.row().classes("items-center gap-2 no-wrap"):
-                                ui.icon("school", size="16px").classes("text-gold shrink-0")
+                                ui.icon(pill_icon, size="16px").classes("text-gold shrink-0")
                                 ui.label(current_label).classes(
                                     "max-w-[160px] xs:max-w-[220px] sm:max-w-[320px] md:max-w-[380px] truncate text-left font-sans text-[13px] sm:text-sm font-medium leading-none"
                                 )
@@ -566,7 +571,7 @@ def register_chat_page() -> None:
                             with ui.menu().props(
                                 'anchor="top start" self="bottom start" :offset="[0, 56]"'
                             ).classes(
-                                "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[290px] sm:w-[340px] max-w-[calc(100vw-2rem)]"
+                                "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[320px] sm:w-[360px] max-w-[calc(100vw-2rem)]"
                             ) as scope_menu:
                                 with ui.column().classes("w-full gap-1.5"):
                                     # Header & Reset to All

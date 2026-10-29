@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 from backend.app.schemas.llm import (
     LLMGenerationRequest,
     LLMGenerationResponse,
+    LLMProviderResponse,
 )
 from backend.app.services.llm.base import BaseLLMProvider
+from backend.app.services.llm.exceptions import LLMTimeoutError
 from backend.app.services.llm.ollama_provider import OllamaLLMProvider
 from backend.app.services.llm.prompt_builder import GroundedPromptBuilder
 
@@ -161,7 +163,7 @@ def extract_grounded_recovery_answer(
             bullet_lines = [
                 line.strip()
                 for line in text.splitlines()
-                if re.match(r"^[-*•\d+.]\s+[A-Za-z0-9]", line.strip())
+                if re.match(r"^[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line.strip())
             ]
             if len(bullet_lines) >= 3:
                 header = f"Based on [{source_tag}], the details are:\n"
@@ -203,7 +205,7 @@ def _sanitize_llm_answer(text: str) -> str:
 
     # 2. Check for explicit conclusion marker, unless content already contains an itemized list
     raw_lines = cleaned.splitlines()
-    has_itemized_list = any(re.match(r"^\s*[-*•\d+.]\s+[A-Za-z0-9]", line) for line in raw_lines)
+    has_itemized_list = any(re.match(r"^\s*[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line) for line in raw_lines)
 
     if not has_itemized_list:
         therefore_match = re.search(
@@ -474,58 +476,78 @@ class LLMGenerationService:
 
         # 4. Invoke the configured LLM provider
         start_time = time.perf_counter()
-        provider_resp = await self.provider.generate(
-            system_instruction=system_instruction,
-            user_prompt=user_prompt,
-            temperature=request.temperature,
-            max_output_tokens=request.max_output_tokens,
-            timeout_seconds=request.timeout_seconds,
-        )
-        latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-        logger.debug("Raw LLM response before sanitization length: %d chars", len(provider_resp.content))
+        provider_resp: LLMProviderResponse | None = None
+        try:
+            provider_resp = await self.provider.generate(
+                system_instruction=system_instruction,
+                user_prompt=user_prompt,
+                temperature=request.temperature,
+                max_output_tokens=request.max_output_tokens,
+                timeout_seconds=request.timeout_seconds,
+            )
+            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
+            logger.debug("Raw LLM response before sanitization length: %d chars", len(provider_resp.content))
 
-        # 5. Sanitize answer to eliminate leaked CoT rambling
-        cleaned_content = _sanitize_llm_answer(provider_resp.content)
+            # 5. Sanitize answer to eliminate leaked CoT rambling
+            cleaned_content = _sanitize_llm_answer(provider_resp.content)
 
-        # 5a. Detect reasoning leak or non-answer preamble and attempt extraction, recovery, or bounded retry
-        if is_reasoning_or_non_answer(cleaned_content, request.query):
-            candidate = clean_reasoning_text(provider_resp.content)
-            if candidate != provider_resp.content and not is_reasoning_or_non_answer(candidate, request.query):
-                cleaned_content = candidate
-            else:
-                # Deterministic structured extractive recovery from assembled context evidence
-                recovery_ans = extract_grounded_recovery_answer(request.query, request.context)
-                if recovery_ans and not is_reasoning_or_non_answer(recovery_ans, request.query):
-                    cleaned_content = recovery_ans
+            # 5a. Detect reasoning leak or non-answer preamble and attempt extraction, recovery, or bounded retry
+            if is_reasoning_or_non_answer(cleaned_content, request.query):
+                candidate = clean_reasoning_text(provider_resp.content)
+                if candidate != provider_resp.content and not is_reasoning_or_non_answer(candidate, request.query):
+                    cleaned_content = candidate
                 else:
-                    retry_instruction = (
-                        "You are an academic knowledge assistant. Output ONLY the factual answer or itemized list citing [source_X]. "
-                        "STRICT RULE: Do NOT say 'The answer should be', do NOT say 'We can answer by', and do NOT include internal reasoning or deliberation. "
-                        "If the provided evidence does not contain sufficient facts to answer the question, state: 'Based on the provided documents, there is not enough information to answer this question.' "
-                        "Otherwise, output the factual items directly from the evidence:"
-                    )
-                    try:
-                        retry_resp = await self.provider.generate(
-                            system_instruction=retry_instruction,
-                            user_prompt=user_prompt,
-                            temperature=0.0,
-                            max_output_tokens=min(request.max_output_tokens or 384, 384),
-                            timeout_seconds=min(request.timeout_seconds or 60.0, 60.0),
+                    # Deterministic structured extractive recovery from assembled context evidence
+                    recovery_ans = extract_grounded_recovery_answer(request.query, request.context)
+                    if recovery_ans and not is_reasoning_or_non_answer(recovery_ans, request.query):
+                        cleaned_content = recovery_ans
+                    else:
+                        retry_instruction = (
+                            "You are an academic knowledge assistant. Output ONLY the factual answer or itemized list citing [source_X]. "
+                            "STRICT RULE: Do NOT say 'The answer should be', do NOT say 'We can answer by', and do NOT include internal reasoning or deliberation. "
+                            "If the provided evidence does not contain sufficient facts to answer the question, state: 'Based on the provided documents, there is not enough information to answer this question.' "
+                            "Otherwise, output the factual items directly from the evidence:"
                         )
-                        cleaned_retry = _sanitize_llm_answer(retry_resp.content)
-                        if is_reasoning_or_non_answer(cleaned_retry, request.query):
-                            cand_retry = clean_reasoning_text(retry_resp.content)
-                            if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
-                                cleaned_retry = cand_retry
-                        if not is_reasoning_or_non_answer(cleaned_retry, request.query):
-                            cleaned_content = cleaned_retry
-                        else:
+                        try:
+                            retry_resp = await self.provider.generate(
+                                system_instruction=retry_instruction,
+                                user_prompt=user_prompt,
+                                temperature=0.0,
+                                max_output_tokens=min(request.max_output_tokens or 384, 384),
+                                timeout_seconds=min(request.timeout_seconds or 45.0, 45.0),
+                            )
+                            cleaned_retry = _sanitize_llm_answer(retry_resp.content)
+                            if is_reasoning_or_non_answer(cleaned_retry, request.query):
+                                cand_retry = clean_reasoning_text(retry_resp.content)
+                                if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
+                                    cleaned_retry = cand_retry
+                            if not is_reasoning_or_non_answer(cleaned_retry, request.query):
+                                cleaned_content = cleaned_retry
+                                provider_resp = retry_resp
+                            else:
+                                rec2 = extract_grounded_recovery_answer(request.query, request.context)
+                                cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
+                        except Exception as retry_err:
+                            logger.warning("LLM generation retry failed: %s", retry_err)
                             rec2 = extract_grounded_recovery_answer(request.query, request.context)
                             cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
-                    except Exception as retry_err:
-                        logger.warning("LLM generation retry failed: %s", retry_err)
-                        rec2 = extract_grounded_recovery_answer(request.query, request.context)
-                        cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
+        except LLMTimeoutError as timeout_exc:
+            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
+            logger.warning("Initial LLM generation timed out after %s ms; attempting grounded recovery", latency_ms)
+            rec_ans = extract_grounded_recovery_answer(request.query, request.context)
+            if rec_ans and not is_reasoning_or_non_answer(rec_ans, request.query):
+                cleaned_content = rec_ans
+            else:
+                raise timeout_exc
+
+        if provider_resp is None:
+            provider_resp = LLMProviderResponse(
+                content=cleaned_content,
+                model=getattr(self.provider, "model_name", "qwen3:4b"),
+                prompt_tokens=0,
+                output_tokens=len(cleaned_content.split()),
+                safe_metadata={"recovery_used": True},
+            )
 
         # 5b. Attribute supporting context items to uncited factual claims
         if request.context.items:

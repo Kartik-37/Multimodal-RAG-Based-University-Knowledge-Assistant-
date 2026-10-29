@@ -167,7 +167,7 @@ class Settings(BaseSettings):
         description="Maximum generation token budget for the model response.",
     )
     LLM_REQUEST_TIMEOUT_SECONDS: float = Field(
-        default=180.0,
+        default=90.0,
         ge=1.0,
         le=300.0,
         description="Timeout in seconds for LLM generation requests.",

@@ -175,11 +175,14 @@ class AppState:
         self._is_cancelled = False
         self._generation_error = None
         target_conv_id = self._active_conversation_id
+        # Capture the active session-bound client on the main event loop thread
+        # where the NiceGUI browser request context is available.
+        client = api_client.get_client() if hasattr(api_client, "get_client") else api_client._get_client()
 
         async def _run_async_query() -> None:
             try:
                 resp = await asyncio.to_thread(
-                    api_client.send_chat_message,
+                    client.send_chat_message,
                     kb_id=kb_id,
                     question=question,
                     document_id=document_id,
@@ -197,7 +200,7 @@ class AppState:
                 if resp.conversation_id:
                     self._active_conversation_id = resp.conversation_id
                 elif not self._active_conversation_id:
-                    convs = api_client.get_conversations()
+                    convs = client.get_conversations()
                     if convs:
                         self._active_conversation_id = convs[0].id
 
@@ -268,6 +271,11 @@ class AppState:
         """
         if self._is_generating:
             self.stop_generating()
+
+        if self._active_conversation_id and len(self._chat_history) == 0:
+            # Already in an empty new conversation; preserve it without creating duplicate empty rows
+            self.notify()
+            return None
 
         if getattr(self, "_is_creating_conversation", False):
             return None

@@ -160,6 +160,97 @@ def generate_conversation_title(question: str) -> str:
     return truncated.rstrip(",;:- ") + "..."
 
 
+def _persist_user_question(
+    db: DatabaseSession,
+    user_id: uuid.UUID,
+    question: str,
+    scope: str,
+    active_conv: Conversation | None = None,
+    kb_id: uuid.UUID | None = None,
+    document_id: uuid.UUID | None = None,
+) -> tuple[Conversation, ChatMessage]:
+    """
+    Safely persist or resolve conversation and user message BEFORE generation.
+    Handles idempotent retries without duplicating user message.
+    """
+    if active_conv is None:
+        clean_title = generate_conversation_title(question)
+        conv = Conversation(
+            user_id=user_id,
+            title=clean_title,
+            scope=scope,
+            knowledge_base_id=kb_id,
+            document_id=document_id,
+        )
+        db.add(conv)
+        db.flush()
+    else:
+        conv = active_conv
+        prior_user_msgs = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.conversation_id == conv.id, ChatMessage.role == "user")
+            .count()
+        )
+        if prior_user_msgs == 0 or (conv.title or "").strip().lower() in ("new chat", "new conversation"):
+            conv.title = generate_conversation_title(question)
+
+    # Check if the last message in this conversation was already this exact question without an answer (retry scenario)
+    last_msg = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.conversation_id == conv.id)
+        .order_by(ChatMessage.created_at.desc())
+        .first()
+    )
+    if last_msg and last_msg.role == "user" and last_msg.content.strip() == question.strip():
+        # Reuse existing un-answered user message
+        user_msg = last_msg
+    else:
+        user_msg = ChatMessage(
+            conversation_id=conv.id,
+            role="user",
+            content=question,
+            citations=[],
+        )
+        db.add(user_msg)
+
+    conv.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(conv)
+    db.refresh(user_msg)
+    return conv, user_msg
+
+
+def _persist_assistant_response(
+    db: DatabaseSession,
+    conv: Conversation,
+    response: ChatQueryResponse,
+) -> None:
+    """Safely append assistant response to persistent conversation and commit."""
+    try:
+        citations_data = [
+            c.model_dump(mode="json") if hasattr(c, "model_dump") else json.loads(json.dumps(c.dict(), default=str))
+            for c in response.citations
+        ]
+        assistant_msg = ChatMessage(
+            conversation_id=conv.id,
+            role="assistant",
+            content=response.answer,
+            citations=citations_data,
+            is_grounded=response.grounding.is_grounded if response.grounding else None,
+            grounding_status=response.grounding.status if response.grounding else None,
+        )
+        db.add(assistant_msg)
+        conv.updated_at = datetime.now(UTC)
+        db.commit()
+        response.metadata["conversation_id"] = str(conv.id)
+    except Exception as exc:
+        logger.warning("Could not persist assistant response to database: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 def _try_persist_turn(
     db: DatabaseSession,
     user_id: uuid.UUID,
@@ -172,52 +263,20 @@ def _try_persist_turn(
 ) -> None:
     """Safely persist conversation turn (user question and assistant response) with user ownership."""
     try:
-        if active_conv is None:
-            clean_title = generate_conversation_title(question)
-            conv = Conversation(
-                user_id=user_id,
-                title=clean_title,
-                scope=scope,
-                knowledge_base_id=kb_id,
-                document_id=document_id,
-            )
-            db.add(conv)
-            db.flush()
-        else:
-            conv = active_conv
-            prior_user_msgs = (
-                db.query(ChatMessage)
-                .filter(ChatMessage.conversation_id == conv.id, ChatMessage.role == "user")
-                .count()
-            )
-            if prior_user_msgs == 0 or (conv.title or "").strip().lower() in ("new chat", "new conversation"):
-                conv.title = generate_conversation_title(question)
-
-        user_msg = ChatMessage(
-            conversation_id=conv.id,
-            role="user",
-            content=question,
-            citations=[],
+        conv, _ = _persist_user_question(
+            db=db,
+            user_id=user_id,
+            question=question,
+            scope=scope,
+            active_conv=active_conv,
+            kb_id=kb_id,
+            document_id=document_id,
         )
-        db.add(user_msg)
-        db.flush()
-
-        citations_data = [
-            c.model_dump(mode="json") if hasattr(c, "model_dump") else json.loads(json.dumps(c.dict(), default=str))
-            for c in response.citations
-        ]
-        assistant_msg = ChatMessage(
-            conversation_id=conv.id,
-            role="assistant",
-            content=response.answer,
-            citations=citations_data,
-            is_grounded=response.grounding.is_grounded,
-            grounding_status=response.grounding.status,
+        _persist_assistant_response(
+            db=db,
+            conv=conv,
+            response=response,
         )
-        db.add(assistant_msg)
-        conv.updated_at = datetime.now(UTC)
-        db.commit()
-        response.metadata["conversation_id"] = str(conv.id)
     except Exception as exc:
         logger.warning("Could not persist chat turn to database: %s", exc)
         try:
@@ -459,6 +518,18 @@ async def query_knowledge_base_legacy(
     if active_conv is not None:
         retrieval_query = resolve_conversational_query(payload.question, active_conv)
 
+    # 4. Safely persist user question to PostgreSQL before orchestration
+    # Guarantees the question is never lost on generation timeouts, browser refreshes, or network dropouts
+    persisted_conv, user_msg = _persist_user_question(
+        db=db,
+        user_id=current_user.id,
+        question=payload.question,
+        scope=scope,
+        active_conv=active_conv,
+        kb_id=payload.knowledge_base_id,
+        document_id=target_document_id,
+    )
+
     rag_response = await _execute_orchestrated_chat(
         orchestrator=orchestrator,
         db=db,
@@ -468,16 +539,13 @@ async def query_knowledge_base_legacy(
         document_id=target_document_id,
     )
     rag_response.query = payload.question
-    _try_persist_turn(
+
+    _persist_assistant_response(
         db=db,
-        user_id=current_user.id,
-        question=payload.question,
+        conv=persisted_conv,
         response=rag_response,
-        scope=scope,
-        active_conv=active_conv,
-        kb_id=payload.knowledge_base_id,
-        document_id=target_document_id,
     )
+
     return rag_response
 
 

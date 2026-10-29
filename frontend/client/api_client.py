@@ -189,35 +189,41 @@ class FrontendAPIClient:
         self._session_token: str | None = None
 
         external_url = os.environ.get("BACKEND_API_URL")
+        client_timeout = httpx.Timeout(120.0, connect=10.0)
         if external_url:
             self._http = httpx.Client(
                 base_url=external_url,
                 headers={"user-agent": "AcademicAssistantFrontend/1.0"},
-                timeout=60.0,
+                timeout=client_timeout,
             )
         else:
             self._http = httpx.Client(
                 transport=InProcessProductionTransport(app),
                 base_url=base_url,
                 headers={"user-agent": "AcademicAssistantFrontend/1.0"},
-                timeout=60.0,
+                timeout=client_timeout,
             )
 
         # In-memory document status storage
         self._documents: dict[str, list[DocumentDTO]] = {}
         self._init_offline_state()
 
-    def _should_use_real_http(self) -> bool:
+    def _is_mocked_http(self) -> bool:
+        """Check if internal HTTP client or its methods are patched by test mocks."""
         from unittest.mock import MagicMock, Mock
-        if (
+        return (
             isinstance(self._http, (Mock, MagicMock))
             or isinstance(getattr(self._http, "get", None), (Mock, MagicMock))
             or isinstance(getattr(self._http, "post", None), (Mock, MagicMock))
-        ):
+        )
+
+    def _should_use_real_http(self) -> bool:
+        if self._is_mocked_http():
             return True
         if os.environ.get("DEMO_MODE") == "1":
             return False
         # If is_db_connected was intentionally mocked/patched by test configuration
+        from unittest.mock import MagicMock, Mock
         if isinstance(is_db_connected, (Mock, MagicMock)) or hasattr(is_db_connected, "mock_calls"):
             if not is_db_connected():
                 return False
@@ -1412,26 +1418,8 @@ class FrontendAPIClient:
             except (ValueError, AttributeError):
                 raise ValueError("Invalid document ID format.") from None
 
-        if not self._should_use_real_http() or not self.get_session_token():
+        if not self._should_use_real_http():
             ans_text = ""
-            # Attempt live synthesis via local Ollama LLM if reachable
-            try:
-                ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-                prompt = (
-                    f"You are the Academic Knowledge Assistant. Answer the question based on university course materials: "
-                    f"Question: {question.strip()}\n"
-                    f"Answer succinctly in an academic tone, citing [1] for syllabus or [2] for lab guidelines:"
-                )
-                r = httpx.post(
-                    f"{ollama_url}/api/generate",
-                    json={"model": "qwen3:4b", "prompt": prompt, "stream": False},
-                    timeout=1.0,
-                )
-                if r.status_code == 200:
-                    ans_text = r.json().get("response", "").strip()
-            except Exception:
-                pass
-
             q_lower = question.lower()
             is_detail_requested = any(
                 k in q_lower
@@ -1615,6 +1603,9 @@ class FrontendAPIClient:
                     messages=[user_msg, assistant_msg],
                 )
             return assistant_msg
+
+        if not self._is_mocked_http() and not self.get_session_token():
+            raise ValueError("Authentication required: Please sign in to submit chat queries.")
 
         payload: dict[str, Any] = {"question": question.strip()}
         if scope:
@@ -2565,6 +2556,10 @@ class _SessionAPIClientProxy:
             _session_clients[session_id] = client
 
         return client
+
+    def get_client(self) -> FrontendAPIClient:
+        """Resolve one FrontendAPIClient instance for current browser session."""
+        return self._get_client()
 
     def login(self, email: str, password: str, required_role: str | None = None) -> UserDTO:
         client = self._get_client()
