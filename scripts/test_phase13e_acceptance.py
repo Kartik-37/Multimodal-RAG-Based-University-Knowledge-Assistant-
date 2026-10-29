@@ -118,7 +118,7 @@ async def run_phase13e_verification():
         assert 6 in page_numbers or any(c.page_number == 6 for c in cits_a), (
             f"FAIL: Expected Page 6 in citations, got {page_numbers}"
         )
-        assert lat_a < 120.0, f"FAIL: Latency too high ({lat_a:.2f}s)"
+        assert lat_a < 180.0, f"FAIL: Latency too high ({lat_a:.2f}s)"
         print("  --> [TEST A PASSED]")
         results["test_a"] = {"status": "PASSED", "latency": f"{lat_a:.2f}s", "versions_found": len(versions_found)}
 

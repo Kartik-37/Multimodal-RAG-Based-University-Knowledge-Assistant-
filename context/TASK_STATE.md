@@ -4,6 +4,49 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-10-29
 
+**PHASE 15 -- FIX CONVERSATION ISOLATION, VERTICAL CHAT SCROLLING, RELIABLE ANSWERS AND SHARED STUDENT/ADMIN COURSE SELECTION (COMPLETED & VERIFIED)**
+
+### Confirmed Root Causes & Implemented Solutions
+
+1. **Conversation Switching Cancellation Bug (`frontend/state/app_state.py`):**
+   - **Root Cause**: `AppState.load_conversation()` and `AppState.start_new_conversation()` invoked `stop_generating()` whenever `_is_generating` was True, cancelling any in-flight background query upon navigation. Furthermore, `AppState` used a single scalar `_active_task` and discarded query results whenever `self._active_conversation_id != target_conv_id`.
+   - **Fix**: Replaced scalar task tracking with a conversation-keyed generation registry `_generations: dict[str, ConversationGeneration]` and `_concurrency_lock: asyncio.Lock()`. Background tasks run to completion independently of which conversation is currently active. Completed results are saved to the target conversation in PostgreSQL and reconciled into chat history when reopened. `stop_generating(conv_id)` cancels only the intended conversation.
+
+2. **Horizontal Overflow & Message Stacking Issue (`frontend/pages/chat_page.py`, `frontend/components/theme.py`):**
+   - **Root Cause**: `.chat-scroll-area` container used `overflow-y-auto` without constraining horizontal overflow, while flex child elements (`message_container`, user message rows, assistant columns) lacked `min-w-0 max-w-full box-border`, preventing flex shrinking below intrinsic content width.
+   - **Fix**: Added `overflow-x: hidden !important; overflow-y: auto !important; box-sizing: border-box !important;` to `.chat-scroll-area`. Applied `min-w-0 max-w-full box-border break-words` across message wrappers, user bubbles, assistant columns, and source cards. Updated `.safe-markdown` with `overflow-wrap: anywhere !important;` and bounded tables and `<pre>` blocks with self-contained internal scrollbars.
+
+3. **Markdown List Collapsing into Single Paragraph (`backend/app/services/llm/service.py`):**
+   - **Root Cause**: NiceGUI's `ui.markdown` uses `markdown2`. Under standard Markdown, an itemized list preceded by an introductory sentence requires an empty line (`\n\n`) before the first bullet `- `. Single newlines caused `markdown2` to collapse bullet lines into a single `<p>` tag, rendering as a dense hyphen-separated text block. Furthermore, recovery appended `[{source_tag}]` to every single item.
+   - **Fix**: Emitted double newlines (`\n\n`) before itemized lists in `extract_grounded_recovery_answer()` and `_sanitize_llm_answer()`. Preserved clean bullet lines (`\n- `) and deduplicated citation tags.
+
+4. **Generic Non-Answer Deflection (`backend/app/services/llm/service.py`):**
+   - **Root Cause**: `is_reasoning_or_non_answer()` only checked reasoning leaks, failing to catch deflection strings like *"Based on the provided documents, please refer to the cited material for the complete details."* An exemption rule also bypassed list validation if the text contained a comma.
+   - **Fix**: Added regex pattern matching for generic non-answer deflections ("refer to cited material/documents/sources/details"). When detected, `extract_grounded_recovery_answer()` deterministically extracts verified factual lists from retrieved evidence chunks with proper citations.
+
+5. **Student/Admin Scope Selector Divergence & Course Leakage (`frontend/pages/chat_page.py`):**
+   - **Root Cause**: Student and admin scope selectors used different markup, styles, and behaviors. The student branch fetched `get_knowledge_bases()` and merged it into `get_chat_scope_courses()`, bypassing authoritative course scoping.
+   - **Fix**: Strict course authorization enforced using only `get_chat_scope_courses()`. Unified the scope trigger pill, upward popover menu, search filter input, and course row styling across both roles, while respecting role permissions (admin keeps 3-mode switch for All Courses / Course / Document; student selects All Available Courses or specific course).
+
+6. **Stale State Listeners on Client Navigation (`frontend/pages/chat_page.py`, `frontend/components/layout.py`):**
+   - **Root Cause**: Subscriptions registered via `state.subscribe()` were never unsubscribed upon page transitions or client disconnect.
+   - **Fix**: Captured subscription return handlers and registered `ui.context.client.on_disconnect(unsub)` in `chat_page.py` and `layout.py` (for both student and admin sidebars).
+
+### Automated and Live Verifications Completed
+- `backend/tests/unit/test_frontend.py`: **44/44 passed (100%)**
+- `backend/tests/integration/test_authenticated_chat_lifecycle.py`: **4/4 passed (100%)**
+- `backend/tests/integration/test_chat_orchestration_integration.py`: **7/7 passed (100%)**
+- `backend/tests/unit/test_conversational_rag_quality.py`: **10/10 passed (100%)**
+- `scripts/test_phase13e_acceptance.py`: **4/4 passed (100%) against live PostgreSQL and Ollama models**:
+  - Test A (`list of android version`): 18 Android versions extracted from Page 6 infographic of `1-Flutter-Intro.pdf`, cited with Page 6.
+  - Test B (`What is Flutter?`): Direct definition extracted from Page 18 of `1-Flutter-Intro.pdf`, cited with Page 18.
+  - Test C (`list that`): Conversational follow-up correctly resolved and itemized into a clean markdown list.
+  - Test D (`What is the capital of Mars?`): Grounded refusal without hallucination or fake citations.
+
+---
+
+## Prior authoritative phase -- 2026-10-29
+
 **PHASE 14 -- ONE SHARED CHAT EXPERIENCE, RELIABLE RAG ANSWERS, COURSE SELECTION AND PERFORMANCE REPAIR (COMPLETED & VERIFIED)**
 
 ### Summary of Completed Objectives & Verifications

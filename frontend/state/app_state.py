@@ -10,6 +10,7 @@ Maintains UI state across page views:
 
 import asyncio
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from frontend.client.api_client import _get_browser_session_id, api_client
@@ -22,6 +23,22 @@ from frontend.client.models import (
 )
 
 
+@dataclass
+class ConversationGeneration:
+    """Tracks the background generation lifecycle for an individual conversation thread."""
+
+    conversation_id: str
+    task: asyncio.Task[Any] | None
+    status: str  # "queued", "generating", "completed", "error", "cancelled"
+    question: str
+    kb_id: str | None
+    document_id: str | None
+    scope: str
+    error: str | None = None
+    response: ChatMessageDTO | None = None
+    generation_id: int = 0
+
+
 class AppState:
     """Application state manager for presentation session."""
 
@@ -29,12 +46,11 @@ class AppState:
         self._active_kb: KnowledgeBaseDTO | None = None
         self._selected_citation: CitationDTO | None = None
         self._chat_history: list[ChatMessageDTO] = []
-        self._is_generating: bool = False
+        self._generations: dict[str, ConversationGeneration] = {}
+        self._generation_counter: int = 0
+        self._concurrency_lock: asyncio.Lock | None = None
         self._generation_error: str | None = None
-        self._active_task: Any = None
         self._active_conversation_id: str | None = None
-        self._generation_id: int = 0
-        self._is_cancelled: bool = False
         self._listeners: list[Any] = []
         self._reader_context: dict[str, Any] = {}
         self._active_scope: str = "ALL_COURSES"
@@ -95,12 +111,32 @@ class AppState:
 
     @property
     def is_generating(self) -> bool:
-        """Check if assistant is actively synthesizing an answer in the background."""
-        return self._is_generating
+        """Check if the currently active conversation is actively synthesizing an answer or queued."""
+        conv_id = self._active_conversation_id
+        if not conv_id:
+            draft_gen = self._generations.get("__draft__")
+            return draft_gen is not None and draft_gen.status in ("generating", "queued")
+        gen = self._generations.get(conv_id)
+        return gen is not None and gen.status in ("generating", "queued")
 
     @is_generating.setter
     def is_generating(self, value: bool) -> None:
-        self._is_generating = value
+        conv_id = self._active_conversation_id or "__draft__"
+        if not value and conv_id in self._generations:
+            self._generations[conv_id].status = "completed"
+
+    def is_conversation_generating(self, conv_id: str | None) -> bool:
+        """Check if a specific conversation is actively generating or queued."""
+        if not conv_id:
+            return False
+        gen = self._generations.get(conv_id)
+        return gen is not None and gen.status in ("generating", "queued")
+
+    def get_generation_status(self, conv_id: str | None = None) -> str | None:
+        """Get the generation status string for a conversation ('queued', 'generating', 'completed', etc.)."""
+        target_id = conv_id or self._active_conversation_id or "__draft__"
+        gen = self._generations.get(target_id)
+        return gen.status if gen else None
 
     @property
     def active_scope(self) -> str:
@@ -161,75 +197,105 @@ class AppState:
         question: str,
         document_id: str | None = None,
         scope: str = "ALL_COURSES",
+        conversation_id: str | None = None,
     ) -> None:
         """
-        Launch background query synthesis decoupled from the NiceGUI page lifecycle.
-        Continues executing even if the student switches pages.
+        Launch background query synthesis keyed strictly to its conversation identity.
+        Continues executing in the background even if the user switches conversations or routes.
         """
-        if self._is_generating:
+        target_conv_id = conversation_id or self._active_conversation_id or "__draft__"
+
+        # Check if this specific conversation is already generating or queued
+        existing = self._generations.get(target_conv_id)
+        if existing and existing.status in ("generating", "queued"):
             return
 
-        self._generation_id += 1
-        current_gen_id = self._generation_id
-        self._is_generating = True
-        self._is_cancelled = False
+        self._generation_counter += 1
+        current_gen_id = self._generation_counter
+
+        gen = ConversationGeneration(
+            conversation_id=target_conv_id,
+            task=None,
+            status="queued",
+            question=question,
+            kb_id=kb_id,
+            document_id=document_id,
+            scope=scope,
+            error=None,
+            response=None,
+            generation_id=current_gen_id,
+        )
+        self._generations[target_conv_id] = gen
         self._generation_error = None
-        target_conv_id = self._active_conversation_id
+
         # Capture the active session-bound client on the main event loop thread
-        # where the NiceGUI browser request context is available.
         client = api_client.get_client() if hasattr(api_client, "get_client") else api_client._get_client()
 
+        if self._concurrency_lock is None:
+            self._concurrency_lock = asyncio.Lock()
+
         async def _run_async_query() -> None:
+            # Concurrency limit: one active LLM query at a time to prevent Ollama thrashing,
+            # while remaining queries queue cleanly and update status.
             try:
-                resp = await asyncio.to_thread(
-                    client.send_chat_message,
-                    kb_id=kb_id,
-                    question=question,
-                    document_id=document_id,
-                    scope=scope,
-                    conversation_id=target_conv_id,
-                )
-                if self._generation_id != current_gen_id or self._is_cancelled:
-                    return
+                async with self._concurrency_lock:
+                    if gen.status == "cancelled" or gen.generation_id != current_gen_id:
+                        return
+                    gen.status = "generating"
+                    self.notify()
 
-                # If student or admin switched conversations while query was in-flight, do not leak into new chat
-                if target_conv_id and self._active_conversation_id != target_conv_id:
-                    return
+                    resp = await asyncio.to_thread(
+                        client.send_chat_message,
+                        kb_id=kb_id,
+                        question=question,
+                        document_id=document_id,
+                        scope=scope,
+                        conversation_id=None if target_conv_id == "__draft__" else target_conv_id,
+                    )
 
-                # Link active_conversation_id from API response metadata or latest conversation
-                if resp.conversation_id:
-                    self._active_conversation_id = resp.conversation_id
-                elif not self._active_conversation_id:
-                    convs = client.get_conversations()
-                    if convs:
-                        self._active_conversation_id = convs[0].id
+                    if gen.status == "cancelled" or gen.generation_id != current_gen_id:
+                        return
 
-                self._chat_history.append(resp)
-                if resp.citations:
-                    self._selected_citation = resp.citations[0]
+                    resolved_conv_id = resp.conversation_id or target_conv_id
+                    gen.status = "completed"
+                    gen.response = resp
+
+                    # If draft conversation received a real conversation_id from server
+                    if target_conv_id == "__draft__" and resp.conversation_id:
+                        self._generations[resp.conversation_id] = gen
+                        if self._active_conversation_id in (None, "__draft__"):
+                            self._active_conversation_id = resp.conversation_id
+
+                    # If student or admin is currently viewing this conversation, update active thread and citations
+                    if self._active_conversation_id == resolved_conv_id:
+                        self._chat_history.append(resp)
+                        if resp.citations:
+                            self._selected_citation = resp.citations[0]
+
             except asyncio.CancelledError:
+                gen.status = "cancelled"
                 return
             except Exception as e:
-                if self._generation_id != current_gen_id or self._is_cancelled:
-                    return
-
-                # If student or admin switched conversations while query was in-flight, do not leak into new chat
-                if target_conv_id and self._active_conversation_id != target_conv_id:
+                if gen.status == "cancelled" or gen.generation_id != current_gen_id:
                     return
                 clean_err = normalize_error(e, context="chat")
-                self._generation_error = clean_err
+                gen.status = "error"
+                gen.error = clean_err
                 err_msg = ChatMessageDTO(
-                    id=f"msg-err-{len(self._chat_history) + 1}",
+                    id=f"msg-err-{uuid.uuid4().hex[:8]}",
                     role="assistant",
                     content=clean_err,
                     citations=[],
                 )
-                self._chat_history.append(err_msg)
+                gen.response = err_msg
+
+                if self._active_conversation_id == target_conv_id:
+                    self._generation_error = clean_err
+                    self._chat_history.append(err_msg)
             finally:
-                if self._generation_id == current_gen_id:
-                    self._is_generating = False
-                    self._active_task = None
-                    self.notify()
+                if gen.generation_id == current_gen_id and gen.status in ("generating", "queued"):
+                    gen.status = "completed"
+                self.notify()
 
         try:
             loop = asyncio.get_running_loop()
@@ -239,28 +305,33 @@ class AppState:
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-        self._active_task = loop.create_task(_run_async_query())
 
-    def stop_generating(self) -> None:
+        gen.task = loop.create_task(_run_async_query())
+        self.notify()
+
+    def stop_generating(self, conv_id: str | None = None) -> None:
         """
-        Request immediate cancellation of in-progress answer generation.
-        Terminates the active task, discards late responses, and presents a distinct cancelled state.
+        Request immediate cancellation of in-progress answer generation for a specific conversation.
+        Cancels only the target conversation's task without affecting other conversations.
         """
-        if not self._is_generating:
+        target_id = conv_id or self._active_conversation_id or "__draft__"
+        gen = self._generations.get(target_id)
+        if not gen or gen.status not in ("generating", "queued"):
             return
-        self._is_cancelled = True
-        self._generation_id += 1
-        if self._active_task and not self._active_task.done():
-            self._active_task.cancel()
-        self._is_generating = False
-        self._active_task = None
-        stopped_msg = ChatMessageDTO(
-            id=f"msg-stopped-{uuid.uuid4().hex[:8]}",
-            role="assistant",
-            content="*(Response generation stopped by user)*",
-            citations=[],
-        )
-        self._chat_history.append(stopped_msg)
+
+        gen.status = "cancelled"
+        if gen.task and not gen.task.done():
+            gen.task.cancel()
+
+        if self._active_conversation_id == target_id:
+            stopped_msg = ChatMessageDTO(
+                id=f"msg-stopped-{uuid.uuid4().hex[:8]}",
+                role="assistant",
+                content="*(Response generation stopped by user)*",
+                citations=[],
+            )
+            self._chat_history.append(stopped_msg)
+
         self.notify()
 
     def start_new_conversation(self) -> Any:
@@ -268,10 +339,8 @@ class AppState:
         Immediately create a new persistent conversation with title 'New chat'
         in the database, preserve active course/document scope, set as active,
         and notify listeners to update Recent Chats immediately.
+        Does NOT cancel background generation in other conversations.
         """
-        if self._is_generating:
-            self.stop_generating()
-
         if self._active_conversation_id and len(self._chat_history) == 0:
             # Already in an empty new conversation; preserve it without creating duplicate empty rows
             self.notify()
@@ -329,13 +398,20 @@ class AppState:
     def load_conversation(self, conv_id: str) -> None:
         """
         Load an existing saved conversation thread and its messages.
+        Does NOT cancel background generation in previously active conversation.
         """
-        if self._is_generating:
-            self.stop_generating()
         detail = api_client.get_conversation(conv_id)
         self._active_conversation_id = detail.id
         self._chat_history = list(detail.messages)
         self._generation_error = None
+
+        # Reconcile with any completed background generation not yet returned by detail API
+        gen = self._generations.get(conv_id)
+        if gen and gen.status == "completed" and gen.response:
+            existing_ids = {m.id for m in self._chat_history}
+            if gen.response.id not in existing_ids:
+                self._chat_history.append(gen.response)
+
         if getattr(detail, "scope", None):
             self._active_scope = detail.scope
             self._active_kb_id = detail.knowledge_base_id
@@ -416,8 +492,8 @@ class AppState:
 
     def clear_chat(self) -> None:
         """Clear conversation history, reset scope to ALL_COURSES, and reset active conversation."""
-        if self._is_generating:
-            self.stop_generating()
+        if self._active_conversation_id and self.is_generating:
+            self.stop_generating(self._active_conversation_id)
         self._active_conversation_id = None
         self._chat_history.clear()
         self._selected_citation = None
@@ -507,6 +583,12 @@ class _SessionAppStateProxy:
     def is_generating(self, value: bool) -> None:
         self._get_state().is_generating = value
 
+    def is_conversation_generating(self, conv_id: str | None) -> bool:
+        return self._get_state().is_conversation_generating(conv_id)
+
+    def get_generation_status(self, conv_id: str | None = None) -> str | None:
+        return self._get_state().get_generation_status(conv_id)
+
     @property
     def generation_error(self) -> str | None:
         return self._get_state().generation_error
@@ -520,19 +602,24 @@ class _SessionAppStateProxy:
         question: str,
         document_id: str | None = None,
         scope: str = "ALL_COURSES",
+        conversation_id: str | None = None,
     ) -> None:
         self._get_state().start_background_generation(
             kb_id=kb_id,
             question=question,
             document_id=document_id,
             scope=scope,
+            conversation_id=conversation_id,
         )
 
-    def stop_generating(self) -> None:
-        self._get_state().stop_generating()
+    def stop_generating(self, conv_id: str | None = None) -> None:
+        self._get_state().stop_generating(conv_id=conv_id)
 
-    def start_new_conversation(self) -> None:
-        self._get_state().start_new_conversation()
+    def start_new_conversation(self) -> Any:
+        return self._get_state().start_new_conversation()
+
+    def update_active_conversation_title(self, new_title: str) -> None:
+        self._get_state().update_active_conversation_title(new_title)
 
     @property
     def active_scope(self) -> str:

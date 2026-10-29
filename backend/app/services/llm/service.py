@@ -64,12 +64,29 @@ REASONING_LEAK_PATTERNS = [
 ]
 
 
+NON_ANSWER_DEFLECTION_PATTERNS = [
+    r"\b(?:please\s+)?refer to (?:the\s+)?(?:cited|provided|above|referenced)?\s*(?:material|documents?|sources?|text|details)\b",
+    r"\bfor (?:the\s+)?(?:complete|more|further)\s*details,?\s*(?:please\s+)?refer to\b",
+    r"\bdetails can be found in (?:the\s+)?(?:cited|provided|above|referenced)\b",
+    r"\b(?:please\s+)?see (?:the\s+)?(?:cited|provided|above|referenced)\s*(?:material|documents?|sources?)\b",
+    r"\bconsult (?:the\s+)?(?:cited|provided|above|referenced)\s*(?:material|documents?|sources?)\b",
+    r"\bcited material for (?:the\s+)?complete details\b",
+    r"\bcomplete details (?:can be found|are available|are given) in\b",
+    r"\bthe answer (?:can be found|is given) in (?:the\s+)?(?:cited|provided)\b",
+    r"\bplease check the cited\b",
+    r"\brefer to the citations?\b",
+]
+
+
 def is_reasoning_or_non_answer(text: str, query: str) -> bool:
-    """Detect obvious internal deliberation leakage or meta preambles without answers."""
+    """Detect obvious internal deliberation leakage, generic deflections, or meta preambles without answers."""
     t_clean = text.strip().lower()
     if not t_clean:
         return True
     for p in REASONING_LEAK_PATTERNS:
+        if re.search(p, t_clean):
+            return True
+    for p in NON_ANSWER_DEFLECTION_PATTERNS:
         if re.search(p, t_clean):
             return True
     if re.search(
@@ -78,8 +95,10 @@ def is_reasoning_or_non_answer(text: str, query: str) -> bool:
     ):
         return True
     is_list_query = any(w in query.lower() for w in ("list", "enumerate", "versions", "steps"))
-    if is_list_query and len(text.split()) < 15 and not any(ch in text for ch in (",", ";", "\n", "1.", "- ")):
-        return True
+    if is_list_query:
+        has_items = any(ch in text for ch in ("\n-", "\n*", "\n1.", "\n2.", "•", "▪", "●", "▸"))
+        if not has_items and len(text.split()) < 25:
+            return True
     return False
 
 
@@ -101,8 +120,8 @@ def clean_reasoning_text(text: str) -> str:
             if not any(it.lower().startswith(p) for p in ("it lists:", "it includes:", "it contains:", "of android", "android all versions", "2008 to 2025")) and len(it) > 1
         ]
         if len(clean_items) >= 3:
-            formatted = [f"- {it} [{source_tag}]" if f"[{source_tag}]" not in it else f"- {it}" for it in clean_items]
-            return f"The items listed in [{source_tag}] are:\n" + "\n".join(formatted)
+            formatted = [f"- {it}" for it in clean_items]
+            return f"The items listed in [{source_tag}] are:\n\n" + "\n".join(formatted)
 
     # 2. Check for explicit conclusion marker
     conclusion_match = re.search(
@@ -125,6 +144,7 @@ def extract_grounded_recovery_answer(
     Deterministically construct a grounded, fully-cited answer from validated assembled evidence
     when model generation fails, returns a non-answer, or times out.
     Works generally across any course material with diagrams, tables, or itemized lists.
+    Emits standard Markdown double-newlines for robust list rendering.
     """
     if not context or not getattr(context, "items", None):
         return None
@@ -154,8 +174,8 @@ def extract_grounded_recovery_answer(
                     and len(p) > 2
                 ]
                 if is_list_query and len(valid_items) >= 2:
-                    header = f"Based on [{source_tag}], the following items are listed:\n"
-                    bullet_list = "\n".join(f"- {it} [{source_tag}]" for it in valid_items)
+                    header = f"Based on [{source_tag}], the following items are listed:\n\n"
+                    bullet_list = "\n".join(f"- {it}" for it in valid_items)
                     return header + bullet_list
 
         # 2. Markdown or bulleted list in text chunk
@@ -166,17 +186,16 @@ def extract_grounded_recovery_answer(
                 if re.match(r"^[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line.strip())
             ]
             if len(bullet_lines) >= 3:
-                header = f"Based on [{source_tag}], the details are:\n"
+                header = f"Based on [{source_tag}], the details are:\n\n"
                 bullet_list = "\n".join(
-                    f"{b} [{source_tag}]" if f"[{source_tag}]" not in b else b
-                    for b in bullet_lines
+                    f"{b}" for b in bullet_lines
                 )
                 return header + bullet_list
 
     # 3. For ordinary factual queries where top item has strong relevance
     top_item = context.items[0]
     score = getattr(top_item, "reranker_score", 0.0) or 0.0
-    if score >= 1.0 and not is_list_query:
+    if score >= 0.5 and not is_list_query:
         clean_text = re.sub(r"\[Visual [^\]]+\]:[^\n]*\n?", "", top_item.text).strip()
         sentences = [
             s.strip()
@@ -380,11 +399,20 @@ def _sanitize_llm_answer(text: str) -> str:
 
         kept_lines.append(s)
 
+    formatted_lines: list[str] = []
+    for line in kept_lines:
+        is_bullet = bool(re.match(r"^(?:[-*•▪●▸]|\d+\.)\s+", line.strip()))
+        if is_bullet and formatted_lines:
+            prev_is_bullet = bool(re.match(r"^(?:[-*•▪●▸]|\d+\.)\s+", formatted_lines[-1].strip()))
+            if not prev_is_bullet and formatted_lines[-1].strip():
+                formatted_lines.append("")
+        formatted_lines.append(line)
+
     is_list_like = any(
-        re.match(r"^(?:step\s*\d+|[-*•]|\d+\.)", line, re.IGNORECASE)
+        re.match(r"^(?:step\s*\d+|[-*•▪●▸]|\d+\.)", line, re.IGNORECASE)
         for line in kept_lines
     )
-    result = ("\n" if is_list_like else " ").join(kept_lines).strip()
+    result = ("\n" if is_list_like else " ").join(formatted_lines).strip()
     candidate_answer = result if result else cleaned
 
     # 5. Normalize citation tags to canonical lower-case [source_X]
@@ -550,7 +578,8 @@ class LLMGenerationService:
             )
 
         # 5b. Attribute supporting context items to uncited factual claims
-        if request.context.items:
+        has_list = any(re.match(r"^\s*[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line) for line in cleaned_content.splitlines())
+        if request.context.items and (not has_list or not _SOURCE_REF_REGEX.search(cleaned_content)):
             from backend.app.services.grounding.claim_verifier import ClaimVerifier
             from backend.app.services.grounding.sentence_splitter import SentenceSplitter
 

@@ -358,6 +358,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     font-size: 0.95rem;
     color: #0E1D61;
     word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .safe-markdown h1, .safe-markdown h2, .safe-markdown h3, .safe-markdown h4 {
@@ -370,6 +373,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 .safe-markdown p {
     margin-bottom: 0.85rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .safe-markdown p:last-child {
@@ -379,10 +384,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .safe-markdown ul, .safe-markdown ol {
     margin-left: 1.35rem;
     margin-bottom: 0.85rem;
+    padding-left: 0.5rem;
 }
 
 .safe-markdown li {
     margin-bottom: 0.35rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .safe-markdown code {
@@ -393,6 +401,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     font-size: 0.825rem;
     font-family: 'JetBrains Mono', monospace;
     border: 1px solid #D8CFBF;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .safe-markdown pre {
@@ -401,6 +411,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     padding: 0.85rem 1.15rem;
     border-radius: 6px;
     overflow-x: auto;
+    max-width: 100%;
+    box-sizing: border-box;
     margin-bottom: 0.85rem;
     border: 1px solid #B89A5A;
 }
@@ -410,6 +422,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     border: none;
     color: inherit;
     padding: 0;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+.safe-markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin-bottom: 0.85rem;
+}
+
+/* Chat Layout Restraints - Prohibit horizontal scrolling across chat viewport */
+.chat-scroll-area {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
 }
 
 /* Clean Restrained Scrollbars */

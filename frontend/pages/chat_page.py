@@ -110,21 +110,12 @@ def register_chat_page() -> None:
                     )
                 return
 
-            # Authoritative course and scope loading
+            # Authoritative course and scope loading (never merged with unauthorized broader endpoints)
             kbs: list[KnowledgeBaseDTO] = []
             try:
                 kbs = api_client.get_chat_scope_courses()
-                if not is_admin:
-                    all_courses = api_client.get_knowledge_bases()
-                    existing_ids = {k.id for k in kbs}
-                    for c in all_courses:
-                        if c.id not in existing_ids:
-                            kbs.append(c)
             except Exception:
-                try:
-                    kbs = api_client.get_knowledge_bases()
-                except Exception:
-                    pass
+                kbs = []
 
             requested_kb = (
                 next((c for c in kbs if c.id == kb_id), None) if kb_id else None
@@ -181,39 +172,39 @@ def register_chat_page() -> None:
             # Main Conversational Workspace
             # ------------------------------------------------------------------
             with ui.column().classes(
-                "w-full flex-1 flex flex-col justify-between overflow-hidden min-w-0 h-full bg-canvas"
+                "w-full flex-1 flex flex-col justify-between overflow-hidden min-w-0 max-w-full h-full bg-canvas box-border"
             ).style("height: 100%; max-height: 100%;"):
                 # Header
                 header_container = ui.row().classes(
-                    "w-full items-center justify-between px-3 sm:px-6 py-2 border-b border-subtle shrink-0 gap-2 bg-canvas"
+                    "w-full items-center justify-between px-3 sm:px-6 py-2 border-b border-subtle shrink-0 gap-2 bg-canvas min-w-0 max-w-full box-border"
                 )
 
-                # Conversation Scroll Area
+                # Conversation Scroll Area (Prohibit horizontal scrolling across chat viewport)
                 with ui.column().classes(
-                    "w-full flex-1 overflow-y-auto min-h-0 py-3 px-3 sm:px-6 chat-scroll-area flex flex-col"
+                    "w-full flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-3 px-3 sm:px-6 chat-scroll-area flex flex-col min-w-0 max-w-full box-border"
                 ):
                     message_container = ui.column().classes(
-                        "w-full max-w-3xl mx-auto gap-4 pb-8 flex-1 flex flex-col min-h-full"
+                        "w-full max-w-3xl mx-auto gap-4 pb-8 flex-1 flex flex-col min-h-full min-w-0 max-w-full box-border"
                     )
 
                 # Composer Outer Container
                 with ui.column().classes(
-                    "w-full shrink-0 pt-2 pb-3 px-3 sm:px-6 border-t border-subtle bg-canvas z-10"
+                    "w-full shrink-0 pt-2 pb-3 px-3 sm:px-6 border-t border-subtle bg-canvas z-10 min-w-0 max-w-full box-border"
                 ):
-                    with ui.column().classes("w-full max-w-3xl mx-auto gap-1"):
+                    with ui.column().classes("w-full max-w-3xl mx-auto gap-1 min-w-0 max-w-full box-border"):
                         # Composer Card
                         with ui.card().classes(
-                            "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-xl shadow-none hover:border-gold/60 focus-within:border-gold transition-colors flex flex-col gap-2"
+                            "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-xl shadow-none hover:border-gold/60 focus-within:border-gold transition-colors flex flex-col gap-2 min-w-0 max-w-full box-border"
                         ):
                             # Top Row: Input and Action Button (Send / Stop)
-                            with ui.row().classes("w-full items-center gap-2 no-wrap pb-0.5"):
+                            with ui.row().classes("w-full items-center gap-2 no-wrap pb-0.5 min-w-0"):
                                 input_box = (
                                     ui.input(
                                         placeholder="Ask a question about your course materials..."
                                     )
                                     .props("dense borderless")
                                     .classes(
-                                        "flex-1 text-sm sm:text-base text-primary-navy pl-1 sm:pl-2 font-sans placeholder:text-secondary-navy/60"
+                                        "flex-1 text-sm sm:text-base text-primary-navy pl-1 sm:pl-2 font-sans placeholder:text-secondary-navy/60 min-w-0"
                                     )
                                 )
                                 action_btn_container = ui.row().classes(
@@ -222,13 +213,13 @@ def register_chat_page() -> None:
 
                             # Bottom Toolbar: Integrated Scope Selector & Keyboard Hint
                             with ui.row().classes(
-                                "w-full items-center justify-between pt-2.5 sm:pt-3 pb-0.5 border-t border-subtle/60 text-xs text-secondary-navy font-sans gap-2 flex-wrap"
+                                "w-full items-center justify-between pt-2.5 sm:pt-3 pb-0.5 border-t border-subtle/60 text-xs text-secondary-navy font-sans gap-2 flex-wrap min-w-0"
                             ):
                                 composer_scope_container = ui.row().classes(
-                                    "items-center gap-1.5"
+                                    "items-center gap-1.5 min-w-0 flex-1"
                                 )
                                 ui.label("Press Enter ↵ to ask").classes(
-                                    "hidden sm:block text-secondary-navy/70 ml-auto"
+                                    "hidden sm:block text-secondary-navy/70 ml-auto shrink-0"
                                 )
 
             # ------------------------------------------------------------------
@@ -389,6 +380,7 @@ def register_chat_page() -> None:
                     if active_scope["scope"] == "DOCUMENT"
                     else None,
                     scope=active_scope["scope"],
+                    conversation_id=state.active_conversation_id,
                 )
                 render_action_btn()
 
@@ -444,6 +436,7 @@ def register_chat_page() -> None:
                         if active_scope["scope"] == "DOCUMENT"
                         else None,
                         scope=active_scope["scope"],
+                        conversation_id=state.active_conversation_id,
                     )
                     render_action_btn()
                 finally:
@@ -495,7 +488,12 @@ def register_chat_page() -> None:
             was_generating = {"value": state.is_generating}
 
             def check_generation_status() -> None:
-                is_now = state.is_generating
+                is_active_conv_gen = (
+                    state.is_conversation_generating(state.active_conversation_id)
+                    if hasattr(state, "is_conversation_generating")
+                    else state.is_generating
+                )
+                is_now = state.is_generating or is_active_conv_gen
                 if was_generating["value"] != is_now:
                     was_generating["value"] = is_now
                     if not is_now:
@@ -892,31 +890,57 @@ def register_chat_page() -> None:
                                         if cur_mode == "COURSE":
                                             with ui.column().classes("w-full gap-1 pt-1"):
                                                 ui.label("Select Target Course:").classes("text-[11px] font-semibold text-secondary-navy px-1")
+                                                admin_search = (
+                                                    ui.input(placeholder="Search courses...")
+                                                    .props("dense outlined rounded clearable autofocus")
+                                                    .classes("w-full text-xs font-sans px-0.5 pb-1")
+                                                )
                                                 courses_container = ui.column().classes("w-full max-h-48 overflow-y-auto gap-0.5")
-                                                with courses_container:
-                                                    for k in kbs:
-                                                        is_sel = (active_scope.get("kb_id") == k.id)
-                                                        row_cls = (
-                                                            "bg-surface font-semibold text-primary-navy border border-gold/40"
-                                                            if is_sel
-                                                            else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
-                                                        )
-                                                        def select_course(cid=k.id):
-                                                            active_scope["kb_id"] = cid
-                                                            state.set_scope("COURSE", cid, None)
-                                                            load_docs_for_current_kb()
-                                                            admin_scope_menu.close()
-                                                            render_composer_scope()
-                                                            render_header()
-                                                            render_action_btn()
-                                                        with ui.row().classes(
-                                                            f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
-                                                        ).on("click", select_course):
-                                                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
-                                                                ui.icon("menu_book", size="14px").classes("text-gold" if is_sel else "text-secondary-navy/70")
-                                                                ui.label(k.name).classes("text-xs font-sans truncate")
-                                                            if is_sel:
-                                                                ui.icon("check", size="15px").classes("text-gold shrink-0")
+
+                                                def update_admin_course_list(q_text: str = "") -> None:
+                                                    courses_container.clear()
+                                                    q_c = q_text.strip().lower()
+                                                    matched_kbs = [
+                                                        k
+                                                        for k in kbs
+                                                        if not q_c
+                                                        or q_c in k.name.lower()
+                                                        or (k.description and q_c in k.description.lower())
+                                                    ]
+                                                    with courses_container:
+                                                        if not matched_kbs:
+                                                            ui.label(
+                                                                f'No courses match "{q_text.strip()}"' if q_c else "No courses available"
+                                                            ).classes("text-xs text-secondary-navy italic p-2 text-center")
+                                                        for k in matched_kbs:
+                                                            is_sel = (active_scope.get("kb_id") == k.id)
+                                                            row_cls = (
+                                                                "bg-surface font-semibold text-primary-navy border border-gold/40"
+                                                                if is_sel
+                                                                else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
+                                                            )
+                                                            def select_course(cid=k.id):
+                                                                active_scope["kb_id"] = cid
+                                                                state.set_scope("COURSE", cid, None)
+                                                                load_docs_for_current_kb()
+                                                                admin_scope_menu.close()
+                                                                render_composer_scope()
+                                                                render_header()
+                                                                render_action_btn()
+                                                            with ui.row().classes(
+                                                                f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
+                                                            ).on("click", select_course):
+                                                                with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                                                    ui.icon("menu_book", size="14px").classes("text-gold" if is_sel else "text-secondary-navy/70")
+                                                                    with ui.column().classes("gap-0 min-w-0 flex-1"):
+                                                                        ui.label(k.name).classes("text-xs font-sans truncate")
+                                                                        doc_txt = f"{k.document_count} documents" if k.document_count else "Course materials"
+                                                                        ui.label(doc_txt).classes("text-[10px] text-secondary-navy/70 leading-tight")
+                                                                if is_sel:
+                                                                    ui.icon("check", size="15px").classes("text-gold shrink-0")
+
+                                                admin_search.on_value_change(lambda e: update_admin_course_list(e.value or ""))
+                                                update_admin_course_list()
                                         elif cur_mode == "DOCUMENT":
                                             with ui.column().classes("w-full gap-1 pt-1"):
                                                 ui.label("Course:").classes("text-[11px] font-semibold text-secondary-navy px-1")
@@ -1048,18 +1072,18 @@ def register_chat_page() -> None:
                     else:
                         for msg in state.chat_history:
                             if msg.role == "user":
-                                with ui.row().classes("w-full justify-end items-end gap-3"):
+                                with ui.row().classes("w-full justify-end items-end gap-3 min-w-0 max-w-full box-border"):
                                     with ui.element("div").classes(
-                                        "max-w-2xl bg-surface-elevated border border-subtle text-primary-navy px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl rounded-tr-sm shadow-none"
+                                        "max-w-2xl bg-surface-elevated border border-subtle text-primary-navy px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl rounded-tr-sm shadow-none min-w-0 box-border break-words"
                                     ):
                                         ui.label(msg.content).classes(
-                                            "text-sm sm:text-base text-primary-navy font-sans leading-relaxed break-words"
+                                            "text-sm sm:text-base text-primary-navy font-sans leading-relaxed break-words whitespace-pre-wrap"
                                         )
                             else:
                                 is_err = msg.id.startswith("msg-err-") or ("timed out" in (msg.content or "").lower() and not msg.citations)
                                 if is_err:
                                     with ui.card().classes(
-                                        "w-full max-w-3xl p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none"
+                                        "w-full max-w-3xl p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none min-w-0 box-border"
                                     ):
                                         with ui.row().classes("items-center justify-between w-full"):
                                             with ui.row().classes("items-center gap-2"):
@@ -1070,10 +1094,10 @@ def register_chat_page() -> None:
                                                 icon="refresh",
                                                 on_click=handle_retry,
                                             ).props("flat dense no-caps").classes("text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-100/70 px-2.5 py-1 rounded-md")
-                                        ui.label(msg.content).classes("text-sm text-rose-900 font-sans leading-relaxed")
+                                        ui.label(msg.content).classes("text-sm text-rose-900 font-sans leading-relaxed break-words")
                                 else:
                                     with ui.column().classes(
-                                        "w-full max-w-3xl gap-2.5 bg-canvas py-1"
+                                        "w-full max-w-3xl gap-2.5 bg-canvas py-1 min-w-0 max-w-full box-border"
                                     ):
                                         # Markdown answer content
                                         clean_content = sanitize_markdown_text(
@@ -1082,16 +1106,16 @@ def register_chat_page() -> None:
                                             )
                                         )
                                         ui.markdown(clean_content).classes(
-                                            "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans"
+                                            "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans w-full min-w-0 max-w-full break-words"
                                         )
 
                                     # Cited Sources Tray
                                     if msg.citations:
                                         with ui.column().classes(
-                                            "w-full mt-3 pt-2.5 border-t border-subtle/80 gap-2"
+                                            "w-full mt-3 pt-2.5 border-t border-subtle/80 gap-2 min-w-0 max-w-full box-border"
                                         ):
                                             with ui.row().classes(
-                                                "items-center justify-between w-full"
+                                                "items-center justify-between w-full min-w-0"
                                             ):
                                                 ui.label("Cited Sources").classes(
                                                     "text-[11px] font-semibold font-sans tracking-wider uppercase text-secondary-navy/80"
@@ -1105,18 +1129,18 @@ def register_chat_page() -> None:
                                                 )
 
                                             doc_groups = group_citations_by_document(msg.citations)
-                                            with ui.column().classes("w-full gap-2"):
+                                            with ui.column().classes("w-full gap-2 min-w-0 max-w-full"):
                                                 for group in doc_groups:
                                                     is_pdf = group.document_name.lower().endswith(".pdf")
                                                     doc_icon = "picture_as_pdf" if is_pdf else "description"
                                                     with (
                                                         ui.card()
                                                         .classes(
-                                                            "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-lg shadow-none gap-2"
+                                                            "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-lg shadow-none gap-2 min-w-0 max-w-full box-border"
                                                         )
                                                     ):
                                                         with ui.row().classes(
-                                                            "w-full items-start sm:items-center justify-between gap-2"
+                                                            "w-full items-start sm:items-center justify-between gap-2 min-w-0"
                                                         ):
                                                             with ui.row().classes(
                                                                 "items-start sm:items-center gap-2 flex-1 min-w-0"
@@ -1133,7 +1157,7 @@ def register_chat_page() -> None:
                                                                 )
 
                                                         with ui.row().classes(
-                                                            "w-full items-center gap-1.5 flex-wrap pt-0.5"
+                                                            "w-full items-center gap-1.5 flex-wrap pt-0.5 min-w-0"
                                                         ):
                                                             for pref in group.pages:
                                                                 if pref.page_number is not None:
@@ -1168,12 +1192,27 @@ def register_chat_page() -> None:
                                                                         "text-secondary-navy/70 hover:text-gold shrink-0"
                                                                     )
 
-                    if state.is_generating:
+                    gen_status = (
+                        state.get_generation_status(state.active_conversation_id)
+                        if hasattr(state, "get_generation_status")
+                        else None
+                    )
+                    is_active_conv_gen = (
+                        state.is_conversation_generating(state.active_conversation_id)
+                        if hasattr(state, "is_conversation_generating")
+                        else state.is_generating
+                    )
+                    if state.is_generating or is_active_conv_gen or gen_status:
+                        status_msg = (
+                            "Waiting in queue behind active query..."
+                            if gen_status == "queued"
+                            else "Synthesizing answer from verified texts..."
+                        )
                         with ui.row().classes(
-                            "items-center gap-3 py-2.5 px-4 bg-surface rounded-lg border border-subtle max-w-md mt-2"
+                            "items-center gap-3 py-2.5 px-4 bg-surface rounded-lg border border-subtle max-w-md mt-2 min-w-0"
                         ):
                             ui.spinner(size="1.25rem", color="primary-navy")
-                            ui.label("Synthesizing answer from verified texts...").classes(
+                            ui.label(status_msg).classes(
                                 "text-xs font-semibold text-secondary-navy font-sans"
                             )
 
@@ -1207,7 +1246,11 @@ def register_chat_page() -> None:
                 render_evidence()
                 render_action_btn()
 
-            state.subscribe(on_state_update)
+            unsub_chat = state.subscribe(on_state_update)
+            try:
+                ui.context.client.on_disconnect(unsub_chat)
+            except Exception:
+                pass
 
             render_header()
             render_composer_scope()

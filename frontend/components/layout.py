@@ -351,7 +351,11 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
 
                     history_list = ui.column().classes("w-full flex-1 overflow-y-auto gap-1 pr-1 min-h-[120px]")
                     render_conversation_items(history_list)
-                    state.subscribe(lambda: render_conversation_items(history_list))
+                    unsub_sidebar = state.subscribe(lambda: render_conversation_items(history_list))
+                    try:
+                        ui.context.client.on_disconnect(unsub_sidebar)
+                    except Exception:
+                        pass
 
             if is_admin:
                 # -------------------------------------------------------------
@@ -415,7 +419,11 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                                                 "w-full flex flex-col gap-0.5 pr-0.5 max-h-56 overflow-y-auto min-h-0"
                                             )
                                             render_conversation_items(admin_hist_list)
-                                            state.subscribe(lambda: render_conversation_items(admin_hist_list))
+                                            unsub_admin_sidebar = state.subscribe(lambda: render_conversation_items(admin_hist_list))
+                                            try:
+                                                ui.context.client.on_disconnect(unsub_admin_sidebar)
+                                            except Exception:
+                                                pass
             else:
                 # -------------------------------------------------------------
                 # STUDENT NAVIGATION (Approved Chat-First & Persistent History)
