@@ -4,6 +4,54 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-10-29
 
+**PHASE 16 -- ELIMINATE DUPLICATE CHAT RESPONSES AND FIX ANSWER FORMATTING (COMPLETED & VERIFIED)**
+
+### Confirmed Root Causes & Implemented Solutions
+
+1. **Permanent Loading Spinner Indicator Bug (`frontend/pages/chat_page.py`):**
+   - **Root Cause**: In `render_messages()`, line 1205 checked `if state.is_generating or is_active_conv_gen or gen_status:`. When generation finished, `state.get_generation_status()` returned the string `"completed"`. In Python, `bool("completed")` evaluates to `True`, causing the synthesis spinner (`"Synthesizing answer from verified texts..."`) to remain permanently rendered in the conversation bubble even after the answer had fully appeared.
+   - **Fix**: Replaced truthy string check with explicit active-generation state filtering: `if is_active_conv_gen or gen_status in ("generating", "queued"):`. The spinner now vanishes immediately upon completion or cancellation.
+
+2. **Duplicate Assistant Responses on History Load (`backend/app/schemas/chat.py`, `backend/app/api/v1/endpoints/chat.py`, `frontend/client/api_client.py`, `frontend/state/app_state.py`):**
+   - **Root Cause**: `ChatQueryResponse` did not include the persisted database message ID. As a result, `api_client.send_chat_message()` created a synthetic client ID (`f"msg-{uuid.uuid4().hex[:8]}"`). When `AppState.load_conversation()` was subsequently triggered (e.g. clicking the conversation in Recent Chats), `detail.messages` returned the actual database UUIDs. In `load_conversation()`, `existing_ids = {m.id for m in self._chat_history}` only contained the database UUID; since `gen.response.id` (`msg-xxxx`) was not in `existing_ids`, it appended the in-memory response a second time, duplicating the message and its citation cards.
+   - **Fix**:
+     - Added `message_id: str | None = None` to `ChatQueryResponse` in `backend/app/schemas/chat.py`.
+     - In `backend/app/api/v1/endpoints/chat.py` `_persist_assistant_response()`, called `db.refresh(assistant_msg)` and assigned `response.message_id = str(assistant_msg.id)` and `response.metadata["message_id"] = str(assistant_msg.id)`.
+     - In `frontend/client/api_client.py` `send_chat_message()`, used the canonical `ret_msg_id` as `ChatMessageDTO.id`.
+     - In `frontend/state/app_state.py` (`load_conversation()` and `_run_async_query()`), added both ID-based matching and content-based matching (`has_matching_content = any(m.role == "assistant" and (m.content or "").strip() == (gen.response.content or "").strip() for m in self._chat_history)`), preventing duplicate assistant turns regardless of timing.
+
+3. **Single Authoritative Submit Path & Race Condition Prevention (`frontend/pages/chat_page.py`):**
+   - **Root Cause**: An unused global event listener `ui.on("submit_chat_question", on_custom_submit)` was registered in `chat_page.py`. In `send_message()`, `finally: is_submitting["value"] = False` cleared the submission lock synchronously in the same tick that `start_background_generation()` was created, leaving a narrow window where rapid Enter keydown or mouse clicks could submit duplicate questions before the task transitioned state.
+   - **Fix**: Removed the redundant `submit_chat_question` listener. Kept `is_submitting["value"] = True` active throughout generation, releasing the lock only in `check_generation_status` when generation completes, in `handle_stop`, or upon synchronous exception.
+
+4. **Crowded Single-Paragraph Answers & Missing List Bullets (`frontend/pages/chat_page.py`, `frontend/components/theme.py`, `backend/app/services/llm/service.py`):**
+   - **Root Cause**:
+     - NiceGUI's `ui.markdown` uses `markdown2`. Under standard Markdown, an itemized list preceded by text without a blank line (`\n\n`) is collapsed by `markdown2` into a single `<p>` tag.
+     - Tailwind CSS preflight resets `ol, ul { list-style: none; }` and `li` styling. `.safe-markdown ul` only defined margin/padding without `list-style-type: disc !important` or `display: list-item !important`, causing browsers to render lists as unbulleted indented text.
+     - When the model copied unbulleted text or inline numbered sequences (e.g. `Android 1.0 (2008) Android 1.5 ...`), `_sanitize_llm_answer()` lacked logic to split them into vertical items.
+     - Bullet citations were repeated on every single bullet item (e.g. `[1]` on all 18 lines).
+   - **Fix**:
+     - Configured `ui.markdown(clean_content, extras=["fenced-code-blocks", "tables", "cuddled-lists", "break-on-newline"])`.
+     - In `frontend/components/theme.py`, styled `.safe-markdown ul` with `list-style-type: disc !important;`, `.safe-markdown ol` with `list-style-type: decimal !important;`, and `.safe-markdown li` with `display: list-item !important;`.
+     - Added `format_inline_list_items()` in `backend/app/services/llm/service.py` to automatically detect inline sequences and split them into clean markdown bullets (`- `).
+     - Added `deduplicate_list_citations()` to consolidate repetitive identical citation tags from individual bullets onto the list header or introduction.
+     - Expanded `REASONING_LEAK_PATTERNS` to catch `The user wants...` and prompt instruction echoes.
+
+### Automated and Live Verifications Completed
+- `backend/tests/unit/test_frontend.py`: **44/44 passed (100%)**
+- `backend/tests/integration/test_authenticated_chat_lifecycle.py`: **4/4 passed (100%)**
+- `backend/tests/integration/test_chat_orchestration_integration.py`: **7/7 passed (100%)**
+- `backend/tests/unit/test_conversational_rag_quality.py`: **14/14 passed (100%)**
+- `scripts/test_phase13e_acceptance.py`: **4/4 passed (100%) against live PostgreSQL and Ollama models**:
+  - Test A (`list of android version`): 12 Android versions extracted from Page 6 infographic of `1-Flutter-Intro.pdf`, cited with Page 6, formatted as a clean vertical list.
+  - Test B (`What is Flutter?`): Direct definition from Page 18, cited with Page 18.
+  - Test C (`list that`): Conversational follow-up correctly resolved and itemized into a clean markdown list.
+  - Test D (`What is the capital of Mars?`): Grounded refusal without hallucination or fake citations.
+
+---
+
+## Prior authoritative phase -- 2026-10-29
+
 **PHASE 15 -- FIX CONVERSATION ISOLATION, VERTICAL CHAT SCROLLING, RELIABLE ANSWERS AND SHARED STUDENT/ADMIN COURSE SELECTION (COMPLETED & VERIFIED)**
 
 ### Confirmed Root Causes & Implemented Solutions

@@ -381,16 +381,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     margin-bottom: 0;
 }
 
-.safe-markdown ul, .safe-markdown ol {
-    margin-left: 1.35rem;
-    margin-bottom: 0.85rem;
-    padding-left: 0.5rem;
+.safe-markdown ul {
+    list-style-type: disc !important;
+    margin-left: 1.5rem !important;
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.85rem !important;
+    padding-left: 0.5rem !important;
+}
+
+.safe-markdown ol {
+    list-style-type: decimal !important;
+    margin-left: 1.5rem !important;
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.85rem !important;
+    padding-left: 0.5rem !important;
 }
 
 .safe-markdown li {
-    margin-bottom: 0.35rem;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    display: list-item !important;
+    margin-bottom: 0.35rem !important;
+    line-height: 1.6 !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
 }
 
 .safe-markdown code {

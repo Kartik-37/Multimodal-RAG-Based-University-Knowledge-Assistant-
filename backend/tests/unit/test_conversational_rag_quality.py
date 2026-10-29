@@ -268,3 +268,134 @@ def test_patch_conversation_route_contract():
     assert empty_req.scope is None
 
 
+def test_chat_query_response_message_id_contract():
+    """Verify ChatQueryResponse includes message_id field and serializes correctly."""
+    from backend.app.schemas.chat import ChatQueryResponse, GroundingSummaryDTO, ChatLatencyBreakdownDTO
+
+    msg_uuid = str(uuid.uuid4())
+    resp = ChatQueryResponse(
+        query="test query",
+        processed_query="test query",
+        knowledge_base_id=None,
+        answer="test answer [source_1]",
+        is_empty_context=False,
+        citations=[],
+        grounding=GroundingSummaryDTO(
+            is_grounded=True,
+            status="FULLY_SUPPORTED",
+            citation_validity_rate=1.0,
+            citation_coverage=1.0,
+            claim_support_rate=1.0,
+            unsupported_claim_rate=0.0,
+            has_conflicts=False,
+            claims=[],
+        ),
+        latency=ChatLatencyBreakdownDTO(
+            query_processing_ms=1.0,
+            retrieval_ms=5.0,
+            reranking_ms=5.0,
+            context_assembly_ms=1.0,
+            llm_generation_ms=10.0,
+            grounding_validation_ms=2.0,
+            total_pipeline_ms=24.0,
+        ),
+        model="qwen3:4b",
+        message_id=msg_uuid,
+        metadata={"message_id": msg_uuid},
+    )
+    assert resp.message_id == msg_uuid
+    dumped = resp.model_dump()
+    assert dumped["message_id"] == msg_uuid
+
+
+def test_deduplicate_list_citations_and_spacing():
+    """Verify deduplicate_list_citations consolidates repeated bullet citations to the header."""
+    from backend.app.services.llm.service import deduplicate_list_citations
+
+    raw_text = (
+        "Based on the documents, the following items are listed:\n\n"
+        "- Item 1 [source_1]\n"
+        "- Item 2 [source_1]\n"
+        "- Item 3 [source_1]\n"
+        "- Item 4 [source_1]"
+    )
+    cleaned = deduplicate_list_citations(raw_text)
+    assert "[source_1]:" in cleaned or "[source_1]" in cleaned.splitlines()[0]
+    # Trailing citations on individual bullets should be removed
+    for line in cleaned.splitlines():
+        if line.startswith("- "):
+            assert "[source_1]" not in line
+
+
+def test_app_state_load_conversation_prevents_duplicate_assistant_messages():
+    """Verify AppState.load_conversation does not append duplicate assistant responses."""
+    from frontend.state.app_state import AppState, ConversationGeneration
+    from frontend.client.models import ChatMessageDTO, ConversationDetailDTO
+
+    state = AppState()
+    conv_id = str(uuid.uuid4())
+    canonical_msg_id = str(uuid.uuid4())
+
+    persisted_msg = ChatMessageDTO(
+        id=canonical_msg_id,
+        role="assistant",
+        content="The answer is 42.",
+        citations=[],
+    )
+
+    # In-memory generation finished with canonical ID or matching content
+    gen = ConversationGeneration(
+        conversation_id=conv_id,
+        task=None,
+        status="completed",
+        question="What is the answer?",
+        kb_id=None,
+        document_id=None,
+        scope="ALL_COURSES",
+        response=persisted_msg,
+    )
+    state._generations[conv_id] = gen
+
+    # Mock detail response
+    mock_detail = ConversationDetailDTO(
+        id=conv_id,
+        title="Test Conversation",
+        scope="ALL_COURSES",
+        created_at="2026-10-29T10:00:00",
+        updated_at="2026-10-29T10:00:00",
+        messages=[persisted_msg],
+    )
+
+    with patch("frontend.state.app_state.api_client.get_conversation", return_value=mock_detail):
+        state.load_conversation(conv_id)
+
+    # Must only have 1 message in history, not 2
+    assert len(state.chat_history) == 1
+    assert state.chat_history[0].id == canonical_msg_id
+
+
+def test_app_state_is_conversation_generating_completed_status():
+    """Verify is_conversation_generating and is_generating return False once completed."""
+    from frontend.state.app_state import AppState, ConversationGeneration
+
+    state = AppState()
+    conv_id = str(uuid.uuid4())
+    state._active_conversation_id = conv_id
+
+    gen = ConversationGeneration(
+        conversation_id=conv_id,
+        task=None,
+        status="completed",
+        question="test",
+        kb_id=None,
+        document_id=None,
+        scope="ALL_COURSES",
+    )
+    state._generations[conv_id] = gen
+
+    assert state.is_conversation_generating(conv_id) is False
+    assert state.is_generating is False
+    assert state.get_generation_status(conv_id) == "completed"
+
+
+

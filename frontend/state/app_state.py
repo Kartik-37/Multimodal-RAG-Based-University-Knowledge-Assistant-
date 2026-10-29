@@ -125,11 +125,10 @@ class AppState:
         if not value and conv_id in self._generations:
             self._generations[conv_id].status = "completed"
 
-    def is_conversation_generating(self, conv_id: str | None) -> bool:
+    def is_conversation_generating(self, conv_id: str | None = None) -> bool:
         """Check if a specific conversation is actively generating or queued."""
-        if not conv_id:
-            return False
-        gen = self._generations.get(conv_id)
+        target_id = conv_id or self._active_conversation_id or "__draft__"
+        gen = self._generations.get(target_id)
         return gen is not None and gen.status in ("generating", "queued")
 
     def get_generation_status(self, conv_id: str | None = None) -> str | None:
@@ -268,7 +267,13 @@ class AppState:
 
                     # If student or admin is currently viewing this conversation, update active thread and citations
                     if self._active_conversation_id == resolved_conv_id:
-                        self._chat_history.append(resp)
+                        existing_ids = {m.id for m in self._chat_history}
+                        has_matching_content = any(
+                            m.role == "assistant" and (m.content or "").strip() == (resp.content or "").strip()
+                            for m in self._chat_history
+                        )
+                        if resp.id not in existing_ids and not has_matching_content:
+                            self._chat_history.append(resp)
                         if resp.citations:
                             self._selected_citation = resp.citations[0]
 
@@ -409,7 +414,11 @@ class AppState:
         gen = self._generations.get(conv_id)
         if gen and gen.status == "completed" and gen.response:
             existing_ids = {m.id for m in self._chat_history}
-            if gen.response.id not in existing_ids:
+            has_matching_content = any(
+                m.role == "assistant" and (m.content or "").strip() == (gen.response.content or "").strip()
+                for m in self._chat_history
+            )
+            if gen.response.id not in existing_ids and not has_matching_content:
                 self._chat_history.append(gen.response)
 
         if getattr(detail, "scope", None):
@@ -583,7 +592,7 @@ class _SessionAppStateProxy:
     def is_generating(self, value: bool) -> None:
         self._get_state().is_generating = value
 
-    def is_conversation_generating(self, conv_id: str | None) -> bool:
+    def is_conversation_generating(self, conv_id: str | None = None) -> bool:
         return self._get_state().is_conversation_generating(conv_id)
 
     def get_generation_status(self, conv_id: str | None = None) -> str | None:

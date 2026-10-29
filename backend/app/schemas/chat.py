@@ -274,6 +274,10 @@ class ChatQueryResponse(BaseModel):
         ...,
         description="Name of the LLM generation model used.",
     )
+    message_id: str | None = Field(
+        default=None,
+        description="Persisted assistant message ID.",
+    )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Safe diagnostic metadata (strictly excluding credentials, secrets, or internal paths).",

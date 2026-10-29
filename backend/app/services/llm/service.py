@@ -46,7 +46,7 @@ GREETING_WORDS = {
 }
 
 REASONING_LEAK_PATTERNS = [
-    r"\bthe user\s+(?:says|asks|also asks|is asking|question is)\b",
+    r"\bthe user\s+(?:says|asks|also asks|is asking|question is|wants|is looking for)\b",
     r"\bwe\s+(?:need to determine|must determine|can answer|are to output|can take|can also note|must see|have multiple|are given)\b",
     r"\bwe have\s+(?:three|two|one|\d+|several)?\s*retrieved\b",
     r"\bretrieved evidence chunks?\b",
@@ -61,6 +61,8 @@ REASONING_LEAK_PATTERNS = [
     r"\boption:\s*[A-Z]",
     r"\bnot directly about\b",
     r"\(other points, but\b",
+    r"\ba clean markdown list of\b",
+    r"\bthe most complete list of\b",
 ]
 
 
@@ -211,6 +213,85 @@ def extract_grounded_recovery_answer(
     return None
 
 
+def format_inline_list_items(text: str) -> str:
+    """
+    Format unbulleted inline list items (such as 'Android 1.0 (2008) Android 1.5 ...' or '1. X 2. Y')
+    into clean, vertically stacked markdown bullets.
+    """
+    if not text:
+        return text
+    if text.count("\n- ") >= 2 or text.count("\n* ") >= 2:
+        return text
+
+    # Pattern for consecutive items
+    sub_pattern = re.compile(
+        r"(?<=[)\w\d])[,;]?\s+(?=(?:Android\s+(?:version\s+)?[\d.]+|Version\s+[\d.]+))",
+        re.IGNORECASE,
+    )
+    parts = sub_pattern.split(text)
+    if len(parts) >= 3:
+        first = parts[0]
+        header_match = re.search(
+            r"^(.*?(?::|\bis in \[[^\]]+\]|\bare:?))\s+(Android\s+.*)",
+            first,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if header_match:
+            header = header_match.group(1).strip()
+            item0 = header_match.group(2).strip()
+            items = [item0] + [p.strip() for p in parts[1:] if p.strip()]
+            return f"{header}\n\n" + "\n".join(f"- {it}" for it in items)
+        else:
+            return "\n".join(f"- {p.strip()}" for p in parts if p.strip())
+
+    # Check for consecutive numbered items '1. ... 2. ... 3. ...'
+    num_pattern = re.compile(r"(?<=\w)\s+(?=\d+\.\s+)")
+    num_parts = num_pattern.split(text)
+    if len(num_parts) >= 3:
+        first = num_parts[0]
+        header_m = re.search(r"^(.*?:)\s*(.*)", first, re.DOTALL)
+        if header_m:
+            header = header_m.group(1).strip()
+            items = [header_m.group(2).strip()] + [p.strip() for p in num_parts[1:] if p.strip()]
+            return f"{header}\n\n" + "\n".join(f"- {it}" for it in items)
+
+    return text
+
+
+def deduplicate_list_citations(text: str) -> str:
+    """
+    If 3 or more list items cite the exact same single source, attribute the source to the list
+    header or introduction, and strip repetitive citation tags from individual bullets.
+    """
+    if not text:
+        return text
+    bullet_sources = re.findall(
+        r"^\s*[-*•▪●▸\d+.]\s+.*?\s*\[(source_\d+)\]\s*$",
+        text,
+        flags=re.MULTILINE | re.IGNORECASE,
+    )
+    if len(bullet_sources) >= 3 and len(set(s.lower() for s in bullet_sources)) == 1:
+        src_tag = bullet_sources[0].lower()
+        cleaned = re.sub(
+            r"\s*\[" + re.escape(src_tag) + r"\]\s*$",
+            "",
+            text,
+            flags=re.MULTILINE | re.IGNORECASE,
+        )
+        if f"[{src_tag}]".lower() not in cleaned.lower():
+            lines = cleaned.splitlines()
+            for idx, line in enumerate(lines):
+                if re.match(r"^\s*[-*•▪●▸\d+.]\s+", line):
+                    for prev_idx in range(idx - 1, -1, -1):
+                        if lines[prev_idx].strip():
+                            lines[prev_idx] = lines[prev_idx].rstrip(" :") + f" [{src_tag}]:"
+                            break
+                    break
+            cleaned = "\n".join(lines)
+        return cleaned
+    return text
+
+
 def _sanitize_llm_answer(text: str) -> str:
     """
     Strip model self-reasoning preambles, chain-of-thought evaluations, and instruction leaks.
@@ -300,6 +381,10 @@ def _sanitize_llm_answer(text: str) -> str:
     lines = cleaned.splitlines()
     kept_lines: list[str] = []
     reasoning_prefixes = (
+        "the user",
+        "a clean markdown",
+        "clean markdown",
+        "the most complete",
         "we are given",
         "we must",
         "we have",
@@ -422,7 +507,8 @@ def _sanitize_llm_answer(text: str) -> str:
         candidate_answer,
         flags=re.IGNORECASE,
     )
-    return canonical_answer
+    formatted = format_inline_list_items(canonical_answer)
+    return deduplicate_list_citations(formatted)
 
 
 class LLMGenerationService:

@@ -242,6 +242,9 @@ def _persist_assistant_response(
         db.add(assistant_msg)
         conv.updated_at = datetime.now(UTC)
         db.commit()
+        db.refresh(assistant_msg)
+        response.message_id = str(assistant_msg.id)
+        response.metadata["message_id"] = str(assistant_msg.id)
         response.metadata["conversation_id"] = str(conv.id)
     except Exception as exc:
         logger.warning("Could not persist assistant response to database: %s", exc)

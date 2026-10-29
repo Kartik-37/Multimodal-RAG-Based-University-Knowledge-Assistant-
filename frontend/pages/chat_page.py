@@ -54,7 +54,7 @@ def format_citation_links(
     def _render_pill(ref: SemanticCitationRef) -> str:
         idx = ref.index
         cit = ref.citation
-        page_info = f" • Page {cit.page_number}" if cit.page_number else ""
+        page_info = f" - Page {cit.page_number}" if cit.page_number else ""
         title_text = html.escape(
             f"View {cit.document_name}{page_info} in Source Viewer", quote=True
         )
@@ -305,23 +305,6 @@ def register_chat_page() -> None:
 
             is_submitting = {"value": False}
 
-            def on_custom_submit(e: Any) -> None:
-                if is_submitting["value"] or state.is_generating:
-                    return
-                text = ""
-                raw = getattr(e, "args", e)
-                if isinstance(raw, list) and len(raw) > 0:
-                    raw = raw[0]
-                if isinstance(raw, str):
-                    text = raw
-                elif isinstance(raw, dict):
-                    text = str(raw.get("question") or "")
-                if text:
-                    input_box.value = text
-                    send_message(text)
-
-            ui.on("submit_chat_question", on_custom_submit)
-
             def render_evidence() -> None:
                 evidence_container.clear()
                 with evidence_container:
@@ -439,8 +422,13 @@ def register_chat_page() -> None:
                         conversation_id=state.active_conversation_id,
                     )
                     render_action_btn()
-                finally:
+                except Exception:
                     is_submitting["value"] = False
+                    try:
+                        input_box.enable()
+                    except Exception:
+                        pass
+                    raise
 
             def handle_submit() -> None:
                 if is_submitting["value"] or state.is_generating:
@@ -1105,7 +1093,10 @@ def register_chat_page() -> None:
                                                 msg.content, msg.citations, message_id=msg.id
                                             )
                                         )
-                                        ui.markdown(clean_content).classes(
+                                        ui.markdown(
+                                            clean_content,
+                                            extras=["fenced-code-blocks", "tables", "cuddled-lists", "break-on-newline"],
+                                        ).classes(
                                             "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans w-full min-w-0 max-w-full break-words"
                                         )
 
@@ -1202,7 +1193,7 @@ def register_chat_page() -> None:
                         if hasattr(state, "is_conversation_generating")
                         else state.is_generating
                     )
-                    if state.is_generating or is_active_conv_gen or gen_status:
+                    if is_active_conv_gen or gen_status in ("generating", "queued"):
                         status_msg = (
                             "Waiting in queue behind active query..."
                             if gen_status == "queued"

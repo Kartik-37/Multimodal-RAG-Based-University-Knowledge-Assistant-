@@ -1656,9 +1656,10 @@ class FrontendAPIClient:
         grounding_data = data.get("grounding") or {}
         latency_data = data.get("latency") or {}
         ret_conv_id = data.get("metadata", {}).get("conversation_id") or conversation_id
+        ret_msg_id = data.get("message_id") or data.get("metadata", {}).get("message_id")
 
         return ChatMessageDTO(
-            id=f"msg-{uuid.uuid4().hex[:8]}",
+            id=str(ret_msg_id) if ret_msg_id else f"msg-{uuid.uuid4().hex[:8]}",
             role="assistant",
             content=data["answer"],
             citations=citations,
