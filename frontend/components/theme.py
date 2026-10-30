@@ -452,6 +452,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 /* Chat Layout Restraints - Prohibit horizontal scrolling and guarantee vertical timeline */
+.chat-content-shell {
+    width: 100% !important;
+    max-width: 56rem !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    box-sizing: border-box !important;
+}
+
 .chat-scroll-area {
     display: flex !important;
     flex-direction: column !important;

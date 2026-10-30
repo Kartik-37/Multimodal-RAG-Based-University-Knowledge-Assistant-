@@ -168,6 +168,7 @@ class ChatMessageDTO(BaseModel):
     total_pipeline_ms: float | None = None
     model: str | None = None
     conversation_id: str | None = None
+    error_details: dict[str, Any] | None = None
 
 
 class ConversationSummaryDTO(BaseModel):

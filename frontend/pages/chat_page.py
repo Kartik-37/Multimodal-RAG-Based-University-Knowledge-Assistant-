@@ -192,14 +192,14 @@ def register_chat_page() -> None:
                     "chat-scroll-area w-full flex-1 self-stretch overflow-y-auto overflow-x-hidden min-h-0 py-3 px-3 sm:px-6 flex flex-col items-stretch min-w-0 max-w-full box-border flex-nowrap"
                 ).style("display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important; overflow-y: auto !important; overflow-x: hidden !important;"):
                     message_container = ui.column().classes(
-                        "chat-timeline w-full max-w-4xl mx-auto gap-5 pb-8 flex-1 flex flex-col items-stretch min-h-full min-w-0 max-w-full box-border flex-nowrap"
+                        "chat-timeline chat-content-shell w-full max-w-4xl mx-auto gap-5 pb-8 flex-1 flex flex-col items-stretch min-h-full min-w-0 max-w-full box-border flex-nowrap"
                     ).style("display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important;")
 
                 # Composer Outer Container
                 with ui.column().classes(
                     "w-full shrink-0 pt-2 pb-3 px-3 sm:px-6 border-t border-subtle bg-canvas z-10 min-w-0 max-w-full box-border flex-nowrap"
                 ):
-                    with ui.column().classes("w-full max-w-4xl mx-auto gap-1 min-w-0 max-w-full box-border"):
+                    with ui.column().classes("chat-content-shell w-full max-w-4xl mx-auto gap-1 min-w-0 max-w-full box-border"):
                         # Composer Card
                         with ui.card().classes(
                             "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-xl shadow-none hover:border-gold/60 focus-within:border-gold transition-colors flex flex-col gap-2 min-w-0 max-w-full box-border"
@@ -207,16 +207,17 @@ def register_chat_page() -> None:
                             # Top Row: Input and Action Button (Send / Stop)
                             with ui.row().classes("w-full items-center gap-2 no-wrap pb-0.5 min-w-0"):
                                 input_box = (
-                                    ui.input(
-                                        placeholder="Ask a question about your course materials..."
+                                    ui.textarea(
+                                        placeholder="Ask a question about your course materials... (Shift+Enter for newline)"
                                     )
-                                    .props("dense borderless")
+                                    .props("autogrow borderless dense rows=1")
                                     .classes(
-                                        "flex-1 text-sm sm:text-base text-primary-navy pl-1 sm:pl-2 font-sans placeholder:text-secondary-navy/60 min-w-0"
+                                        "flex-1 text-sm sm:text-base text-primary-navy pl-1 sm:pl-2 font-sans placeholder:text-secondary-navy/60 min-w-0 max-h-36 overflow-y-auto resize-none leading-normal"
                                     )
+                                    .style("max-height: 140px; overflow-y: auto;")
                                 )
                                 action_btn_container = ui.row().classes(
-                                    "items-center shrink-0"
+                                    "items-center shrink-0 self-center"
                                 )
 
                             # Bottom Toolbar: Integrated Scope Selector & Keyboard Hint
@@ -226,7 +227,7 @@ def register_chat_page() -> None:
                                 composer_scope_container = ui.row().classes(
                                     "items-center gap-1.5 min-w-0 flex-1"
                                 )
-                                ui.label("Press Enter ↵ to ask").classes(
+                                ui.label("Press Enter ↵ to ask · Shift+Enter for newline").classes(
                                     "hidden sm:block text-secondary-navy/70 ml-auto shrink-0"
                                 )
 
@@ -350,30 +351,77 @@ def register_chat_page() -> None:
                         return False, "Please select a specific document before asking questions"
                 return True, ""
 
-            def handle_retry() -> None:
+            def handle_retry_turn(err_msg: ChatMessageDTO) -> None:
                 if is_submitting["value"] or state.is_generating:
                     return
-                user_msgs = [m for m in state.chat_history if getattr(m, "role", "") == "user"]
-                if not user_msgs:
+                is_submitting["value"] = True
+
+                # 1. Extract the original turn parameters from failed generation record
+                details = getattr(err_msg, "error_details", None) or {}
+                retry_q = details.get("question")
+                retry_kb_id = details.get("kb_id")
+                retry_doc_id = details.get("document_id")
+                retry_scope = details.get("scope") or "ALL_COURSES"
+                retry_conv_id = details.get("conversation_id") or state.active_conversation_id
+
+                # Fallback to finding the preceding user message if error_details is absent
+                if not retry_q:
+                    err_idx = -1
+                    for idx, m in enumerate(state.chat_history):
+                        if m.id == err_msg.id:
+                            err_idx = idx
+                            break
+                    if err_idx > 0:
+                        for idx in range(err_idx - 1, -1, -1):
+                            if state.chat_history[idx].role == "user":
+                                retry_q = state.chat_history[idx].content
+                                break
+                    if not retry_q:
+                        user_msgs = [m for m in state.chat_history if getattr(m, "role", "") == "user"]
+                        if user_msgs:
+                            retry_q = user_msgs[-1].content
+
+                if not retry_q:
+                    is_submitting["value"] = False
                     return
-                last_q = user_msgs[-1].content
-                # Remove trailing error assistant message if present
-                if state.chat_history and state.chat_history[-1].role == "assistant":
-                    state.chat_history.pop()
+
+                # If scope/kb_id not in details, fallback safely to active_scope
+                if not retry_scope:
+                    retry_scope = active_scope.get("scope", "ALL_COURSES")
+                if retry_kb_id is None and retry_scope in ("COURSE", "DOCUMENT"):
+                    retry_kb_id = active_scope.get("kb_id")
+                if retry_doc_id is None and retry_scope == "DOCUMENT":
+                    retry_doc_id = active_scope.get("doc_id")
+
+                # 2. Remove ONLY this specific clicked error message
+                state.remove_chat_message(err_msg.id)
                 state.clear_generation_error()
                 render_messages()
-                state.start_background_generation(
-                    kb_id=active_scope["kb_id"]
-                    if active_scope["scope"] in ("COURSE", "DOCUMENT")
-                    else None,
-                    question=last_q,
-                    document_id=active_scope["doc_id"]
-                    if active_scope["scope"] == "DOCUMENT"
-                    else None,
-                    scope=active_scope["scope"],
-                    conversation_id=state.active_conversation_id,
-                )
+
+                # 3. Disable input & show stop action
+                try:
+                    input_box.disable()
+                except Exception:
+                    pass
                 render_action_btn()
+
+                # 4. Trigger generation for this exact turn WITHOUT creating duplicate user message
+                try:
+                    state.start_background_generation(
+                        kb_id=retry_kb_id,
+                        question=retry_q,
+                        document_id=retry_doc_id,
+                        scope=retry_scope,
+                        conversation_id=retry_conv_id,
+                    )
+                except Exception:
+                    is_submitting["value"] = False
+                    try:
+                        input_box.enable()
+                    except Exception:
+                        pass
+                    render_action_btn()
+                    raise
 
             def send_message(question_text: str) -> None:
                 q_clean = question_text.strip()
@@ -450,7 +498,7 @@ def register_chat_page() -> None:
                     return
                 send_message(val)
 
-            input_box.on("keydown.enter.prevent", handle_submit)
+            input_box.on("keydown.enter.exact.prevent", handle_submit)
 
             def render_action_btn() -> None:
                 action_btn_container.clear()
@@ -1001,7 +1049,7 @@ def register_chat_page() -> None:
             def render_header() -> None:
                 header_container.clear()
                 with header_container:
-                    with ui.row().classes("w-full max-w-4xl mx-auto items-center justify-between min-w-0 flex-nowrap"):
+                    with ui.row().classes("chat-content-shell w-full max-w-4xl mx-auto items-center justify-between min-w-0 flex-nowrap"):
                         # Left: Identity Title & Scope Indicator
                         with ui.row().classes("items-center gap-2.5 min-w-0"):
                             base_title = "Admin Knowledge Chat" if is_admin else "Academic Knowledge Assistant"
@@ -1082,7 +1130,7 @@ def register_chat_page() -> None:
                                 is_err = msg.id.startswith("msg-err-") or ("timed out" in (msg.content or "").lower() and not msg.citations)
                                 if is_err:
                                     with ui.card().classes(
-                                        "w-full max-w-3xl p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none min-w-0 max-w-full box-border shrink-0"
+                                        "w-full p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none min-w-0 max-w-full box-border shrink-0"
                                     ).style("width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important;"):
                                         with ui.row().classes("items-center justify-between w-full"):
                                             with ui.row().classes("items-center gap-2"):
@@ -1091,7 +1139,7 @@ def register_chat_page() -> None:
                                             ui.button(
                                                 "Retry",
                                                 icon="refresh",
-                                                on_click=handle_retry,
+                                                on_click=lambda err_m=msg: handle_retry_turn(err_m),
                                             ).props("flat dense no-caps").classes("text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-100/70 px-2.5 py-1 rounded-md")
                                         ui.label(msg.content).classes("text-sm text-rose-900 font-sans leading-relaxed break-words")
                                 else:

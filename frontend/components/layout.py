@@ -144,11 +144,9 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
     initials = get_user_initials(user.full_name, user.email)
     is_admin = user.role == "ADMIN"
 
-    # Define Navigation Links for Student
+    # Define Navigation Links for Student (Chat-First: New Chat, Documents, Recent Chats)
     student_nav_links: list[tuple[str, str, str]] = [
-        ("Assistant", "/chat", "chat"),
-        ("Courses", "/knowledge-bases", "menu_book"),
-        ("Profile", "/profile", "account_circle"),
+        ("Documents", "/documents", "description"),
     ]
 
     # Mobile Header for screens < 1024px
@@ -457,28 +455,39 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                 # -------------------------------------------------------------
                 render_chat_history_sidebar(student_nav_links)
 
-        # Base: User Profile & Logout
-        with ui.column().classes("w-full p-2.5 border-t border-subtle bg-surface-elevated shrink-0 gap-2"):
+        # Base: User Profile & Logout (Accessible bottom identity & isolated sign-out)
+        with ui.row().classes(
+            "w-full p-2 border-t border-subtle bg-surface-elevated shrink-0 items-center justify-between gap-1 box-border"
+        ):
+            # Clickable profile identity container (avatar + name/role)
             with (
                 ui.row()
-                .classes("items-center justify-between w-full cursor-pointer")
+                .classes(
+                    "items-center gap-2 min-w-0 flex-1 p-1 rounded-lg cursor-pointer hover:bg-surface transition-colors select-none focus:outline-none focus:ring-1 focus:ring-gold"
+                )
+                .props('tabindex="0" role="button" aria-label="View user profile"')
                 .on("click", lambda: ui.navigate.to("/profile"))
+                .on("keydown.enter", lambda: ui.navigate.to("/profile"))
+                .on("keydown.space", lambda: ui.navigate.to("/profile"))
             ):
-                with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
-                    with ui.element("div").classes(
-                        "w-8 h-8 rounded-full bg-gold-light border border-gold flex items-center justify-center text-xs font-bold text-primary-navy shrink-0"
-                    ):
-                        ui.label(initials)
-                    with ui.column().classes("gap-0 min-w-0 flex-1"):
-                        ui.label(user.full_name).classes(
-                            "text-xs font-bold text-primary-navy truncate max-w-[130px]"
-                        )
-                        ui.label(user.role.title()).classes(
-                            "text-[10px] text-secondary-navy truncate"
-                        )
-                ui.button(icon="logout", on_click=_handle_logout).props("flat round dense").classes(
-                    "text-secondary-navy hover:text-primary-navy shrink-0"
-                ).tooltip("Sign Out")
+                with ui.element("div").classes(
+                    "w-8 h-8 rounded-full bg-gold-light border border-gold flex items-center justify-center text-xs font-bold text-primary-navy shrink-0"
+                ):
+                    ui.label(initials)
+                with ui.column().classes("gap-0 min-w-0 flex-1 leading-tight"):
+                    ui.label(user.full_name).classes(
+                        "text-xs font-bold text-primary-navy truncate max-w-[130px]"
+                    )
+                    ui.label(user.role.title()).classes(
+                        "text-[10px] text-secondary-navy truncate"
+                    )
+
+            # Independent Sign Out button (isolated from profile click)
+            ui.button(icon="logout", on_click=_handle_logout).props(
+                "flat round dense @click.stop"
+            ).classes(
+                "text-secondary-navy hover:text-primary-navy shrink-0 p-1"
+            ).props('aria-label="Sign out"').tooltip("Sign Out")
 
 
 def _render_navbar(active_route: str) -> None:

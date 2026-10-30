@@ -33,6 +33,12 @@ SAFE_INSUFFICIENT_EVIDENCE_ANSWER = (
     "I could not find any relevant information in the available documents to answer your question."
 )
 
+INSUFFICIENT_COURSE_EVIDENCE_ANSWER = (
+    "I could not find any relevant information in the authorized course materials to answer your question. "
+    "As an academic assistant, I can only provide answers verified against authorized course documents and lecture notes. "
+    "Please ask a question related to your enrolled courses or course materials."
+)
+
 GREETING_WORDS = {
     "hi",
     "hello",
@@ -209,27 +215,27 @@ def extract_grounded_recovery_answer(
                 return header + bullet_list
 
     # 3. For ordinary factual queries where top item has strong relevance
-    top_item = context.items[0]
-    score = getattr(top_item, "reranker_score", 0.0) or 0.0
-    if score >= 0.5 and not is_list_query:
-        clean_text = re.sub(r"\[Visual [^\]]+\]:[^\n]*\n?", "", top_item.text).strip()
-        # Clean slide headers, publisher watermarks, and website URLs
-        clean_text = re.sub(r"(?i)\bakash\s+technolabs\b[^\n]*\n?", "", clean_text)
-        clean_text = re.sub(r"(?i)www\.[a-z0-9\-]+(?:\.[a-z]{2,})+", "", clean_text)
-        clean_text = re.sub(r"(?m)^What is [A-Za-z0-9\s\?]+$\n?", "", clean_text)
-        clean_text = re.sub(r"^[▪•\-\*]\s*", "", clean_text, flags=re.MULTILINE).strip()
-        clean_text = re.sub(r"\r?\n(?!\s*[-*•▪●▸\d+.]\s+)", " ", clean_text)
-        clean_text = re.sub(r"[ \t]+", " ", clean_text)
-        sentences = [
-            s.strip()
-            for s in re.split(r"(?<=[.!?])\s+", clean_text)
-            if len(s.strip()) > 20 and not s.strip().startswith("[")
-        ]
-        if sentences:
-            ans = " ".join(sentences[:2])
-            if f"[{top_item.source_id}]" not in ans:
-                ans = f"{ans} [{top_item.source_id}]"
-            return ans
+    for item in context.items[:3]:
+        score = getattr(item, "reranker_score", 0.0) or 0.0
+        if score >= 0.0 and not is_list_query:
+            clean_text = re.sub(r"\[Visual [^\]]+\]:[^\n]*\n?", "", item.text).strip()
+            # Clean slide headers, publisher watermarks, and website URLs
+            clean_text = re.sub(r"(?i)\bakash\s+technolabs\b[^\n]*\n?", "", clean_text)
+            clean_text = re.sub(r"(?i)www\.[a-z0-9\-]+(?:\.[a-z]{2,})+", "", clean_text)
+            clean_text = re.sub(r"(?m)^What is [A-Za-z0-9\s\?]+$\n?", "", clean_text)
+            clean_text = re.sub(r"^[▪•\-\*]\s*", "", clean_text, flags=re.MULTILINE).strip()
+            clean_text = re.sub(r"\r?\n(?!\s*[-*•▪●▸\d+.]\s+)", " ", clean_text)
+            clean_text = re.sub(r"[ \t]+", " ", clean_text)
+            sentences = [
+                s.strip()
+                for s in re.split(r"(?<=[.!?])\s+", clean_text)
+                if len(s.strip()) > 20 and not s.strip().startswith("[")
+            ]
+            if sentences:
+                ans = " ".join(sentences[:2])
+                if f"[{item.source_id}]" not in ans:
+                    ans = f"{ans} [{item.source_id}]"
+                return ans
 
     return None
 
@@ -648,16 +654,6 @@ class LLMGenerationService:
     async def generate_grounded_answer(
         self, request: LLMGenerationRequest
     ) -> LLMGenerationResponse:
-        """
-        Generate a grounded answer for the provided query and assembled context.
-
-        Args:
-            request: Validated LLMGenerationRequest containing assembled context,
-                     query, and generation options.
-
-        Returns:
-            LLMGenerationResponse with answer, source metadata, and token accounting.
-        """
         # 1. Deterministic empty-context fast-path
         if request.context.total_items == 0 or not request.context.items:
             return LLMGenerationResponse(
@@ -701,6 +697,35 @@ class LLMGenerationService:
                 output_tokens=len(greeting_msg.split()),
                 latency_ms=0.0,
                 metadata={"fast_path": True, "reason": "greeting"},
+            )
+
+        # 2b. Out-of-scope / low-relevance fast-path
+        # When all retrieved context chunks have a negative CrossEncoder score below the threshold (e.g. < -2.0),
+        # none of the available course documents contain relevant information for the query.
+        # Returning an immediate honest refusal prevents local CPU models from spending 45+ seconds
+        # generating runaway internal deliberation before timing out.
+        max_score = max(
+            (getattr(item, "reranker_score", 0.0) or 0.0)
+            for item in request.context.items
+        )
+        if max_score < -2.0:
+            return LLMGenerationResponse(
+                answer=INSUFFICIENT_COURSE_EVIDENCE_ANSWER,
+                query=request.query,
+                original_query=request.original_query,
+                provider=self.provider.provider_name,
+                model=request.model or self.provider.model_name,
+                sources_available=sources_available,
+                sources_referenced=[],
+                is_empty_context=True,
+                prompt_tokens=0,
+                output_tokens=len(INSUFFICIENT_COURSE_EVIDENCE_ANSWER.split()),
+                latency_ms=0.0,
+                metadata={
+                    "fast_path": True,
+                    "reason": "low_relevance",
+                    "max_reranker_score": max_score,
+                },
             )
 
         # 3. Build system instruction and untrusted evidence prompt
@@ -783,7 +808,14 @@ class LLMGenerationService:
                 cleaned_content = rec_ans
                 generation_path = "extractive_recovery" if isinstance(exc, LLMResponseError) else "timeout_recovery"
             else:
-                raise exc
+                max_score = max((getattr(item, "reranker_score", 0.0) or 0.0) for item in request.context.items)
+                if max_score < 0.0:
+                    cleaned_content = (
+                        "I could not find sufficient verified evidence in the course materials to answer your question completely."
+                    )
+                    generation_path = "refusal"
+                else:
+                    raise exc
 
         if provider_resp is None:
             provider_resp = LLMProviderResponse(

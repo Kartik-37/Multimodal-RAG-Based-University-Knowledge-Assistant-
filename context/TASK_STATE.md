@@ -4,6 +4,57 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-10-30
 
+**PHASE 20 -- RETRY RELIABILITY, STUDENT SIDEBAR SIMPLIFICATION, AND CHAT UI GEOMETRY ALIGNMENT (COMPLETED & VERIFIED)**
+
+### Confirmed Root Causes & Implemented Solutions
+
+1. **Workstream A: Retry & Timeout Reliability (`backend/app/services/llm/service.py`, `backend/app/api/v1/endpoints/chat.py`, `frontend/state/app_state.py`, `frontend/pages/chat_page.py`, `frontend/client/models.py`):**
+   - **Root Cause**:
+     - `handle_retry()` in `chat_page.py` previously guessed `user_msgs[-1]`, unconditionally popped `state.chat_history[-1]`, reused whatever scope was currently active in the composer instead of the original failed turn scope, and lacked a submission guard against double-clicks.
+     - Out-of-scope queries like `who is modi` against course materials retrieved chunks with CrossEncoder scores of `-11.0453`. Feeding these to `qwen3:4b` on CPU caused runaway `<think>` reasoning for >45s before timing out; recovery failed because score < 0.5, raising an uncaught `LLMTimeoutError`.
+     - Retrying created duplicate user bubbles and duplicate database rows when earlier turns failed.
+   - **Solution**:
+     - Added `error_details: dict[str, Any] | None` to `ChatMessageDTO`.
+     - When generation errors in `AppState._run_async_query()`, `error_details` binds the exact failed turn parameters: `question`, `kb_id`, `document_id`, `scope`, `conversation_id`, and `generation_id`.
+     - Replaced generic retry with `handle_retry_turn(err_msg: ChatMessageDTO)`: synchronously sets `is_submitting["value"] = True`, removes ONLY `err_msg.id` via `state.remove_chat_message(err_msg.id)`, preserves the existing user bubble in place (zero duplication), disables input, and starts background generation using the original turn scope and IDs.
+     - Strengthened backend idempotency in `_persist_user_question()` (`chat.py`): if an unanswered user message matching the question already exists in the conversation, reuses it without inserting a new database record.
+     - Implemented out-of-scope / low-relevance fast-path in `LLMGenerationService.generate_grounded_answer()`: when `max(item.reranker_score for item in context.items) < -2.0`, immediately returns `INSUFFICIENT_COURSE_EVIDENCE_ANSWER` in 0ms with `is_empty_context=True`, bypassing local CPU LLM inference entirely.
+     - Enhanced `extract_grounded_recovery_answer()` to check candidate chunks with `score >= 0.0` for clean factual recovery sentences, and if `max_score < 0.0`, safely returns an academic refusal instead of re-raising uncaught exceptions.
+
+2. **Workstream B: Student Sidebar Simplification & Profile Access (`frontend/components/layout.py`, `frontend/pages/documents_page.py`):**
+   - **Root Cause**:
+     - Student sidebar displayed separate navigation links for `Assistant` (`/chat`), `Courses` (`/knowledge-bases`), and `Profile` (`/profile`), crowding the navigation while `Documents` was missing.
+     - The bottom identity row previously lacked explicit interactive button semantics and nested the logout button inside the profile row, risking click bubbling.
+     - `/documents` was previously hard-blocked for student users with a permission error.
+   - **Solution**:
+     - For `role == STUDENT`: `student_nav_links` now contains ONLY `Documents` (`/documents`, icon `description`). `Assistant`, `Courses`, and `Profile` are removed from the navigation list.
+     - `New Chat` primary action button and `Recent Chats` history list are fully preserved with Cases A–F delete semantics.
+     - Bottom identity area (avatar, full name, role) upgraded to an accessible interactive container (`tabindex="0" role="button" aria-label="View user profile"`, click/enter/space navigation to `/profile`, subtle hover/focus treatment).
+     - Sign Out button isolated with `@click.stop` as a sibling action to prevent event bubbling.
+     - Opened `/documents` to Students: students can view authorized published course documents, inspect chunks, and open the Document Reader / Source Viewer, while Admin-only operations (job management, deletion, upload intake) remain strictly hidden and guarded.
+     - Administrator sidebar sections and tools remain completely unchanged.
+
+3. **Workstream C: Chat UI Geometry & Question Composer Alignment (`frontend/components/theme.py`, `frontend/pages/chat_page.py`):**
+   - **Root Cause**:
+     - Chat header, timeline, assistant answers, error cards, and composer used disparate widths (`max-w-2xl`, `max-w-3xl`, `max-w-4xl`), causing the composer to look much wider than assistant answers and error cards to jump to different widths.
+     - The single-line input field lacked multi-line growth and lacked explicit `Shift+Enter` newline support.
+   - **Solution**:
+     - Created unified `.chat-content-shell` in `GLOBAL_THEME_CSS` (`theme.py`) with `w-full max-w-4xl mx-auto` (56rem / 896px).
+     - Applied `.chat-content-shell` consistently to header container, message timeline, assistant columns, error cards, and composer container.
+     - Removed `max-w-3xl` from error cards so they align seamlessly with assistant responses and the composer width.
+     - Upgraded Question Composer to `ui.textarea` with `autogrow`, capped max-height (`max-h-36`, 140px), rounded-xl border, focus-within gold highlight, and vertically centered send/stop controls (`self-center`).
+     - Added `keydown.enter.exact.prevent` to submit on Enter alone, while allowing `Shift+Enter` to insert standard newlines.
+
+### Verification Suite Passed
+- `backend/tests/unit/test_retry_student_sidebar_and_chat_geometry.py`: **12/12 passed (100%)**
+- `backend/tests/unit/test_new_chat_and_vertical_timeline.py`: **16/16 passed (100%)**
+- `backend/tests/unit/test_conversational_rag_quality.py`: **19/19 passed (100%)**
+- Total: **47 / 47 targeted regression tests passed (100%)**
+
+---
+
+## Historical phase record -- 2026-10-30
+
 **PHASE 19 -- CHAT HISTORY ORDERING, AUTHORITATIVE DELETE SEMANTICS (CASES A-F), AND RAG ANSWER QUALITY (COMPLETED & VERIFIED)**
 
 ### Confirmed Root Causes & Implemented Solutions

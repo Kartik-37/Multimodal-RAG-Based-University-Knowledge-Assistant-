@@ -194,20 +194,24 @@ def register_documents_page() -> None:
     def documents_page(kb_id: str | None = None, view: str | None = None) -> None:
         user = state.current_user
         is_admin = bool(user and user.role == "ADMIN")
+        is_student = bool(user and user.role == "STUDENT")
         is_main = bool(user and user.admin_role == "MAIN_ADMIN")
 
-        can_view_documents = has_admin_permission(user, Permission.DOCUMENT_VIEW)
-        can_view_jobs = (
+        can_view_documents = (
+            (is_admin and has_admin_permission(user, Permission.DOCUMENT_VIEW))
+            or is_student
+        )
+        can_view_jobs = is_admin and (
             is_main
             or has_admin_permission(user, Permission.DOCUMENT_VIEW)
             or has_admin_permission(user, Permission.DOCUMENT_INDEX)
             or has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
         )
-        can_upload_documents = has_admin_permission(user, Permission.DOCUMENT_UPLOAD)
-        can_delete_documents = has_admin_permission(user, Permission.DOCUMENT_DELETE)
-        can_retry_jobs = has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
+        can_upload_documents = is_admin and has_admin_permission(user, Permission.DOCUMENT_UPLOAD)
+        can_delete_documents = is_admin and has_admin_permission(user, Permission.DOCUMENT_DELETE)
+        can_retry_jobs = is_admin and has_admin_permission(user, Permission.DOCUMENT_INDEX_RETRY)
 
-        if not is_admin or not (can_view_documents or can_view_jobs):
+        if not can_view_documents and not can_view_jobs:
             with page_layout(
                 title="Documents & Processing",
                 subtitle="Permission-aware course material access.",
@@ -223,7 +227,9 @@ def register_documents_page() -> None:
 
         # Determine initial in-page view
         requested_view = (view or "").lower().strip()
-        if requested_view in ("documents", "processing"):
+        if is_student:
+            current_view = "documents"
+        elif requested_view in ("documents", "processing"):
             current_view = requested_view
         else:
             current_view = "processing" if (not can_view_documents and can_view_jobs) else "documents"
@@ -233,12 +239,15 @@ def register_documents_page() -> None:
         course_map: dict[str, str] = {}
         if can_view_documents:
             try:
-                all_courses = api_client.get_document_scope_courses()
+                if is_student:
+                    all_courses = api_client.get_knowledge_bases()
+                else:
+                    all_courses = api_client.get_document_scope_courses()
                 course_map = {c.id: c.name for c in all_courses}
             except Exception as err:
                 with page_layout(
-                    title="Documents & Processing",
-                    subtitle="Permission-aware course material access.",
+                    title="Course Documents" if is_student else "Documents & Processing",
+                    subtitle="Verified course learning materials." if is_student else "Permission-aware course material access.",
                     active_route="/documents",
                     require_auth=True,
                 ):
@@ -248,9 +257,16 @@ def register_documents_page() -> None:
                     )
                 return
 
+        page_title = "Course Documents" if is_student else "Documents & Processing"
+        page_subtitle = (
+            "Browse official course materials and view lecture notes with verified citations."
+            if is_student
+            else "Curate course materials, inspect text vectorization, and recover indexing jobs."
+        )
+
         with page_layout(
-            title="Documents & Processing",
-            subtitle="Curate course materials, inspect text vectorization, and recover indexing jobs.",
+            title=page_title,
+            subtitle=page_subtitle,
             active_route="/documents",
             require_auth=True,
         ):
@@ -273,22 +289,31 @@ def register_documents_page() -> None:
             # In-Page View Switcher Bar (Responsive & Compact)
             # -----------------------------------------------------------------
             with ui.row().classes("w-full justify-between items-center mb-3 sm:mb-5 flex-wrap sm:flex-nowrap gap-2 sm:gap-4"):
-                with ui.element("div").classes("view-switcher-container"):
-                    doc_tab_btn = ui.button(
-                        "Documents",
-                        icon="description",
-                        on_click=lambda: switch_view("documents"),
-                    ).props("flat dense no-caps").classes(
-                        "view-switcher-pill view-switcher-pill-active" if current_view == "documents" else "view-switcher-pill"
-                    )
+                doc_tab_btn = None
+                proc_tab_btn = None
+                doc_tab_label = None
 
-                    proc_tab_btn = ui.button(
-                        "Processing",
-                        icon="sync",
-                        on_click=lambda: switch_view("processing"),
-                    ).props("flat dense no-caps").classes(
-                        "view-switcher-pill" if current_view == "documents" else "view-switcher-pill view-switcher-pill-active"
-                    )
+                if can_view_jobs:
+                    with ui.element("div").classes("view-switcher-container"):
+                        doc_tab_btn = ui.button(
+                            "Documents",
+                            icon="description",
+                            on_click=lambda: switch_view("documents"),
+                        ).props("flat dense no-caps").classes(
+                            "view-switcher-pill view-switcher-pill-active" if current_view == "documents" else "view-switcher-pill"
+                        )
+
+                        proc_tab_btn = ui.button(
+                            "Processing",
+                            icon="sync",
+                            on_click=lambda: switch_view("processing"),
+                        ).props("flat dense no-caps").classes(
+                            "view-switcher-pill" if current_view == "documents" else "view-switcher-pill view-switcher-pill-active"
+                        )
+                else:
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("description", size="20px").classes("text-gold")
+                        doc_tab_label = ui.label("Course Documents").classes("text-sm font-bold text-primary-navy font-editorial")
 
                 # Right side: Scope badge / Refresh indicator (composed cleanly on single row on mobile)
                 with ui.row().classes("items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto flex-nowrap"):
@@ -317,26 +342,29 @@ def register_documents_page() -> None:
                 live_status_label.text = label_text
 
             def update_switcher_classes() -> None:
-                if current_view == "documents":
-                    doc_tab_btn.classes(replace="view-switcher-pill view-switcher-pill-active")
-                    proc_tab_btn.classes(replace="view-switcher-pill")
-                else:
-                    doc_tab_btn.classes(replace="view-switcher-pill")
-                    proc_tab_btn.classes(replace="view-switcher-pill view-switcher-pill-active")
+                if can_view_jobs and doc_tab_btn and proc_tab_btn:
+                    if current_view == "documents":
+                        doc_tab_btn.classes(replace="view-switcher-pill view-switcher-pill-active")
+                        proc_tab_btn.classes(replace="view-switcher-pill")
+                    else:
+                        doc_tab_btn.classes(replace="view-switcher-pill")
+                        proc_tab_btn.classes(replace="view-switcher-pill view-switcher-pill-active")
 
-                # Update badge labels
-                doc_tab_btn.text = f"Documents ({len(cached_docs)})" if cached_docs else "Documents"
+                    # Update badge labels
+                    doc_tab_btn.text = f"Documents ({len(cached_docs)})" if cached_docs else "Documents"
 
-                failed_jobs_count = sum(1 for j in cached_jobs if j.status == "FAILED")
-                active_jobs_count = sum(1 for j in cached_jobs if j.status in ("QUEUED", "PROCESSING", "PENDING"))
-                if failed_jobs_count > 0:
-                    proc_tab_btn.text = f"Processing ({len(cached_jobs)} • {failed_jobs_count} alert)"
-                elif active_jobs_count > 0:
-                    proc_tab_btn.text = f"Processing ({len(cached_jobs)} • {active_jobs_count} active)"
-                elif cached_jobs:
-                    proc_tab_btn.text = f"Processing ({len(cached_jobs)})"
-                else:
-                    proc_tab_btn.text = "Processing"
+                    failed_jobs_count = sum(1 for j in cached_jobs if j.status == "FAILED")
+                    active_jobs_count = sum(1 for j in cached_jobs if j.status in ("QUEUED", "PROCESSING", "PENDING"))
+                    if failed_jobs_count > 0:
+                        proc_tab_btn.text = f"Processing ({len(cached_jobs)} • {failed_jobs_count} alert)"
+                    elif active_jobs_count > 0:
+                        proc_tab_btn.text = f"Processing ({len(cached_jobs)} • {active_jobs_count} active)"
+                    elif cached_jobs:
+                        proc_tab_btn.text = f"Processing ({len(cached_jobs)})"
+                    else:
+                        proc_tab_btn.text = "Processing"
+                elif doc_tab_label:
+                    doc_tab_label.text = f"Course Documents ({len(cached_docs)})" if cached_docs else "Course Documents"
 
             def switch_view(target_view: str) -> None:
                 nonlocal current_view

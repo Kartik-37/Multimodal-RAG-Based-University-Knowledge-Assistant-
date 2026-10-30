@@ -294,6 +294,15 @@ class AppState:
                     role="assistant",
                     content=clean_err,
                     citations=[],
+                    conversation_id=target_conv_id,
+                    error_details={
+                        "question": question,
+                        "kb_id": kb_id,
+                        "document_id": document_id,
+                        "scope": scope,
+                        "conversation_id": target_conv_id,
+                        "generation_id": current_gen_id,
+                    },
                 )
                 gen.response = err_msg
 
@@ -613,6 +622,13 @@ class AppState:
     def add_assistant_message(self, msg: ChatMessageDTO) -> None:
         """Append assistant response to conversation history."""
         self._chat_history.append(msg)
+
+    def remove_chat_message(self, msg_id: str) -> None:
+        """Remove a specific message by ID from active chat history."""
+        self._chat_history = [m for m in self._chat_history if m.id != msg_id]
+        if self._generation_error:
+            self._generation_error = None
+        self.notify()
 
     def clear_chat(self) -> None:
         """Clear conversation history, reset scope to ALL_COURSES, and reset active conversation."""

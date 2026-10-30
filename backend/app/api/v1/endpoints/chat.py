@@ -194,21 +194,37 @@ def _persist_user_question(
         if prior_user_msgs == 0 or (conv.title or "").strip().lower() in ("new chat", "new conversation"):
             conv.title = generate_conversation_title(question)
 
-    # Check if the last message in this conversation was already this exact question without an answer (retry scenario)
-    last_msg = (
+    # Check if an unanswered user message matching this exact question already exists in this conversation (retry scenario)
+    unanswered_user_msg = (
         db.query(ChatMessage)
-        .filter(ChatMessage.conversation_id == conv.id)
+        .filter(
+            ChatMessage.conversation_id == conv.id,
+            ChatMessage.role == "user",
+            ChatMessage.content == question.strip(),
+        )
         .order_by(ChatMessage.created_at.desc())
         .first()
     )
-    if last_msg and last_msg.role == "user" and last_msg.content.strip() == question.strip():
-        # Reuse existing un-answered user message
-        user_msg = last_msg
-    else:
+    if unanswered_user_msg:
+        has_subsequent_reply = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.conversation_id == conv.id,
+                ChatMessage.role == "assistant",
+                ChatMessage.created_at >= unanswered_user_msg.created_at,
+            )
+            .first()
+        )
+        if not has_subsequent_reply:
+            user_msg = unanswered_user_msg
+        else:
+            unanswered_user_msg = None
+
+    if not unanswered_user_msg:
         user_msg = ChatMessage(
             conversation_id=conv.id,
             role="user",
-            content=question,
+            content=question.strip(),
             citations=[],
         )
         db.add(user_msg)
