@@ -36,8 +36,22 @@ from scripts.bootstrap_admin import bootstrap_admin
 
 @pytest.fixture(autouse=True)
 def ensure_admin_bootstrapped() -> None:
-    """Ensure standard test administrator exists for client operations."""
+    """Ensure standard test administrator and student exist for client operations."""
     bootstrap_admin("admin@university.edu", "AdminPass123!", "System Administrator")
+    with get_db_session() as db:
+        from backend.app.core.security import get_password_hash
+        from backend.app.models.user import User, UserRole
+        student = db.query(User).filter(User.email == "student@university.edu").first()
+        if not student:
+            student = User(
+                email="student@university.edu",
+                password_hash=get_password_hash("StudentPass123!"),
+                full_name="Alex Morgan",
+                role=UserRole.STUDENT,
+                is_active=True,
+            )
+            db.add(student)
+            db.commit()
 
 
 class TestAuthenticatedChatLifecycle:
@@ -299,3 +313,43 @@ class TestAuthenticatedChatLifecycle:
         assert rec_flutter is not None
         assert "Flutter is an app SDK" in rec_flutter
         assert "[source_1]" in rec_flutter
+
+    def test_sole_empty_conversation_delete_rejection_and_multiple_deletion(self) -> None:
+        """Verify Case B sole empty conversation deletion rejection and multiple conversation deletion."""
+        client = FrontendAPIClient()
+        client.login("student@university.edu", "StudentPass123!")
+        assert client.get_session_token() is not None
+
+        # Clean up any leftover conversations for this student in DB
+        with get_db_session() as db:
+            from backend.app.models.user import User
+            student_user = db.query(User).filter(User.email == "student@university.edu").first()
+            assert student_user is not None
+            db.query(ChatMessage).filter(
+                ChatMessage.conversation_id.in_(
+                    db.query(Conversation.id).filter(Conversation.user_id == student_user.id)
+                )
+            ).delete(synchronize_session=False)
+            db.query(Conversation).filter(Conversation.user_id == student_user.id).delete(synchronize_session=False)
+            db.commit()
+
+        # Create exactly 1 empty conversation
+        conv1 = client.create_conversation(title="Sole Empty Chat")
+        assert conv1 is not None
+
+        # Case B: Deleting the sole empty conversation MUST be rejected with HTTP 409
+        del_res_sole = client.delete_conversation(conv1.id)
+        assert del_res_sole is False, "Sole empty conversation deletion must fail"
+
+        # Create a second conversation so total_convs > 1
+        conv2 = client.create_conversation(title="Second Chat")
+        assert conv2 is not None
+
+        # Now deleting conv1 MUST succeed because conv2 remains
+        del_res_multi = client.delete_conversation(conv1.id)
+        assert del_res_multi is True, "Deleting conversation when others remain must succeed"
+
+        # Verify only conv2 remains in list
+        convs = client.get_conversations()
+        assert len(convs) == 1
+        assert convs[0].id == conv2.id

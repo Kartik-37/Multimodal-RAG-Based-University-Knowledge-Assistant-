@@ -22,9 +22,9 @@ from backend.app.schemas.llm import (
     LLMProviderResponse,
 )
 from backend.app.services.llm.base import BaseLLMProvider
-from backend.app.services.llm.exceptions import LLMTimeoutError
+from backend.app.services.llm.exceptions import LLMResponseError, LLMTimeoutError
 from backend.app.services.llm.ollama_provider import OllamaLLMProvider
-from backend.app.services.llm.prompt_builder import GroundedPromptBuilder
+from backend.app.services.llm.prompt_builder import GroundedPromptBuilder, response_format_for_query
 
 # Matches attribution markers formatted as [source_1], [source_2], etc.
 _SOURCE_REF_REGEX = re.compile(r"\[(source_\d+)\]", re.IGNORECASE)
@@ -63,6 +63,9 @@ REASONING_LEAK_PATTERNS = [
     r"\(other points, but\b",
     r"\ba clean markdown list of\b",
     r"\bthe most complete list of\b",
+    r"\b(?:focuses on|about\s+.+,\s*not the definition|not directly about|is about\s+.+,\s*but does not|who is using\s+.+,\s*not the definition)\b",
+    r"\btherefore,?\s*the definition of\s+.+\s*is provided in\b",
+    r"^(?:internal thinking|thinking|scratchpad):\s*",
 ]
 
 
@@ -135,6 +138,17 @@ def clean_reasoning_text(text: str) -> str:
         cand = conclusion_match.group(1).strip()
         if not any(re.search(p, cand, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
             return cand
+
+    # 3. Strip trailing meta-evaluation sentences that evaluate which source defines what
+    cleaned_trailing = re.sub(
+        r"(?<=[.!?\]])\s*(?:(?:Focuses\s+on|About\s+[A-Za-z0-9\s]+,\s*not\s+the\s+definition|Not\s+directly\s+about|Who\s+is\s+using\s+[A-Za-z0-9\s]+,\s*not\s+the\s+definition|Therefore,?\s+the\s+definition\s+of)\b.*)$",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
+    if cleaned_trailing and cleaned_trailing != text and not is_reasoning_or_non_answer(cleaned_trailing, ""):
+        return cleaned_trailing
+
     return text
 
 
@@ -199,6 +213,13 @@ def extract_grounded_recovery_answer(
     score = getattr(top_item, "reranker_score", 0.0) or 0.0
     if score >= 0.5 and not is_list_query:
         clean_text = re.sub(r"\[Visual [^\]]+\]:[^\n]*\n?", "", top_item.text).strip()
+        # Clean slide headers, publisher watermarks, and website URLs
+        clean_text = re.sub(r"(?i)\bakash\s+technolabs\b[^\n]*\n?", "", clean_text)
+        clean_text = re.sub(r"(?i)www\.[a-z0-9\-]+(?:\.[a-z]{2,})+", "", clean_text)
+        clean_text = re.sub(r"(?m)^What is [A-Za-z0-9\s\?]+$\n?", "", clean_text)
+        clean_text = re.sub(r"^[▪•\-\*]\s*", "", clean_text, flags=re.MULTILINE).strip()
+        clean_text = re.sub(r"\r?\n(?!\s*[-*•▪●▸\d+.]\s+)", " ", clean_text)
+        clean_text = re.sub(r"[ \t]+", " ", clean_text)
         sentences = [
             s.strip()
             for s in re.split(r"(?<=[.!?])\s+", clean_text)
@@ -213,86 +234,165 @@ def extract_grounded_recovery_answer(
     return None
 
 
-def format_inline_list_items(text: str) -> str:
+def format_inline_list_items(text: str, query: str | None = None) -> str:
+    """Repair an inline list only when the user explicitly requested that shape.
+
+    This deliberately avoids parsing arbitrary prose into bullets. Android/version
+    entries are split only at complete ``Android [version] N`` item boundaries; a
+    bare ``Version 12`` is never treated as a new item boundary, which previously
+    separated "Android version 12 (2021)" into two unrelated fragments.
     """
-    Format unbulleted inline list items (such as 'Android 1.0 (2008) Android 1.5 ...' or '1. X 2. Y')
-    into clean, vertically stacked markdown bullets.
-    """
-    if not text:
-        return text
-    if text.count("\n- ") >= 2 or text.count("\n* ") >= 2:
+    if not text or response_format_for_query(query) not in {"list", "steps"}:
         return text
 
-    # Pattern for consecutive items
-    sub_pattern = re.compile(
-        r"(?<=[)\w\d])[,;]?\s+(?=(?:Android\s+(?:version\s+)?[\d.]+|Version\s+[\d.]+))",
-        re.IGNORECASE,
+    # Existing Markdown lists already have explicit boundaries; preserve them.
+    existing_items = re.findall(
+        r"(?m)^\s*(?:[-*•▪●▸]|\d+\.)\s+\S+",
+        text,
     )
-    parts = sub_pattern.split(text)
-    if len(parts) >= 3:
-        first = parts[0]
-        header_match = re.search(
-            r"^(.*?(?::|\bis in \[[^\]]+\]|\bare:?))\s+(Android\s+.*)",
-            first,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if header_match:
-            header = header_match.group(1).strip()
-            item0 = header_match.group(2).strip()
-            items = [item0] + [p.strip() for p in parts[1:] if p.strip()]
-            return f"{header}\n\n" + "\n".join(f"- {it}" for it in items)
-        else:
-            return "\n".join(f"- {p.strip()}" for p in parts if p.strip())
+    if len(existing_items) >= 2:
+        return text
 
-    # Check for consecutive numbered items '1. ... 2. ... 3. ...'
-    num_pattern = re.compile(r"(?<=\w)\s+(?=\d+\.\s+)")
-    num_parts = num_pattern.split(text)
-    if len(num_parts) >= 3:
-        first = num_parts[0]
-        header_m = re.search(r"^(.*?:)\s*(.*)", first, re.DOTALL)
-        if header_m:
-            header = header_m.group(1).strip()
-            items = [header_m.group(2).strip()] + [p.strip() for p in num_parts[1:] if p.strip()]
-            return f"{header}\n\n" + "\n".join(f"- {it}" for it in items)
+    flattened = re.sub(r"\s+", " ", text).strip()
+    if not flattened:
+        return text
+
+    android_boundary = re.compile(
+        r"(?i)(?<![A-Za-z0-9])Android\s+(?:version\s+)?\d+(?:\.\d+)?"
+    )
+    android_matches = list(android_boundary.finditer(flattened))
+    if len(android_matches) >= 2:
+        items = [
+            flattened[match.start() : android_matches[index + 1].start()].strip(" \t,;:-")
+            if index + 1 < len(android_matches)
+            else flattened[match.start() :].strip(" \t,;:-")
+            for index, match in enumerate(android_matches)
+        ]
+        prefix = flattened[: android_matches[0].start()].strip(" \t:-")
+        items = [item for item in items if item]
+        if len(items) >= 2:
+            header = _clean_list_header(prefix)
+            list_body = "\n".join(f"- {item}" for item in items)
+            return f"{header}\n\n{list_body}" if header else list_body
+
+    # Repair a compact, sequential inline enumeration without interpreting decimal
+    # versions or years as list numbers. Preserve ordered numbering for a step query.
+    number_pattern = re.compile(r"(?<![A-Za-z0-9])([1-9]\d{0,2})\.\s+(?=\S)")
+    number_matches = list(number_pattern.finditer(flattened))
+    if len(number_matches) >= 2:
+        numbers = [int(match.group(1)) for match in number_matches]
+        if numbers == list(range(numbers[0], numbers[0] + len(numbers))) and numbers[0] == 1:
+            prefix = flattened[: number_matches[0].start()].strip(" \t:-")
+            items = [
+                flattened[match.end() : number_matches[index + 1].start()].strip(" \t,;:-")
+                if index + 1 < len(number_matches)
+                else flattened[match.end() :].strip(" \t,;:-")
+                for index, match in enumerate(number_matches)
+            ]
+            items = [item for item in items if item]
+            if len(items) >= 2:
+                if response_format_for_query(query) == "steps":
+                    list_body = "\n".join(
+                        f"{index}. {item}" for index, item in enumerate(items, start=1)
+                    )
+                else:
+                    list_body = "\n".join(f"- {item}" for item in items)
+                header = _clean_list_header(prefix)
+                return f"{header}\n\n{list_body}" if header else list_body
 
     return text
+
+
+def _clean_list_header(prefix: str) -> str:
+    """Keep a meaningful intro but discard orphaned citation-only prefixes."""
+    cleaned = re.sub(r"\[(?:source_\d+)\]", "", prefix, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" \t:-;,.\u2014")
+    if not cleaned or len(cleaned.split()) > 24:
+        return ""
+    return cleaned
 
 
 def deduplicate_list_citations(text: str) -> str:
-    """
-    If 3 or more list items cite the exact same single source, attribute the source to the list
-    header or introduction, and strip repetitive citation tags from individual bullets.
+    """Consolidate identical source tags on a list, including tags repeated mid-item.
+
+    When every list item cites one and the same source, put that citation on the
+    list introduction (or on the first item when no introduction exists). If items
+    use different sources, preserve those distinctions while removing duplicate
+    occurrences of the same source within an individual item.
     """
     if not text:
         return text
-    bullet_sources = re.findall(
-        r"^\s*[-*•▪●▸\d+.]\s+.*?\s*\[(source_\d+)\]\s*$",
-        text,
-        flags=re.MULTILINE | re.IGNORECASE,
+
+    lines = text.splitlines()
+    bullet_pattern = re.compile(r"^(\s*(?:[-*•▪●▸]|\d+\.)\s+)(.*)$")
+    bullet_indexes = [
+        index for index, line in enumerate(lines) if bullet_pattern.match(line)
+    ]
+    if len(bullet_indexes) < 2:
+        return text
+
+    per_item_sources: list[list[str]] = []
+    for index in bullet_indexes:
+        match = bullet_pattern.match(lines[index])
+        assert match is not None
+        sources = [source.lower() for source in _SOURCE_REF_REGEX.findall(match.group(2))]
+        per_item_sources.append(sources)
+
+    all_sources = {source for sources in per_item_sources for source in sources}
+    same_single_source = (
+        len(all_sources) == 1
+        and all(sources for sources in per_item_sources)
     )
-    if len(bullet_sources) >= 3 and len(set(s.lower() for s in bullet_sources)) == 1:
-        src_tag = bullet_sources[0].lower()
-        cleaned = re.sub(
-            r"\s*\[" + re.escape(src_tag) + r"\]\s*$",
-            "",
-            text,
-            flags=re.MULTILINE | re.IGNORECASE,
+
+    if same_single_source:
+        source_tag = next(iter(all_sources))
+        canonical = f"[{source_tag}]"
+        for index in bullet_indexes:
+            match = bullet_pattern.match(lines[index])
+            assert match is not None
+            body = _SOURCE_REF_REGEX.sub("", match.group(2))
+            body = re.sub(r"\s+([,.;:!?])", r"\1", body)
+            body = re.sub(r"[ \t]{2,}", " ", body).strip()
+            lines[index] = f"{match.group(1)}{body}"
+
+        first_bullet = bullet_indexes[0]
+        previous_nonblank = next(
+            (i for i in range(first_bullet - 1, -1, -1) if lines[i].strip()),
+            None,
         )
-        if f"[{src_tag}]".lower() not in cleaned.lower():
-            lines = cleaned.splitlines()
-            for idx, line in enumerate(lines):
-                if re.match(r"^\s*[-*•▪●▸\d+.]\s+", line):
-                    for prev_idx in range(idx - 1, -1, -1):
-                        if lines[prev_idx].strip():
-                            lines[prev_idx] = lines[prev_idx].rstrip(" :") + f" [{src_tag}]:"
-                            break
-                    break
-            cleaned = "\n".join(lines)
-        return cleaned
-    return text
+        if previous_nonblank is not None:
+            header = _SOURCE_REF_REGEX.sub("", lines[previous_nonblank]).strip()
+            header = header.rstrip(" :")
+            lines[previous_nonblank] = f"{header} {canonical}:" if header else canonical
+        else:
+            # A citation on the first item is clearer than inventing a generic heading.
+            first = bullet_pattern.match(lines[first_bullet])
+            assert first is not None
+            lines[first_bullet] = f"{first.group(1)}{first.group(2).rstrip()} {canonical}"
+        return "\n".join(lines)
+
+    # For multi-source lists, only collapse a repeated identical tag within a single
+    # item; do not remove a distinct source that supports another item.
+    for index in bullet_indexes:
+        match = bullet_pattern.match(lines[index])
+        assert match is not None
+        seen: set[str] = set()
+
+        def keep_first(source_match: re.Match[str]) -> str:
+            source = source_match.group(1).lower()
+            if source in seen:
+                return ""
+            seen.add(source)
+            return f"[{source}]"
+
+        body = _SOURCE_REF_REGEX.sub(keep_first, match.group(2))
+        body = re.sub(r"[ \t]{2,}", " ", body).strip()
+        lines[index] = f"{match.group(1)}{body}"
+
+    return "\n".join(lines)
 
 
-def _sanitize_llm_answer(text: str) -> str:
+def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
     """
     Strip model self-reasoning preambles, chain-of-thought evaluations, and instruction leaks.
     Extracts the clean, direct factual answer with verified citations.
@@ -438,6 +538,10 @@ def _sanitize_llm_answer(text: str) -> str:
         "however, note",
         "user question:",
         "answer:",
+        "internal thinking:",
+        "internal thinking",
+        "thinking:",
+        "scratchpad:",
     )
     for line in lines:
         s = line.strip()
@@ -446,6 +550,8 @@ def _sanitize_llm_answer(text: str) -> str:
         if reasoning_step_regex.search(s):
             continue
         if source_header_regex.match(s):
+            continue
+        if re.search(r"(?i)\bakash\s+technolabs\b|\bwww\.[a-z0-9\-]+\.[a-z]+\b", s):
             continue
         if any(s.lower().startswith(p) for p in reasoning_prefixes):
             continue
@@ -497,7 +603,22 @@ def _sanitize_llm_answer(text: str) -> str:
         re.match(r"^(?:step\s*\d+|[-*•▪●▸]|\d+\.)", line, re.IGNORECASE)
         for line in kept_lines
     )
-    result = ("\n" if is_list_like else " ").join(formatted_lines).strip()
+    if is_list_like:
+        result = "\n".join(formatted_lines).strip()
+    else:
+        # Group into paragraphs while joining multi-line sentences within each paragraph
+        paragraphs: list[str] = []
+        current_p: list[str] = []
+        for line in formatted_lines:
+            if not line.strip():
+                if current_p:
+                    paragraphs.append(" ".join(current_p))
+                    current_p = []
+            else:
+                current_p.append(line.strip())
+        if current_p:
+            paragraphs.append(" ".join(current_p))
+        result = "\n\n".join(paragraphs).strip()
     candidate_answer = result if result else cleaned
 
     # 5. Normalize citation tags to canonical lower-case [source_X]
@@ -507,7 +628,7 @@ def _sanitize_llm_answer(text: str) -> str:
         candidate_answer,
         flags=re.IGNORECASE,
     )
-    formatted = format_inline_list_items(canonical_answer)
+    formatted = format_inline_list_items(canonical_answer, query=query)
     return deduplicate_list_citations(formatted)
 
 
@@ -583,7 +704,7 @@ class LLMGenerationService:
             )
 
         # 3. Build system instruction and untrusted evidence prompt
-        system_instruction = self.prompt_builder.build_system_instruction()
+        system_instruction = self.prompt_builder.build_system_instruction(request.query)
         user_prompt = self.prompt_builder.build_user_prompt(
             query=request.query, context=request.context
         )
@@ -591,6 +712,7 @@ class LLMGenerationService:
         # 4. Invoke the configured LLM provider
         start_time = time.perf_counter()
         provider_resp: LLMProviderResponse | None = None
+        generation_path: str = "primary_llm"
         try:
             provider_resp = await self.provider.generate(
                 system_instruction=system_instruction,
@@ -603,56 +725,65 @@ class LLMGenerationService:
             logger.debug("Raw LLM response before sanitization length: %d chars", len(provider_resp.content))
 
             # 5. Sanitize answer to eliminate leaked CoT rambling
-            cleaned_content = _sanitize_llm_answer(provider_resp.content)
+            cleaned_content = _sanitize_llm_answer(provider_resp.content, query=request.query)
 
-            # 5a. Detect reasoning leak or non-answer preamble and attempt extraction, recovery, or bounded retry
+            # 5a. Detect reasoning leak or non-answer preamble and attempt extraction, bounded retry, or recovery
             if is_reasoning_or_non_answer(cleaned_content, request.query):
                 candidate = clean_reasoning_text(provider_resp.content)
                 if candidate != provider_resp.content and not is_reasoning_or_non_answer(candidate, request.query):
                     cleaned_content = candidate
+                    generation_path = "primary_llm"
                 else:
-                    # Deterministic structured extractive recovery from assembled context evidence
-                    recovery_ans = extract_grounded_recovery_answer(request.query, request.context)
-                    if recovery_ans and not is_reasoning_or_non_answer(recovery_ans, request.query):
-                        cleaned_content = recovery_ans
-                    else:
-                        retry_instruction = (
-                            "You are an academic knowledge assistant. Output ONLY the factual answer or itemized list citing [source_X]. "
-                            "STRICT RULE: Do NOT say 'The answer should be', do NOT say 'We can answer by', and do NOT include internal reasoning or deliberation. "
-                            "If the provided evidence does not contain sufficient facts to answer the question, state: 'Based on the provided documents, there is not enough information to answer this question.' "
-                            "Otherwise, output the factual items directly from the evidence:"
+                    # Bounded retry with focused answer-only directive
+                    retry_instruction = (
+                        self.prompt_builder.build_system_instruction(request.query)
+                        + "\n\nRETRY DIRECTIVE: Previous response contained internal deliberation or formatting failure. "
+                        "Synthesize and output ONLY the final grounded student-friendly answer. Do not include reasoning, "
+                        "deliberation, instructions, or source evaluation notes. If evidence is insufficient, state that plainly."
+                    )
+                    try:
+                        retry_resp = await self.provider.generate(
+                            system_instruction=retry_instruction,
+                            user_prompt=user_prompt,
+                            temperature=0.0,
+                            max_output_tokens=min(request.max_output_tokens or 768, 768),
+                            timeout_seconds=min(request.timeout_seconds or 60.0, 60.0),
                         )
-                        try:
-                            retry_resp = await self.provider.generate(
-                                system_instruction=retry_instruction,
-                                user_prompt=user_prompt,
-                                temperature=0.0,
-                                max_output_tokens=min(request.max_output_tokens or 384, 384),
-                                timeout_seconds=min(request.timeout_seconds or 45.0, 45.0),
-                            )
-                            cleaned_retry = _sanitize_llm_answer(retry_resp.content)
-                            if is_reasoning_or_non_answer(cleaned_retry, request.query):
-                                cand_retry = clean_reasoning_text(retry_resp.content)
-                                if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
-                                    cleaned_retry = cand_retry
-                            if not is_reasoning_or_non_answer(cleaned_retry, request.query):
-                                cleaned_content = cleaned_retry
-                                provider_resp = retry_resp
-                            else:
-                                rec2 = extract_grounded_recovery_answer(request.query, request.context)
-                                cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
-                        except Exception as retry_err:
-                            logger.warning("LLM generation retry failed: %s", retry_err)
+                        cleaned_retry = _sanitize_llm_answer(retry_resp.content, query=request.query)
+                        if is_reasoning_or_non_answer(cleaned_retry, request.query):
+                            cand_retry = clean_reasoning_text(retry_resp.content)
+                            if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
+                                cleaned_retry = cand_retry
+                        if not is_reasoning_or_non_answer(cleaned_retry, request.query):
+                            cleaned_content = cleaned_retry
+                            provider_resp = retry_resp
+                            generation_path = "llm_retry"
+                        else:
                             rec2 = extract_grounded_recovery_answer(request.query, request.context)
-                            cleaned_content = rec2 or SAFE_INSUFFICIENT_EVIDENCE_ANSWER
-        except LLMTimeoutError as timeout_exc:
+                            if rec2:
+                                cleaned_content = rec2
+                                generation_path = "extractive_recovery"
+                            else:
+                                cleaned_content = SAFE_INSUFFICIENT_EVIDENCE_ANSWER
+                                generation_path = "refusal"
+                    except Exception as retry_err:
+                        logger.warning("LLM generation retry failed: %s", retry_err)
+                        rec2 = extract_grounded_recovery_answer(request.query, request.context)
+                        if rec2:
+                            cleaned_content = rec2
+                            generation_path = "extractive_recovery"
+                        else:
+                            cleaned_content = SAFE_INSUFFICIENT_EVIDENCE_ANSWER
+                            generation_path = "refusal"
+        except (LLMTimeoutError, LLMResponseError) as exc:
             latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-            logger.warning("Initial LLM generation timed out after %s ms; attempting grounded recovery", latency_ms)
+            logger.warning("Initial LLM generation failed (%s) after %s ms; attempting grounded recovery", exc, latency_ms)
             rec_ans = extract_grounded_recovery_answer(request.query, request.context)
             if rec_ans and not is_reasoning_or_non_answer(rec_ans, request.query):
                 cleaned_content = rec_ans
+                generation_path = "extractive_recovery" if isinstance(exc, LLMResponseError) else "timeout_recovery"
             else:
-                raise timeout_exc
+                raise exc
 
         if provider_resp is None:
             provider_resp = LLMProviderResponse(
@@ -660,8 +791,12 @@ class LLMGenerationService:
                 model=getattr(self.provider, "model_name", "qwen3:4b"),
                 prompt_tokens=0,
                 output_tokens=len(cleaned_content.split()),
-                safe_metadata={"recovery_used": True},
+                safe_metadata={"generation_path": generation_path, "recovery_used": (generation_path != "primary_llm")},
             )
+        else:
+            if not provider_resp.safe_metadata:
+                provider_resp.safe_metadata = {}
+            provider_resp.safe_metadata["generation_path"] = generation_path
 
         # 5b. Attribute supporting context items to uncited factual claims
         has_list = any(re.match(r"^\s*[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line) for line in cleaned_content.splitlines())
@@ -682,6 +817,8 @@ class LLMGenerationService:
                     continue
 
                 c_words = verifier.extract_content_words(seg)
+                if len(c_words) < 4:
+                    continue
                 best_items = []
                 for item in request.context.items:
                     item_words = verifier.extract_content_words(item.text)
@@ -712,6 +849,9 @@ class LLMGenerationService:
 
                     if seg in cleaned_content:
                         cleaned_content = cleaned_content.replace(seg, attributed_seg, 1)
+
+        # Deduplicate any adjacent identical citation markers
+        cleaned_content = re.sub(r"(\[source_\d+\])(?:\s*,?\s*\1)+", r"\1", cleaned_content, flags=re.IGNORECASE)
 
         # 6. Extract referenced candidate source identifiers for Step 14 citation validation
         raw_matches = _SOURCE_REF_REGEX.findall(cleaned_content)

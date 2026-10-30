@@ -2,7 +2,115 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase -- 2026-10-29
+## Current authoritative phase -- 2026-10-30
+
+**PHASE 19 -- CHAT HISTORY ORDERING, AUTHORITATIVE DELETE SEMANTICS (CASES A-F), AND RAG ANSWER QUALITY (COMPLETED & VERIFIED)**
+
+### Confirmed Root Causes & Implemented Solutions
+
+1. **Workstream A: Recent Chat Ordering & In-Place Active Jumper Elimination (`frontend/components/layout.py`, `backend/app/api/v1/endpoints/conversations.py`):**
+   - **Root Cause**: `render_conversation_items()` in `frontend/components/layout.py` previously searched for `state.active_conversation_id` and manually spliced it to index 0 of the sidebar list whenever on `/chat`. This caused older conversations to artificially jump to the top simply because a user opened them to read previous turns.
+   - **Solution**: Removed client-side promotion in `layout.py`. The sidebar now strictly preserves the server-provided ordering. In `backend/app/api/v1/endpoints/conversations.py`, `list_conversations()` orders conversations by `Conversation.updated_at.desc(), Conversation.created_at.desc(), Conversation.id.desc()`. Only real user questions or assistant responses update `updated_at`, moving a conversation to the top only upon real activity.
+
+2. **Workstream B: Authoritative Delete Semantics (Cases A–F) (`backend/app/api/v1/endpoints/conversations.py`, `frontend/components/layout.py`, `frontend/state/app_state.py`):**
+   - **Root Cause**: `AppState.delete_conversation()` previously called `self.start_new_conversation()` unconditionally whenever the active conversation was deleted, creating an immediate replacement `New chat` even when other conversations remained, and allowing deletion of the only remaining empty interface.
+   - **Solution**:
+     - **Case A & D**: When multiple conversations exist and an active conversation (empty or populated) is deleted, `AppState.delete_conversation()` deletes it from the backend, does NOT create a replacement, and automatically loads the most recently active remaining conversation (`remaining[0]`).
+     - **Case B**: If a user has only one conversation and it has zero messages (sole empty chat), the UI delete button is disabled with tooltip `"Keep one empty chat available"`, and `backend/app/api/v1/endpoints/conversations.py` enforces an HTTP 409 Conflict rejection (`"Cannot delete the only available chat interface. Keep one empty chat available."`).
+     - **Case C**: When a non-active conversation is deleted, the active thread, transcript, scope, citations, and background generation remain completely untouched.
+     - **Case E**: When the sole remaining conversation is populated and deleted, `AppState.delete_conversation()` recreates exactly one empty `New chat` so `/chat` remains immediately usable.
+     - **Case F**: If deletion fails or is rejected, the state rolls back/preserves the active conversation without creating duplicates.
+     - In `frontend/components/layout.py`, delete button clicks now invoke `@click.stop` / `stop_propagation()` so that clicking delete never triggers row-selection navigation.
+
+3. **Workstream C: Grounded Flutter Answers, Slide Watermark Elimination & CPU Inference Hardening (`backend/app/services/llm/service.py`, `backend/app/services/llm/prompt_builder.py`, `backend/app/services/llm/ollama_provider.py`, `backend/app/core/config.py`, `frontend/pages/chat_page.py`):**
+   - **Root Cause**:
+     - `1-Flutter-Intro.pdf` contains slide headers and publisher watermarks (`Akash Technolabs www.akashsir.com`) on every page.
+     - `qwen3:4b` is a reasoning model that generates internal thinking tokens. On CPU, evaluating 1,200 prompt tokens plus thinking tokens exceeded `LLM_REQUEST_TIMEOUT_SECONDS` (90s) and hit `num_predict: 768`.
+     - When `generate_grounded_answer()` caught `LLMResponseError`, an unimported exception crashed execution; in recovery, multi-line slide formatting caused `SentenceSplitter` to fragment clauses like `"Android,\nand web"` into separate words, creating duplicated adjacent citations (`[source_1] [source_1]`).
+   - **Solution**:
+     - Updated `SYSTEM_GROUNDING_INSTRUCTION` and prompt builder to synthesize clear academic student-friendly prose without copying watermarks or writing source evaluation meta-commentary.
+     - Added slide header, watermark, and author cleaning in `_sanitize_llm_answer()` and `extract_grounded_recovery_answer()`, stripping all occurrences of `Akash Technolabs` and `www.akashsir.com`.
+     - In `service.py`, normalized line breaks in retrieved slide chunks before sentence splitting, guarded claim attribution so single-word fragments are never attributed mid-sentence (`len(c_words) >= 4`), and deduplicated adjacent identical citation markers (`re.sub(r"(\[source_\d+\])(?:\s*,?\s*\1)+", r"\1", ...)`).
+     - Imported `LLMResponseError` alongside `LLMTimeoutError` in `service.py` to ensure resilient fallback to `extract_grounded_recovery_answer()` with `generation_path: "extractive_recovery"` whenever local inference is bounded.
+     - Standardized chat column geometry across the header container, message timeline, and composer with centered `w-full max-w-4xl mx-auto`.
+
+### Verification Suite Passed
+- `backend/tests/unit/test_new_chat_and_vertical_timeline.py`: **16/16 passed (100%)**
+- `backend/tests/unit/test_conversational_rag_quality.py`: **19/19 passed (100%)**
+- `backend/tests/integration/test_authenticated_chat_lifecycle.py`: **5/5 passed (100%)**
+- Total: **40 / 40 targeted regression tests passed (100%)**
+- End-to-end RAG query `what is flutter`: Grounded answer citing `1-Flutter-Intro.pdf` (Page 18, `[source_1]`) with `Grounding status: FULLY_SUPPORTED` and zero watermark leakage.
+
+---
+
+## Historical phase record -- 2026-10-30
+
+**PHASE 18 -- NEW CHAT LIFECYCLE & VERTICAL TIMELINE IMPLEMENTATION (COMPLETED & VERIFIED)**
+
+### Confirmed Root Causes & Implemented Solutions
+
+1. **Missing Active 'New chat' Row on Fresh Route Entry (`frontend/pages/chat_page.py`, `frontend/components/layout.py`, `frontend/state/app_state.py`):**
+   - **Root Cause**: `page_layout()` renders the sidebar (`_render_navbar`) before yielding to the page body. When `/chat` was entered with no `conversation_id`, no conversation had been created or activated yet, so `api_client.get_conversations()` returned only older chats or an empty list. Zero-history users saw only `"No saved chats yet"` while viewing the empty chat page.
+   - **Solution**: Added authoritative state operation `AppState.ensure_active_new_chat(conversation_id)`. Invoked before `page_layout()` in `chat_page.py`. If `conversation_id` is None and no valid active conversation exists, it creates exactly one persistent conversation titled `"New chat"`, sets it active, and synchronizes the browser URL via `history.replaceState`. When `page_layout()` renders the sidebar, the conversation already exists in PostgreSQL and is highlighted at index 0 as selected.
+
+2. **Active Empty Conversation Delete / Recreate Failure (`frontend/state/app_state.py`):**
+   - **Root Cause**: In `delete_conversation(conv_id)`, after deleting the record via API, it called `start_new_conversation()` while `self._active_conversation_id` was still pointing to `conv_id` and `len(self._chat_history) == 0`. The reuse guard mistook the deleted conversation ID for a valid existing draft and exited without creating a replacement, leaving the active state pointing to a deleted UUID.
+   - **Solution**: `delete_conversation` now explicitly resets `self._active_conversation_id = None`, `self._chat_history = []`, and cancels any in-flight task for `conv_id` *before* creating the replacement conversation. It immediately recreates exactly one replacement empty New chat and notifies listeners, keeping the empty chat interface open and updating the URL to the replacement ID.
+
+3. **Silent Failure on Sidebar History Load & Duplicate Rendering (`frontend/components/layout.py`):**
+   - **Root Cause**: `render_conversation_items` wrapped `get_conversations()` in `try ... except Exception: pass`, hiding server failures and presenting errors as an empty list (`"No saved chats yet"`). In addition, `on_delete()` called `render_conversation_items` manually while `state.delete_conversation()` was already notifying subscribers, causing duplicate render passes.
+   - **Solution**: Added error normalization via `normalize_error(exc, context="chat")` displaying `"Unable to load chat history"` with tooltip on failure. Deduplicated conversations by UUID so duplicate rows are never rendered. Removed manual rerender calls in `on_delete()` to prevent duplicate render passes.
+
+4. **Multi-Turn Horizontal Column Wrapping in Quasar Flex Layout (`frontend/components/theme.py`, `frontend/pages/chat_page.py`):**
+   - **Root Cause**: Quasar stylesheet defines `.row, .column, .flex { display: flex; flex-wrap: wrap; }` and `.column { flex-direction: column; }`. NiceGUI's `ui.column()` elements inherit `flex-wrap: wrap`. In standard CSS Flexbox, when a flex column has `flex-wrap: wrap`, children that exceed container height wrap into **adjacent horizontal columns to the right**, causing question and answer turns to appear side-by-side rather than in a vertical chronological stack.
+   - **Solution**: Added high-priority CSS rules and classes (`.chat-scroll-area`, `.chat-timeline`, `.chat-turn-user`, `.chat-turn-assistant`) enforcing `display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important;`. Set `.chat-timeline > *` to `width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important;`. Bounded prose, URLs, code blocks, and tables so they never create viewport or page-level horizontal scroll.
+
+### Automated and Live Verifications Completed
+- `backend/tests/unit/test_new_chat_and_vertical_timeline.py`: **13/13 passed (100%)**
+- `backend/tests/unit/test_conversational_rag_quality.py`: **19/19 passed (100%)**
+- `backend/tests/unit/test_frontend.py`: **44/44 passed (100%)**
+- `backend/tests/integration/test_authenticated_chat_lifecycle.py`: **4/4 passed (100%)**
+- `backend/tests/integration/test_chat_orchestration_integration.py`: **7/7 passed (100%)**
+- Total automated suite: **87 / 87 tests passing (100%)**
+- Live browser CDP verification (`scripts/verify_chat_lifecycle_and_timeline.py`):
+  - Student: Verified fresh `/chat` loads with active `New chat` row in sidebar, active composer, and `noHorizontalOverflow: true`. Captured: `screenshot/chat_fresh_student_verified.png`.
+  - Admin: Verified fresh Test Assistant loads with active `New chat` row under Recent Chats, active composer, and `noHorizontalOverflow: true`. Captured: `screenshot/chat_fresh_admin_verified.png`.
+
+---
+
+## Historical phase record -- 2026-10-29
+
+**PHASE 17 -- ANSWER VISIBILITY, INTENT-AWARE FORMATTING, AND CITATION CLEANUP (COMPLETED & VERIFIED)**
+
+### Screenshot-driven audit findings
+
+- The chat route previously loaded saved history only when the route conversation ID differed from the active conversation ID. If the same conversation’s local transcript ended with a user message after generation stopped, the route could skip hydration and display no assistant answer. The exact screenshot root cause is not uniquely proven without a browser trace, so treat this as a code-confirmed failure path rather than the only possible explanation.
+- The prior inline-item repair considered naked `Version N` a split boundary and could separate complete labels such as `Android version 12 (2021)`. Citation cleanup also did not cover every repeated source tag in the item body.
+- Chat page sizing inherited the shared page container’s maximum width and padding. The chat route now uses chat-specific full-width shell sizing, while the transcript retains a readable maximum width.
+- The chat hydration exception was previously ignored, hiding API/load failures. It is now logged without logging user message content.
+
+### Implemented changes
+
+1. Added `frontend/client/chat_display.py` to decide when history must be rehydrated for a same-ID conversation. Active generation is not interrupted, and a transcript ending in an assistant response is not needlessly reloaded.
+2. Updated `frontend/pages/chat_page.py`, `frontend/components/layout.py`, and `frontend/components/theme.py` to strengthen chat width/flex constraints, Markdown stretch behavior, vertical scrolling, and scroll timing.
+3. Added query-intent response shapes to `backend/app/services/llm/prompt_builder.py` for direct facts, explanations, lists, steps, comparisons, tables, and code while preserving the original default grounding instruction when called with no query.
+4. Made inline list repair in `backend/app/services/llm/service.py` conditional on list/steps intent and split Android versions only at complete Android item starts. Consolidated repeated identical citations while preserving distinct-source references.
+5. Added focused regression coverage in `backend/tests/unit/test_conversational_rag_quality.py` and created `context/CHAT_ANSWER_RELIABILITY_AUDIT.md` plus `CHAT_ANSWER_QUALITY_MASTER_PROMPT.md`.
+
+### Verification status
+
+- Python syntax compilation for changed modules and the regression test file: **passed**.
+- Unit & Behavioral Regression Suite (`backend/tests/unit/test_conversational_rag_quality.py`): **19/19 passed (100%)** in 3.13s against the running Python 3.14 / pytest environment.
+- Frontend Unit Contracts (`backend/tests/unit/test_frontend.py`): **44/44 passed (100%)** in 4.90s.
+- Integration Suites (`test_authenticated_chat_lifecycle.py`, `test_chat_orchestration_integration.py`): **11/11 passed (100%)**.
+- Intent Classification & Formatting Isolation: verified direct paragraph preservation, multi-line Android version boundary isolation without splitting, and single-source citation consolidation.
+- Hydration Predicate Verification: `should_reload_conversation_history()` correctly gates same-ID re-hydration when local turns end with un-answered user questions while ignoring active generation.
+- Database Daemon: PostgreSQL 16 verified running on `127.0.0.1:5432`.
+- UI Smoke Checklist: Manual visual inspection steps documented for 75%, 100%, and 125% zoom levels on `http://localhost:8080`.
+
+---
+
+## Historical phase record -- 2026-10-29
 
 **PHASE 16 -- ELIMINATE DUPLICATE CHAT RESPONSES AND FIX ANSWER FORMATTING (COMPLETED & VERIFIED)**
 

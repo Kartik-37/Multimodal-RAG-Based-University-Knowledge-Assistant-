@@ -354,6 +354,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 /* Markdown Rendering with High Readability */
 .safe-markdown {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    align-self: stretch !important;
     line-height: 1.7;
     font-size: 0.95rem;
     color: #0E1D61;
@@ -372,6 +376,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 .safe-markdown p {
+    max-width: 100%;
     margin-bottom: 0.85rem;
     word-break: break-word;
     overflow-wrap: anywhere;
@@ -446,12 +451,76 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     margin-bottom: 0.85rem;
 }
 
-/* Chat Layout Restraints - Prohibit horizontal scrolling across chat viewport */
+/* Chat Layout Restraints - Prohibit horizontal scrolling and guarantee vertical timeline */
 .chat-scroll-area {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
+    box-sizing: border-box !important;
+}
+
+.chat-timeline {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    max-width: 56rem !important; /* max-w-4xl */
+    margin-left: auto !important;
+    margin-right: auto !important;
+    box-sizing: border-box !important;
+}
+
+.chat-timeline > * {
+    display: flex !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    flex-shrink: 0 !important;
+}
+
+.chat-turn-user {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-end !important;
+    align-items: flex-end !important;
+    width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+}
+
+.chat-turn-assistant {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+.chat-scroll-area .q-markdown,
+.chat-scroll-area .safe-markdown {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+.chat-scroll-area .safe-markdown ul,
+.chat-scroll-area .safe-markdown ol,
+.chat-scroll-area .safe-markdown table,
+.chat-scroll-area .safe-markdown pre {
+    max-width: 100% !important;
 }
 
 /* Clean Restrained Scrollbars */

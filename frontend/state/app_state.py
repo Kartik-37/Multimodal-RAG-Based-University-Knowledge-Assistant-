@@ -9,6 +9,7 @@ Maintains UI state across page views:
 """
 
 import asyncio
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,8 @@ from frontend.client.models import (
     KnowledgeBaseDTO,
     UserDTO,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -347,9 +350,15 @@ class AppState:
         Does NOT cancel background generation in other conversations.
         """
         if self._active_conversation_id and len(self._chat_history) == 0:
-            # Already in an empty new conversation; preserve it without creating duplicate empty rows
-            self.notify()
-            return None
+            # Check if active conversation really exists in persistent storage
+            try:
+                existing = api_client.get_conversation(self._active_conversation_id)
+                if existing:
+                    self.notify()
+                    return existing
+            except Exception:
+                # Active ID was deleted or invalid; reset so a new one is created
+                self._active_conversation_id = None
 
         if getattr(self, "_is_creating_conversation", False):
             return None
@@ -381,6 +390,64 @@ class AppState:
             return None
         finally:
             self._is_creating_conversation = False
+
+    def ensure_active_new_chat(self, conversation_id: str | None = None) -> Any:
+        """
+        Authoritative, idempotent state operation ensuring an active conversation exists.
+        - If conversation_id is provided, loads that thread (or reloads if needed).
+          If it cannot be found (e.g. stale/deleted ID), recovers safely by creating a new empty conversation.
+        - If conversation_id is None, reuses the valid active conversation if one exists and is present in DB.
+          If no active conversation exists, creates exactly one persistent empty conversation titled 'New chat'.
+        """
+        if conversation_id:
+            # If already active and has loaded history
+            if self._active_conversation_id == conversation_id and self._chat_history:
+                from frontend.client.chat_display import should_reload_conversation_history
+
+                generation_status = self.get_generation_status(conversation_id)
+                is_generating_for_route = self.is_conversation_generating(conversation_id)
+                if should_reload_conversation_history(
+                    conversation_id=conversation_id,
+                    active_conversation_id=self._active_conversation_id,
+                    chat_history=self._chat_history,
+                    generation_status=generation_status,
+                    is_generating=is_generating_for_route,
+                ):
+                    try:
+                        self.load_conversation(conversation_id)
+                    except Exception:
+                        pass
+                try:
+                    return api_client.get_conversation(conversation_id)
+                except Exception:
+                    # Stale / deleted ID in URL: recover safely to a new chat
+                    self._active_conversation_id = None
+                    self._chat_history = []
+                    return self.start_new_conversation()
+
+            try:
+                self.load_conversation(conversation_id)
+                return api_client.get_conversation(conversation_id)
+            except Exception:
+                # Stale or deleted conversation ID: recover cleanly
+                self._active_conversation_id = None
+                self._chat_history = []
+                return self.start_new_conversation()
+
+        # conversation_id is None / empty:
+        if self._active_conversation_id:
+            try:
+                existing = api_client.get_conversation(self._active_conversation_id)
+                if existing:
+                    # Valid active conversation exists in persistent storage
+                    return existing
+            except Exception:
+                # Stale active ID
+                self._active_conversation_id = None
+                self._chat_history = []
+
+        # No valid active conversation: ensure exactly one persistent empty New chat
+        return self.start_new_conversation()
 
     def update_active_conversation_title(self, new_title: str) -> None:
         """
@@ -436,14 +503,62 @@ class AppState:
 
     def delete_conversation(self, conv_id: str) -> bool:
         """
-        Delete a conversation thread and reset active view if currently open.
+        Delete a conversation thread according to authoritative Cases A-F rules:
+        - Case A & D: Active conversation deleted when other conversations remain:
+          Delete from backend, do NOT create new chat, activate and load most recently active remaining chat.
+        - Case B: Sole empty conversation cannot be deleted.
+        - Case C: Inactive conversation deleted: Keep active conversation untouched.
+        - Case E: Active populated conversation deleted and no conversations remain:
+          Create exactly one replacement empty New chat.
+        - Case F: Deletion fails: Preserve state, do not create replacement.
         """
-        success = api_client.delete_conversation(conv_id)
-        if success and self._active_conversation_id == conv_id:
-            self.start_new_conversation()
-        else:
+        is_active = (self._active_conversation_id == conv_id)
+
+        # Stop background generation for this conversation if running
+        if conv_id in self._generations:
+            gen = self._generations.pop(conv_id, None)
+            if gen and gen.task and not gen.task.done():
+                gen.task.cancel()
+
+        try:
+            success = api_client.delete_conversation(conv_id)
+        except Exception as exc:
+            clean_err = normalize_error(exc, context="chat")
+            logger.warning("Failed to delete conversation %s: %s", conv_id, clean_err)
+            self._generation_error = clean_err
             self.notify()
-        return success
+            return False
+
+        if not success:
+            # Backend rejected deletion (e.g. sole empty conversation conflict)
+            self.notify()
+            return False
+
+        # Query remaining conversations from the server
+        try:
+            remaining = api_client.get_conversations()
+        except Exception:
+            remaining = []
+
+        if is_active:
+            # Active conversation was deleted
+            self._active_conversation_id = None
+            self._chat_history = []
+            self._selected_citation = None
+            self._generation_error = None
+
+            if remaining:
+                # Cases A & D: Switch to most recently active remaining conversation
+                new_active = remaining[0]
+                self.load_conversation(new_active.id)
+            else:
+                # Case E: Only conversation was deleted; recreate one persistent empty New chat
+                self.start_new_conversation()
+        else:
+            # Case C: Non-active conversation deleted; active conversation remains untouched
+            self.notify()
+
+        return True
 
     @property
     def current_user(self) -> UserDTO | None:
@@ -626,6 +741,9 @@ class _SessionAppStateProxy:
 
     def start_new_conversation(self) -> Any:
         return self._get_state().start_new_conversation()
+
+    def ensure_active_new_chat(self, conversation_id: str | None = None) -> Any:
+        return self._get_state().ensure_active_new_chat(conversation_id=conversation_id)
 
     def update_active_conversation_title(self, new_title: str) -> None:
         self._get_state().update_active_conversation_title(new_title)

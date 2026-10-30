@@ -13,6 +13,7 @@ Validates the meaning, shape, and structure of answers:
 """
 
 import asyncio
+import re
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,12 +23,19 @@ from backend.app.api.v1.endpoints.chat import resolve_conversational_query
 from backend.app.models.conversation import ChatMessage, Conversation
 from backend.app.schemas.context_assembly import ContextAssemblyResult, ContextItem
 from backend.app.schemas.llm import LLMGenerationRequest, LLMGenerationResponse, LLMProviderResponse
-from backend.app.services.llm.prompt_builder import GroundedPromptBuilder
+from backend.app.services.llm.prompt_builder import (
+    SYSTEM_GROUNDING_INSTRUCTION,
+    GroundedPromptBuilder,
+    response_format_for_query,
+)
 from backend.app.services.llm.service import (
     LLMGenerationService,
     clean_reasoning_text,
+    deduplicate_list_citations,
+    format_inline_list_items,
     is_reasoning_or_non_answer,
 )
+from frontend.client.chat_display import should_reload_conversation_history
 
 
 def test_detect_reasoning_leak_generic_preamble():
@@ -399,3 +407,83 @@ def test_app_state_is_conversation_generating_completed_status():
 
 
 
+
+
+# Regression coverage for the answer formatting and history-hydration defects shown
+# in the October 2026 chat screenshots.
+def test_android_inline_list_keeps_complete_version_labels_and_deduplicates_citations():
+    raw = (
+        "Android 1.0 (2008) [source_1] [source_1] "
+        "Android 1.5 Cupcake (2009) [source_1] "
+        "Android 1.6 Donut (2009) [source_1] "
+        "Android 2.0 Eclair (2009) [source_1] "
+        "Android version 12 (2021) [source_1] "
+        "Android version 13 (2022) [source_1] "
+        "Android version 14 (2023) [source_1] "
+        "Android Version 15 (2024) [source_1] "
+        "Android Version 16 (2025) [source_1]"
+    )
+
+    formatted = format_inline_list_items(raw, query="list of android version")
+    answer = deduplicate_list_citations(formatted)
+    lines = answer.splitlines()
+
+    assert len([line for line in lines if line.lstrip().startswith("- ")]) == 9
+    assert any("Android version 12 (2021)" in line for line in lines)
+    assert any("Android version 13 (2022)" in line for line in lines)
+    assert not re.search(r"(?im)^\s*[-*]\s+version\s+\d", answer)
+    assert answer.count("[source_1]") == 1
+
+
+def test_direct_question_does_not_get_reformatted_into_a_list():
+    raw = "Android 1.0 (2008) is an early release; Android 1.5 Cupcake followed in 2009."
+    assert format_inline_list_items(raw, query="What is Android?") == raw
+    assert response_format_for_query("What is Android?") == "explanation"
+
+
+def test_response_format_is_selected_from_explicit_user_intent():
+    assert response_format_for_query("List of Android versions") == "list"
+    assert response_format_for_query("What is Flutter?") == "explanation"
+    assert response_format_for_query("How to create a widget") == "steps"
+    assert response_format_for_query("Compare Flutter and React Native") == "comparison"
+    assert response_format_for_query("What is the capital of Mars?") == "explanation"
+    assert response_format_for_query("Tell me a short fact") == "direct"
+
+
+def test_query_aware_system_instruction_adds_format_without_changing_default_contract():
+    builder = GroundedPromptBuilder()
+    assert builder.build_system_instruction() == SYSTEM_GROUNDING_INSTRUCTION
+
+    instruction = builder.build_system_instruction("What is Flutter?")
+    assert "EXPLANATION FORMAT" in instruction
+    assert "Do not turn a simple definition into an unnecessary list" in instruction
+
+
+def test_same_conversation_with_only_user_turn_reloads_after_generation_finishes():
+    class Message:
+        def __init__(self, role: str):
+            self.role = role
+
+    assert should_reload_conversation_history(
+        conversation_id="conversation-1",
+        active_conversation_id="conversation-1",
+        chat_history=[Message("user")],
+        generation_status="completed",
+        is_generating=False,
+    ) is True
+
+    assert should_reload_conversation_history(
+        conversation_id="conversation-1",
+        active_conversation_id="conversation-1",
+        chat_history=[Message("user")],
+        generation_status="generating",
+        is_generating=True,
+    ) is False
+
+    assert should_reload_conversation_history(
+        conversation_id="conversation-1",
+        active_conversation_id="conversation-1",
+        chat_history=[Message("assistant")],
+        generation_status="completed",
+        is_generating=False,
+    ) is False

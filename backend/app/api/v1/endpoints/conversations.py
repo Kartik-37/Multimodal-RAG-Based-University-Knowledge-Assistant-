@@ -57,7 +57,11 @@ def list_conversations(
         db.query(Conversation, func.coalesce(msg_counts.c.count, 0))
         .outerjoin(msg_counts, Conversation.id == msg_counts.c.conversation_id)
         .filter(Conversation.user_id == current_user.id)
-        .order_by(Conversation.updated_at.desc())
+        .order_by(
+            Conversation.updated_at.desc(),
+            Conversation.created_at.desc(),
+            Conversation.id.desc(),
+        )
         .all()
     )
 
@@ -262,6 +266,26 @@ def delete_conversation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found.",
         )
+
+    # Enforce sole empty conversation invariant: a user must retain at least one usable chat interface
+    total_convs = (
+        db.query(func.count(Conversation.id))
+        .filter(Conversation.user_id == current_user.id)
+        .scalar()
+        or 0
+    )
+    if total_convs <= 1:
+        msg_count = (
+            db.query(func.count(ChatMessage.id))
+            .filter(ChatMessage.conversation_id == conv.id)
+            .scalar()
+            or 0
+        )
+        if msg_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot delete the only available chat interface. Keep one empty chat available.",
+            )
 
     db.delete(conv)
     db.commit()

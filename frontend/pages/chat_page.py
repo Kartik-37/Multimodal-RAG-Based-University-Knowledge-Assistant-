@@ -11,12 +11,14 @@ Editorial Academic Identity Workspace:
 """
 
 import html
+import logging
 from typing import Any
 
 from nicegui import ui
 
 from backend.app.core.permissions import Permission
 from frontend.client.api_client import api_client
+from frontend.client.chat_display import should_reload_conversation_history
 from frontend.client.citations import (
     SemanticCitationRef,
     group_citations_by_document,
@@ -28,6 +30,8 @@ from frontend.components.evidence_panel import render_evidence_panel
 from frontend.components.layout import has_admin_permission, page_layout
 from frontend.components.source_viewer import open_source_viewer
 from frontend.state.app_state import state
+
+logger = logging.getLogger(__name__)
 
 
 def generate_conversation_title(question: str) -> str:
@@ -86,6 +90,11 @@ def register_chat_page() -> None:
         is_admin = bool(user and user.role == "ADMIN")
         can_admin_chat = is_admin or has_admin_permission(user, Permission.ADMIN_CHAT)
 
+        # Authoritative conversation initialization BEFORE page_layout so sidebar displays active conversation
+        active_conv = None
+        if user and (not is_admin or can_admin_chat):
+            active_conv = state.ensure_active_new_chat(conversation_id)
+
         with page_layout(
             title="",
             subtitle="",
@@ -94,11 +103,10 @@ def register_chat_page() -> None:
         ):
             if not user:
                 return
-            if conversation_id and conversation_id != state.active_conversation_id:
-                try:
-                    state.load_conversation(conversation_id)
-                except Exception:
-                    pass
+
+            if active_conv and (not conversation_id or conversation_id != active_conv.id):
+                ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={active_conv.id}');")
+
             if is_admin and not can_admin_chat:
                 with ui.column().classes("w-full py-16 items-center text-center"):
                     ui.icon("lock", size="2.5rem").classes("text-rose-700 mb-2")
@@ -172,26 +180,26 @@ def register_chat_page() -> None:
             # Main Conversational Workspace
             # ------------------------------------------------------------------
             with ui.column().classes(
-                "w-full flex-1 flex flex-col justify-between overflow-hidden min-w-0 max-w-full h-full bg-canvas box-border"
-            ).style("height: 100%; max-height: 100%;"):
+                "w-full flex-1 flex flex-col justify-between overflow-hidden min-w-0 max-w-full min-h-0 h-full bg-canvas box-border flex-nowrap"
+            ).style("width: 100%; height: 100%; max-height: 100%; min-height: 0; display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important;"):
                 # Header
                 header_container = ui.row().classes(
-                    "w-full items-center justify-between px-3 sm:px-6 py-2 border-b border-subtle shrink-0 gap-2 bg-canvas min-w-0 max-w-full box-border"
+                    "w-full items-center justify-between px-3 sm:px-6 py-2 border-b border-subtle shrink-0 gap-2 bg-canvas min-w-0 max-w-full box-border flex-nowrap"
                 )
 
                 # Conversation Scroll Area (Prohibit horizontal scrolling across chat viewport)
                 with ui.column().classes(
-                    "w-full flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-3 px-3 sm:px-6 chat-scroll-area flex flex-col min-w-0 max-w-full box-border"
-                ):
+                    "chat-scroll-area w-full flex-1 self-stretch overflow-y-auto overflow-x-hidden min-h-0 py-3 px-3 sm:px-6 flex flex-col items-stretch min-w-0 max-w-full box-border flex-nowrap"
+                ).style("display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important; overflow-y: auto !important; overflow-x: hidden !important;"):
                     message_container = ui.column().classes(
-                        "w-full max-w-3xl mx-auto gap-4 pb-8 flex-1 flex flex-col min-h-full min-w-0 max-w-full box-border"
-                    )
+                        "chat-timeline w-full max-w-4xl mx-auto gap-5 pb-8 flex-1 flex flex-col items-stretch min-h-full min-w-0 max-w-full box-border flex-nowrap"
+                    ).style("display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important;")
 
                 # Composer Outer Container
                 with ui.column().classes(
-                    "w-full shrink-0 pt-2 pb-3 px-3 sm:px-6 border-t border-subtle bg-canvas z-10 min-w-0 max-w-full box-border"
+                    "w-full shrink-0 pt-2 pb-3 px-3 sm:px-6 border-t border-subtle bg-canvas z-10 min-w-0 max-w-full box-border flex-nowrap"
                 ):
-                    with ui.column().classes("w-full max-w-3xl mx-auto gap-1 min-w-0 max-w-full box-border"):
+                    with ui.column().classes("w-full max-w-4xl mx-auto gap-1 min-w-0 max-w-full box-border"):
                         # Composer Card
                         with ui.card().classes(
                             "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-xl shadow-none hover:border-gold/60 focus-within:border-gold transition-colors flex flex-col gap-2 min-w-0 max-w-full box-border"
@@ -993,48 +1001,49 @@ def register_chat_page() -> None:
             def render_header() -> None:
                 header_container.clear()
                 with header_container:
-                    # Left: Identity Title & Scope Indicator
-                    with ui.row().classes("items-center gap-2.5 min-w-0"):
-                        base_title = "Admin Knowledge Chat" if is_admin else "Academic Knowledge Assistant"
-                        ui.label(base_title).classes(
-                            "text-base sm:text-lg font-bold font-editorial text-primary-navy tracking-tight truncate shrink-0"
-                        )
+                    with ui.row().classes("w-full max-w-4xl mx-auto items-center justify-between min-w-0 flex-nowrap"):
+                        # Left: Identity Title & Scope Indicator
+                        with ui.row().classes("items-center gap-2.5 min-w-0"):
+                            base_title = "Admin Knowledge Chat" if is_admin else "Academic Knowledge Assistant"
+                            ui.label(base_title).classes(
+                                "text-base sm:text-lg font-bold font-editorial text-primary-navy tracking-tight truncate shrink-0"
+                            )
 
-                        active_title = None
-                        if state.active_conversation_id:
-                            try:
-                                conv = api_client.get_conversation(state.active_conversation_id)
-                                active_title = conv.title
-                            except Exception:
-                                pass
+                            active_title = None
+                            if state.active_conversation_id:
+                                try:
+                                    conv = api_client.get_conversation(state.active_conversation_id)
+                                    active_title = conv.title
+                                except Exception:
+                                    pass
 
-                        if active_title:
-                            with ui.row().classes(
-                                "items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface border border-subtle text-xs text-secondary-navy truncate max-w-[200px] sm:max-w-xs hidden sm:flex"
-                            ):
-                                ui.icon("chat_bubble_outline", size="12px").classes("text-gold shrink-0")
-                                ui.label(active_title).classes("truncate font-sans text-[11px]")
+                            if active_title:
+                                with ui.row().classes(
+                                    "items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface border border-subtle text-xs text-secondary-navy truncate max-w-[200px] sm:max-w-xs hidden sm:flex"
+                                ):
+                                    ui.icon("chat_bubble_outline", size="12px").classes("text-gold shrink-0")
+                                    ui.label(active_title).classes("truncate font-sans text-[11px]")
 
-                        # Scope badge if specific course selected
-                        if active_scope.get("scope") == "COURSE" and active_scope.get("kb_id"):
-                            course_obj = next((k for k in kbs if k.id == active_scope["kb_id"]), None)
-                            badge_name = course_obj.name if course_obj else "Course Scope"
-                            with ui.row().classes(
-                                "items-center gap-1 px-2.5 py-0.5 rounded-full bg-gold-light border border-gold/40 text-[11px] font-medium text-primary-navy hidden sm:flex"
-                            ):
-                                ui.icon("menu_book", size="12px").classes("text-gold")
-                                ui.label(badge_name).classes("truncate max-w-[150px]")
-                        elif active_scope.get("scope") == "DOCUMENT" and active_scope.get("selected_doc"):
-                            doc_name = active_scope["selected_doc"].original_filename
-                            with ui.row().classes(
-                                "items-center gap-1 px-2.5 py-0.5 rounded-full bg-gold-light border border-gold/40 text-[11px] font-medium text-primary-navy hidden sm:flex"
-                            ):
-                                ui.icon("description", size="12px").classes("text-gold")
-                                ui.label(doc_name).classes("truncate max-w-[150px]")
+                            # Scope badge if specific course selected
+                            if active_scope.get("scope") == "COURSE" and active_scope.get("kb_id"):
+                                course_obj = next((k for k in kbs if k.id == active_scope["kb_id"]), None)
+                                badge_name = course_obj.name if course_obj else "Course Scope"
+                                with ui.row().classes(
+                                    "items-center gap-1 px-2.5 py-0.5 rounded-full bg-gold-light border border-gold/40 text-[11px] font-medium text-primary-navy hidden sm:flex"
+                                ):
+                                    ui.icon("menu_book", size="12px").classes("text-gold")
+                                    ui.label(badge_name).classes("truncate max-w-[150px]")
+                            elif active_scope.get("scope") == "DOCUMENT" and active_scope.get("selected_doc"):
+                                doc_name = active_scope["selected_doc"].original_filename
+                                with ui.row().classes(
+                                    "items-center gap-1 px-2.5 py-0.5 rounded-full bg-gold-light border border-gold/40 text-[11px] font-medium text-primary-navy hidden sm:flex"
+                                ):
+                                    ui.icon("description", size="12px").classes("text-gold")
+                                    ui.label(doc_name).classes("truncate max-w-[150px]")
 
-                    # Header right spacer (New Chat is prominently placed in primary sidebar)
-                    with ui.row().classes("items-center gap-2 ml-auto shrink-0"):
-                        pass
+                        # Header right spacer (New Chat is prominently placed in primary sidebar)
+                        with ui.row().classes("items-center gap-2 ml-auto shrink-0"):
+                            pass
 
             # ------------------------------------------------------------------
             # Render Messages & Academic Empty State
@@ -1060,7 +1069,9 @@ def register_chat_page() -> None:
                     else:
                         for msg in state.chat_history:
                             if msg.role == "user":
-                                with ui.row().classes("w-full justify-end items-end gap-3 min-w-0 max-w-full box-border"):
+                                with ui.row().classes(
+                                    "chat-turn-user w-full justify-end items-end gap-3 min-w-0 max-w-full box-border flex-nowrap shrink-0"
+                                ).style("display: flex !important; width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important;"):
                                     with ui.element("div").classes(
                                         "max-w-2xl bg-surface-elevated border border-subtle text-primary-navy px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl rounded-tr-sm shadow-none min-w-0 box-border break-words"
                                     ):
@@ -1071,8 +1082,8 @@ def register_chat_page() -> None:
                                 is_err = msg.id.startswith("msg-err-") or ("timed out" in (msg.content or "").lower() and not msg.citations)
                                 if is_err:
                                     with ui.card().classes(
-                                        "w-full max-w-3xl p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none min-w-0 box-border"
-                                    ):
+                                        "w-full max-w-3xl p-4 bg-rose-50/70 border border-rose-200 rounded-xl gap-2 shadow-none min-w-0 max-w-full box-border shrink-0"
+                                    ).style("width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important;"):
                                         with ui.row().classes("items-center justify-between w-full"):
                                             with ui.row().classes("items-center gap-2"):
                                                 ui.icon("error_outline", size="20px").classes("text-rose-700")
@@ -1085,8 +1096,8 @@ def register_chat_page() -> None:
                                         ui.label(msg.content).classes("text-sm text-rose-900 font-sans leading-relaxed break-words")
                                 else:
                                     with ui.column().classes(
-                                        "w-full max-w-3xl gap-2.5 bg-canvas py-1 min-w-0 max-w-full box-border"
-                                    ):
+                                        "chat-turn-assistant w-full self-stretch gap-2.5 bg-canvas py-1 min-w-0 max-w-full box-border flex-nowrap shrink-0"
+                                    ).style("display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; width: 100% !important; max-width: 100% !important; align-self: stretch !important; flex-shrink: 0 !important;"):
                                         # Markdown answer content
                                         clean_content = sanitize_markdown_text(
                                             format_citation_links(
@@ -1097,7 +1108,7 @@ def register_chat_page() -> None:
                                             clean_content,
                                             extras=["fenced-code-blocks", "tables", "cuddled-lists", "break-on-newline"],
                                         ).classes(
-                                            "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans w-full min-w-0 max-w-full break-words"
+                                            "safe-markdown text-base sm:text-[16.5px] leading-relaxed text-primary-navy font-sans w-full self-stretch min-w-0 max-w-full break-words box-border"
                                         )
 
                                     # Cited Sources Tray
@@ -1208,10 +1219,10 @@ def register_chat_page() -> None:
                             )
 
                 ui.run_javascript("""
-                    setTimeout(() => {
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
                         const sc = document.querySelector('.chat-scroll-area');
-                        if (sc) { sc.scrollTo({ top: sc.scrollHeight, behavior: 'smooth' }); }
-                    }, 200);
+                        if (sc) { sc.scrollTop = sc.scrollHeight; }
+                    }));
                 """)
 
             def on_state_update() -> None:

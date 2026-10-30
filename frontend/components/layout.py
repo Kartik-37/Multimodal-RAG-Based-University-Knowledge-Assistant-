@@ -216,7 +216,7 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                         if (closeBtn) closeBtn.click();
                     }
                 """)
-                conv_id = new_conv.id if new_conv else ""
+                conv_id = new_conv.id if new_conv else (state.active_conversation_id or "")
                 if active_route != "/chat":
                     url = f"/chat?conversation_id={conv_id}" if conv_id else "/chat"
                     ui.navigate.to(url)
@@ -232,16 +232,31 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                     convs = []
                     try:
                         convs = api_client.get_conversations()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        clean_err = normalize_error(exc, context="chat")
+                        ui.label("Unable to load chat history").classes(
+                            "text-xs text-rose-800/80 italic px-2.5 py-2"
+                        ).tooltip(clean_err)
+                        return
 
-                    if not convs:
+                    # Deduplicate by ID while preserving server-provided recent-activity order
+                    seen_ids = set()
+                    unique_convs = []
+                    for c in convs:
+                        if c.id not in seen_ids:
+                            seen_ids.add(c.id)
+                            unique_convs.append(c)
+
+                    if not unique_convs:
                         ui.label("No saved chats yet").classes(
                             "text-xs text-secondary-navy/60 italic px-2.5 py-2"
                         )
                         return
 
-                    for c in convs:
+                    # Case B: sole empty conversation cannot be deleted
+                    is_sole_empty = (len(unique_convs) == 1 and getattr(unique_convs[0], "message_count", 0) == 0)
+
+                    for c in unique_convs:
                         is_active = (
                             active_route == "/chat"
                             and state.active_conversation_id == c.id
@@ -288,14 +303,26 @@ def _render_app_sidebar(active_route: str, user: UserDTO) -> None:
                             def on_delete(e: Any, conv_id=c.id):
                                 if hasattr(e, "stop_propagation"):
                                     e.stop_propagation()
-                                state.delete_conversation(conv_id)
-                                render_conversation_items(container)
+                                deleted_active = (state.active_conversation_id == conv_id)
+                                success = state.delete_conversation(conv_id)
+                                if success and deleted_active:
+                                    if active_route == "/chat" and state.active_conversation_id:
+                                        ui.run_javascript(f"window.history.replaceState({{}}, '', '/chat?conversation_id={state.active_conversation_id}');")
+                                    elif active_route == "/chat":
+                                        ui.run_javascript("window.history.replaceState({}, '', '/chat');")
 
-                            ui.button(icon="delete_outline", on_click=on_delete).props(
-                                "flat round dense"
-                            ).classes(
-                                "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity p-0.5"
-                            ).props('aria-label="Delete conversation"')
+                            if is_sole_empty:
+                                ui.button(icon="delete_outline").props(
+                                    "flat round dense disable @click.stop"
+                                ).classes(
+                                    "opacity-30 text-secondary-navy text-xs shrink-0 p-0.5 cursor-not-allowed"
+                                ).props('aria-label="Cannot delete last empty chat"').tooltip("Keep one empty chat available")
+                            else:
+                                ui.button(icon="delete_outline", on_click=on_delete).props(
+                                    "flat round dense @click.stop"
+                                ).classes(
+                                    "opacity-0 group-hover:opacity-100 text-secondary-navy hover:text-rose-700 text-xs shrink-0 transition-opacity p-0.5"
+                                ).props('aria-label="Delete conversation"')
 
             def render_chat_history_sidebar(nav_items: list[tuple[str, str, str]]) -> None:
                 with (
@@ -588,7 +615,9 @@ def page_layout(
         else ("max-w-7xl" if (user and user.role == "ADMIN") else "max-w-5xl")
     )
     padding_style = (
-        "padding: 0 !important; height: calc(100dvh - 3.5rem); max-height: calc(100dvh - 3.5rem); overflow: hidden;"
+        "width: 100% !important; max-width: none !important; margin: 0 !important; "
+        "padding: 0 !important; height: calc(100dvh - 3.5rem); max-height: calc(100dvh - 3.5rem); "
+        "min-height: 0; overflow: hidden; box-sizing: border-box;"
         if active_route == "/chat"
         else "padding: 2rem 1rem !important;"
     )
