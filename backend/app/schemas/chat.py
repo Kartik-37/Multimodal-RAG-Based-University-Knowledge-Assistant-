@@ -28,6 +28,10 @@ class KnowledgeBaseChatRequest(BaseModel):
         alias="query",
         description="Natural language user question.",
     )
+    turn_id: str | None = Field(
+        default=None,
+        description="Optional client-provided idempotency turn/request UUID for retry and turn tracking.",
+    )
 
     @field_validator("question")
     @classmethod

@@ -169,6 +169,7 @@ class ChatMessageDTO(BaseModel):
     model: str | None = None
     conversation_id: str | None = None
     error_details: dict[str, Any] | None = None
+    turn_id: str | None = None
 
 
 class ConversationSummaryDTO(BaseModel):

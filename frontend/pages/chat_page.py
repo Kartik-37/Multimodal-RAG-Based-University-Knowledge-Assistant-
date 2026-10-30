@@ -184,7 +184,7 @@ def register_chat_page() -> None:
             ).style("width: 100%; height: 100%; max-height: 100%; min-height: 0; display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important;"):
                 # Header
                 header_container = ui.row().classes(
-                    "w-full items-center justify-between px-3 sm:px-6 py-2 border-b border-subtle shrink-0 gap-2 bg-canvas min-w-0 max-w-full box-border flex-nowrap"
+                    "w-full items-center justify-between px-3 sm:px-6 py-2 shrink-0 gap-2 bg-canvas min-w-0 max-w-full box-border flex-nowrap"
                 )
 
                 # Conversation Scroll Area (Prohibit horizontal scrolling across chat viewport)
@@ -197,9 +197,9 @@ def register_chat_page() -> None:
 
                 # Composer Outer Container
                 with ui.column().classes(
-                    "w-full shrink-0 pt-2 pb-3 px-3 sm:px-6 border-t border-subtle bg-canvas z-10 min-w-0 max-w-full box-border flex-nowrap"
+                    "w-full shrink-0 pb-3 px-3 sm:px-6 bg-canvas z-10 min-w-0 max-w-full box-border flex-nowrap"
                 ):
-                    with ui.column().classes("chat-content-shell w-full max-w-4xl mx-auto gap-1 min-w-0 max-w-full box-border"):
+                    with ui.column().classes("chat-content-shell w-full max-w-4xl mx-auto pt-2 border-t border-subtle gap-1 min-w-0 max-w-full box-border"):
                         # Composer Card
                         with ui.card().classes(
                             "w-full p-2.5 sm:p-3 bg-surface-elevated border border-subtle rounded-xl shadow-none hover:border-gold/60 focus-within:border-gold transition-colors flex flex-col gap-2 min-w-0 max-w-full box-border"
@@ -363,6 +363,7 @@ def register_chat_page() -> None:
                 retry_doc_id = details.get("document_id")
                 retry_scope = details.get("scope") or "ALL_COURSES"
                 retry_conv_id = details.get("conversation_id") or state.active_conversation_id
+                retry_turn_id = details.get("turn_id")
 
                 # Fallback to finding the preceding user message if error_details is absent
                 if not retry_q:
@@ -413,6 +414,7 @@ def register_chat_page() -> None:
                         document_id=retry_doc_id,
                         scope=retry_scope,
                         conversation_id=retry_conv_id,
+                        turn_id=retry_turn_id,
                     )
                 except Exception:
                     is_submitting["value"] = False
@@ -1049,7 +1051,7 @@ def register_chat_page() -> None:
             def render_header() -> None:
                 header_container.clear()
                 with header_container:
-                    with ui.row().classes("chat-content-shell w-full max-w-4xl mx-auto items-center justify-between min-w-0 flex-nowrap"):
+                    with ui.row().classes("chat-content-shell w-full max-w-4xl mx-auto items-center justify-between pb-2 border-b border-subtle min-w-0 flex-nowrap"):
                         # Left: Identity Title & Scope Indicator
                         with ui.row().classes("items-center gap-2.5 min-w-0"):
                             base_title = "Admin Knowledge Chat" if is_admin else "Academic Knowledge Assistant"

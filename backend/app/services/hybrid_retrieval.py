@@ -297,7 +297,30 @@ class HybridRetrievalService:
                 top_k=candidate_limit,
                 document_id=document_id,
             )
-            lexical_results = lexical_response.results
+            lexical_results = list(lexical_response.results)
+
+            # Controlled search variant for statutory short title and Act name queries
+            q_lower = clean_query.lower()
+            if any(p in q_lower for p in ("act name", "name of the act", "name of this act", "short title", "title of the act", "title of this act", "which act", "what act", "act title")):
+                variant_res = self._lexical_service.retrieve(
+                    db=db,
+                    kb_id=kb_id,
+                    query="This Act may be called",
+                    top_k=candidate_limit,
+                    document_id=document_id,
+                )
+                seen_chunk_ids = {r.chunk_id for r in lexical_results}
+                for v_item in variant_res.results:
+                    if v_item.chunk_id not in seen_chunk_ids:
+                        lexical_results.insert(0, v_item)
+                        seen_chunk_ids.add(v_item.chunk_id)
+                    else:
+                        for idx, existing in enumerate(lexical_results):
+                            if existing.chunk_id == v_item.chunk_id:
+                                if v_item.lexical_score > existing.lexical_score or idx > 0:
+                                    lexical_results.pop(idx)
+                                    lexical_results.insert(0, v_item)
+                                break
         except LexicalRetrievalValidationError as exc:
             raise HybridRetrievalValidationError(str(exc)) from exc
         except LexicalRetrievalError as exc:

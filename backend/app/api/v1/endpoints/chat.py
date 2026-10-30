@@ -168,6 +168,7 @@ def _persist_user_question(
     active_conv: Conversation | None = None,
     kb_id: uuid.UUID | None = None,
     document_id: uuid.UUID | None = None,
+    turn_id: str | None = None,
 ) -> tuple[Conversation, ChatMessage]:
     """
     Safely persist or resolve conversation and user message BEFORE generation.
@@ -194,38 +195,55 @@ def _persist_user_question(
         if prior_user_msgs == 0 or (conv.title or "").strip().lower() in ("new chat", "new conversation"):
             conv.title = generate_conversation_title(question)
 
-    # Check if an unanswered user message matching this exact question already exists in this conversation (retry scenario)
-    unanswered_user_msg = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.conversation_id == conv.id,
-            ChatMessage.role == "user",
-            ChatMessage.content == question.strip(),
-        )
-        .order_by(ChatMessage.created_at.desc())
-        .first()
-    )
-    if unanswered_user_msg:
-        has_subsequent_reply = (
+    user_msg: ChatMessage | None = None
+
+    # 1. If explicit client turn_id is provided, check if a message for this exact turn already exists (retry scenario)
+    if turn_id:
+        for msg in (
             db.query(ChatMessage)
             .filter(
                 ChatMessage.conversation_id == conv.id,
-                ChatMessage.role == "assistant",
-                ChatMessage.created_at >= unanswered_user_msg.created_at,
+                ChatMessage.role == "user",
             )
+            .order_by(ChatMessage.created_at.desc())
+            .all()
+        ):
+            if msg.citations and any(isinstance(c, dict) and c.get("turn_id") == turn_id for c in msg.citations):
+                user_msg = msg
+                break
+
+    # 2. If no matching turn_id was found and turn_id was not explicitly specified, fallback to unanswered matching question
+    if user_msg is None and not turn_id:
+        unanswered_user_msg = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.conversation_id == conv.id,
+                ChatMessage.role == "user",
+                ChatMessage.content == question.strip(),
+            )
+            .order_by(ChatMessage.created_at.desc())
             .first()
         )
-        if not has_subsequent_reply:
-            user_msg = unanswered_user_msg
-        else:
-            unanswered_user_msg = None
+        if unanswered_user_msg:
+            has_subsequent_reply = (
+                db.query(ChatMessage)
+                .filter(
+                    ChatMessage.conversation_id == conv.id,
+                    ChatMessage.role == "assistant",
+                    ChatMessage.created_at >= unanswered_user_msg.created_at,
+                )
+                .first()
+            )
+            if not has_subsequent_reply:
+                user_msg = unanswered_user_msg
 
-    if not unanswered_user_msg:
+    # 3. Create new user message turn
+    if user_msg is None:
         user_msg = ChatMessage(
             conversation_id=conv.id,
             role="user",
             content=question.strip(),
-            citations=[],
+            citations=[{"turn_id": turn_id}] if turn_id else [],
         )
         db.add(user_msg)
 
@@ -240,6 +258,7 @@ def _persist_assistant_response(
     db: DatabaseSession,
     conv: Conversation,
     response: ChatQueryResponse,
+    turn_id: str | None = None,
 ) -> None:
     """Safely append assistant response to persistent conversation and commit."""
     try:
@@ -247,6 +266,8 @@ def _persist_assistant_response(
             c.model_dump(mode="json") if hasattr(c, "model_dump") else json.loads(json.dumps(c.dict(), default=str))
             for c in response.citations
         ]
+        if turn_id:
+            citations_data.append({"turn_id": turn_id})
         assistant_msg = ChatMessage(
             conversation_id=conv.id,
             role="assistant",
@@ -262,6 +283,8 @@ def _persist_assistant_response(
         response.message_id = str(assistant_msg.id)
         response.metadata["message_id"] = str(assistant_msg.id)
         response.metadata["conversation_id"] = str(conv.id)
+        if turn_id:
+            response.metadata["turn_id"] = turn_id
     except Exception as exc:
         logger.warning("Could not persist assistant response to database: %s", exc)
         try:
@@ -279,6 +302,7 @@ def _try_persist_turn(
     active_conv: Conversation | None = None,
     kb_id: uuid.UUID | None = None,
     document_id: uuid.UUID | None = None,
+    turn_id: str | None = None,
 ) -> None:
     """Safely persist conversation turn (user question and assistant response) with user ownership."""
     try:
@@ -290,11 +314,13 @@ def _try_persist_turn(
             active_conv=active_conv,
             kb_id=kb_id,
             document_id=document_id,
+            turn_id=turn_id,
         )
         _persist_assistant_response(
             db=db,
             conv=conv,
             response=response,
+            turn_id=turn_id,
         )
     except Exception as exc:
         logger.warning("Could not persist chat turn to database: %s", exc)
@@ -478,6 +504,7 @@ async def query_knowledge_base_legacy(
                 scope=scope,
                 active_conv=active_conv,
                 kb_id=None,
+                turn_id=payload.turn_id,
             )
             return refusal_resp
         target_kb: uuid.UUID | list[uuid.UUID] = authorized_kb_ids
@@ -547,6 +574,7 @@ async def query_knowledge_base_legacy(
         active_conv=active_conv,
         kb_id=payload.knowledge_base_id,
         document_id=target_document_id,
+        turn_id=payload.turn_id,
     )
 
     rag_response = await _execute_orchestrated_chat(
@@ -563,6 +591,7 @@ async def query_knowledge_base_legacy(
         db=db,
         conv=persisted_conv,
         response=rag_response,
+        turn_id=payload.turn_id,
     )
 
     return rag_response

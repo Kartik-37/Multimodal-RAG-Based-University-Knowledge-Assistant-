@@ -40,6 +40,7 @@ class ConversationGeneration:
     error: str | None = None
     response: ChatMessageDTO | None = None
     generation_id: int = 0
+    turn_id: str | None = None
 
 
 class AppState:
@@ -200,6 +201,7 @@ class AppState:
         document_id: str | None = None,
         scope: str = "ALL_COURSES",
         conversation_id: str | None = None,
+        turn_id: str | None = None,
     ) -> None:
         """
         Launch background query synthesis keyed strictly to its conversation identity.
@@ -214,6 +216,7 @@ class AppState:
 
         self._generation_counter += 1
         current_gen_id = self._generation_counter
+        actual_turn_id = turn_id or f"turn-{uuid.uuid4().hex[:12]}"
 
         gen = ConversationGeneration(
             conversation_id=target_conv_id,
@@ -226,6 +229,7 @@ class AppState:
             error=None,
             response=None,
             generation_id=current_gen_id,
+            turn_id=actual_turn_id,
         )
         self._generations[target_conv_id] = gen
         self._generation_error = None
@@ -253,6 +257,7 @@ class AppState:
                         document_id=document_id,
                         scope=scope,
                         conversation_id=None if target_conv_id == "__draft__" else target_conv_id,
+                        turn_id=actual_turn_id,
                     )
 
                     if gen.status == "cancelled" or gen.generation_id != current_gen_id:
@@ -271,11 +276,7 @@ class AppState:
                     # If student or admin is currently viewing this conversation, update active thread and citations
                     if self._active_conversation_id == resolved_conv_id:
                         existing_ids = {m.id for m in self._chat_history}
-                        has_matching_content = any(
-                            m.role == "assistant" and (m.content or "").strip() == (resp.content or "").strip()
-                            for m in self._chat_history
-                        )
-                        if resp.id not in existing_ids and not has_matching_content:
+                        if resp.id not in existing_ids:
                             self._chat_history.append(resp)
                         if resp.citations:
                             self._selected_citation = resp.citations[0]
@@ -302,7 +303,9 @@ class AppState:
                         "scope": scope,
                         "conversation_id": target_conv_id,
                         "generation_id": current_gen_id,
+                        "turn_id": actual_turn_id,
                     },
+                    turn_id=actual_turn_id,
                 )
                 gen.response = err_msg
 
@@ -490,11 +493,7 @@ class AppState:
         gen = self._generations.get(conv_id)
         if gen and gen.status == "completed" and gen.response:
             existing_ids = {m.id for m in self._chat_history}
-            has_matching_content = any(
-                m.role == "assistant" and (m.content or "").strip() == (gen.response.content or "").strip()
-                for m in self._chat_history
-            )
-            if gen.response.id not in existing_ids and not has_matching_content:
+            if gen.response.id not in existing_ids:
                 self._chat_history.append(gen.response)
 
         if getattr(detail, "scope", None):

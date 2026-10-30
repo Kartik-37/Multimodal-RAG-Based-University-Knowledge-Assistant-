@@ -4,6 +4,58 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-10-30
 
+**PHASE 21 -- ACT NAME RETRIEVAL & ACCURATE GROUNDING, REPEATED QUESTION DELIVERY & TURN IDENTITY, AND CHAT SEPARATOR ALIGNMENT (COMPLETED & VERIFIED)**
+
+### Confirmed Root Causes & Implemented Solutions
+
+1. **Workstream A: Act Name Retrieval & Grounded Extraction (`backend/app/services/hybrid_retrieval.py`, `backend/app/services/llm/service.py`):**
+   - **Root Cause**:
+     - When querying `what is act name` against `KSU-Act-English.pdf` in `DOCUMENT` scope, lexical search failed to retrieve Chunk 0 because the text uses the statutory formula `"1. (1) This Act may be called ‘Kaushalya’ the Skill University Act 2021."` and lacks the word `"name"`.
+     - Dense vector embedding (`qwen3-embedding:0.6b`) retrieved Chunk 0 at Rank 1 (Score 0.2811), and RRF fused it into context as `source_2`.
+     - However, the CrossEncoder reranker (`ms-marco-MiniLM-L-6-v2`) assigned Chunk 0 a raw logit of `-6.7609` (Rank 2).
+     - In `LLMGenerationService.generate_grounded_answer()`, a hard-coded check `if max_score < -2.0:` immediately triggered `INSUFFICIENT_COURSE_EVIDENCE_ANSWER`, falsely refusing the query despite Chunk 0 containing the exact statutory name on Page 1.
+   - **Solution**:
+     - Added controlled lexical search expansion for statutory title queries (`"act name"`, `"name of the act"`, `"short title"`, `"title of the act"`, `"which act"`, etc.) in `HybridRetrievalService._execute_hybrid_retrieval()` using `"This Act may be called"`, promoting Chunk 0 to Rank 1 in lexical retrieval.
+     - Added statutory title extraction in `extract_grounded_recovery_answer()`: extracts `"This Act may be called\s+([^\r\n.]+)"`, normalizes quote variants to academic bold title `The Act is titled the **“Kaushalya” the Skill University Act 2021** [{source_tag}].`
+     - Added direct grounded extractive fast-path in `generate_grounded_answer()` before low-relevance check: statutory titles and exact factual answers return immediately in 0ms with exact Page 1 citations and pass Grounding Validation with `status="FULLY_SUPPORTED"`, `is_grounded=True`.
+     - Calibrated the out-of-scope / low-relevance fast-path threshold from `-2.0` to `-8.5`: true out-of-scope queries (`who is modi`, `tech fest date`) score `< -8.5` and return immediate honest refusals, while legitimate academic queries on legal gazettes score `-3.8` to `-6.8` and are correctly answered.
+
+2. **Workstream B: Repeated Question Delivery & Turn Identity (`backend/app/schemas/chat.py`, `backend/app/api/v1/endpoints/chat.py`, `frontend/client/models.py`, `frontend/client/api_client.py`, `frontend/state/app_state.py`, `frontend/pages/chat_page.py`):**
+   - **Root Cause**:
+     - In `frontend/state/app_state.py` (lines 274–278 and 493–497), `has_matching_content = any(m.role == "assistant" and (m.content or "").strip() == (resp.content or "").strip() for m in self._chat_history)` checked if an assistant message with identical content already existed in `self._chat_history`.
+     - When a student or administrator asked the exact same question a second time, the assistant response had identical text, causing `has_matching_content` to evaluate to `True`, which silently suppressed appending the assistant's second response to `self._chat_history`.
+     - The application lacked an explicit client-side `turn_id` to distinguish a brand new manual question submission (new `turn_id`) from a retry of an existing failed turn (reused `turn_id`).
+   - **Solution**:
+     - Added `turn_id: str | None = Field(default=None)` to `KnowledgeBaseChatRequest`, `ChatQueryRequest`, `ChatMessageDTO`, and `ConversationGeneration`.
+     - In `AppState.start_background_generation()`: generates a unique `turn_id` (`f"turn-{uuid.uuid4().hex[:12]}"`) when not supplied, binds it to `ConversationGeneration`, passes it to `api_client.send_chat_message()`, and attaches it to `error_details` on failure.
+     - In `handle_retry_turn()`: extracts the exact `retry_turn_id` from `err_msg.error_details` and passes it back to `start_background_generation()`, enabling the backend to recognize retries.
+     - In `_persist_user_question()` (`backend/app/api/v1/endpoints/chat.py`): if `turn_id` is supplied and matches an existing user message's citations metadata (`{"turn_id": turn_id}`), reuses the existing user message (retry). Otherwise, creates a distinct user message record for repeated questions.
+     - In `AppState._run_async_query()` and `AppState.load_conversation()`: removed `has_matching_content` deduplication; deduplication is now strictly by unique message ID (`resp.id not in existing_ids`). Repeated questions and answers now stack vertically in chronological order without omission.
+
+3. **Workstream C: Header & Composer Separator Alignment (`frontend/pages/chat_page.py`):**
+   - **Root Cause**:
+     - In `frontend/pages/chat_page.py`, `header_container` had `border-b border-subtle` on the outer `w-full` row, and the composer outer container had `border-t border-subtle` on its outer `w-full` column.
+     - Because outer containers span full viewport width (`w-full px-3 sm:px-6`), the separator divider lines stretched edge-to-edge across the screen, while chat messages and inner composer cards were centered in `.chat-content-shell` (`max-w-4xl mx-auto`, 56rem / 896px).
+   - **Solution**:
+     - Removed `border-b border-subtle` from the outer `header_container` row; placed `pb-2 border-b border-subtle` directly on the inner `.chat-content-shell` row inside `render_header()`.
+     - Removed `border-t border-subtle` from the outer composer column; placed `pt-2 border-t border-subtle` directly on the inner `.chat-content-shell` column inside the composer container.
+     - Both top and bottom divider lines now align precisely with the 56rem width of the conversation shell and composer card.
+
+### Verification Suite Passed
+- `backend/tests/unit/test_act_name_and_repeated_turns.py`: **6/6 passed (100%)**
+- `scripts/verify_retrieval_and_answer.py`:
+  - `what is act name` -> `The Act is titled the **“Kaushalya” the Skill University Act 2021** [source_2].` (Page 1, `status="FULLY_SUPPORTED"`, `is_grounded=True`)
+  - `What is the name of this Act?` -> `The Act is titled the **“Kaushalya” the Skill University Act 2021** [source_5].` (Page 1, `status="FULLY_SUPPORTED"`, `is_grounded=True`)
+  - `What is the short title of the Act?` -> `The Act is titled the **“Kaushalya” the Skill University Act 2021** [source_1].` (Page 1, `status="FULLY_SUPPORTED"`, `is_grounded=True`)
+  - `Which Act is referred to in the short title clause?` -> `The Act is titled the **“Kaushalya” the Skill University Act 2021** [source_2].` (Page 1, `status="FULLY_SUPPORTED"`, `is_grounded=True`)
+  - `who is modi` -> Safe honest refusal (0 citations, `status="UNVERIFIABLE"`, `is_grounded=False`)
+  - `what is the date and venue of tech fest 2026?` -> Safe honest refusal (0 citations, `status="UNVERIFIABLE"`, `is_grounded=False`)
+- Full Core Chat Regression Suite: **53 / 53 passed (100%)**
+
+---
+
+## Historical phase record -- 2026-10-30
+
 **PHASE 20 -- RETRY RELIABILITY, STUDENT SIDEBAR SIMPLIFICATION, AND CHAT UI GEOMETRY ALIGNMENT (COMPLETED & VERIFIED)**
 
 ### Confirmed Root Causes & Implemented Solutions

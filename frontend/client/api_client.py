@@ -1403,6 +1403,7 @@ class FrontendAPIClient:
         document_id: str | None = None,
         scope: str | None = None,
         conversation_id: str | None = None,
+        turn_id: str | None = None,
     ) -> ChatMessageDTO:
         """Submit question to conversational query endpoint with verified citations."""
         if not question.strip():
@@ -1608,6 +1609,8 @@ class FrontendAPIClient:
             raise ValueError("Authentication required: Please sign in to submit chat queries.")
 
         payload: dict[str, Any] = {"question": question.strip()}
+        if turn_id:
+            payload["turn_id"] = turn_id
         if scope:
             payload["scope"] = scope
         if conversation_id:
@@ -1657,6 +1660,7 @@ class FrontendAPIClient:
         latency_data = data.get("latency") or {}
         ret_conv_id = data.get("metadata", {}).get("conversation_id") or conversation_id
         ret_msg_id = data.get("message_id") or data.get("metadata", {}).get("message_id")
+        ret_turn_id = turn_id or data.get("metadata", {}).get("turn_id")
 
         return ChatMessageDTO(
             id=str(ret_msg_id) if ret_msg_id else f"msg-{uuid.uuid4().hex[:8]}",
@@ -1669,6 +1673,7 @@ class FrontendAPIClient:
             total_pipeline_ms=latency_data.get("total_pipeline_ms"),
             model=data.get("model"),
             conversation_id=str(ret_conv_id) if ret_conv_id else None,
+            turn_id=ret_turn_id,
         )
 
     # --------------------------------------------------------------------------
