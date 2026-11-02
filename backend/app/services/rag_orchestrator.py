@@ -81,6 +81,10 @@ from backend.app.services.query_processing import (
     QueryProcessor,
     get_query_processor,
 )
+from backend.app.services.document_summary_service import (
+    DocumentSummaryService,
+    get_document_summary_service,
+)
 from backend.app.services.reranking.service import (
     RerankingService,
     get_reranking_service,
@@ -168,6 +172,7 @@ class RAGOrchestrator:
         query_understanding: QueryUnderstandingService | None = None,
         relevance_gate: QueryEvidenceRelevanceGate | None = None,
         answer_alignment_checker: AnswerAlignmentChecker | None = None,
+        document_summary_service: DocumentSummaryService | None = None,
     ) -> None:
         self.query_processor = query_processor or get_query_processor()
         self.hybrid_service = hybrid_service or get_hybrid_retrieval_service()
@@ -179,6 +184,7 @@ class RAGOrchestrator:
         self.query_understanding = query_understanding or get_query_understanding_service()
         self.relevance_gate = relevance_gate or get_relevance_gate()
         self.answer_alignment_checker = answer_alignment_checker or get_answer_alignment_checker()
+        self.document_summary_service = document_summary_service or get_document_summary_service()
 
     async def execute_query(
         self,
@@ -390,6 +396,25 @@ class RAGOrchestrator:
                         "query_subject": structured_query.subject,
                     },
                 )
+
+            # -------------------------------------------------------------
+            # Whole-Document Hierarchical Summary Routing
+            # -------------------------------------------------------------
+            if structured_query.requires_document_summary:
+                target_doc = self.document_summary_service.resolve_target_document(
+                    db=db,
+                    kb_id=kb_id,
+                    structured_query=structured_query,
+                    document_id=document_id,
+                )
+                if target_doc:
+                    return await self.document_summary_service.generate_document_summary(
+                        db=db,
+                        target_doc=target_doc,
+                        structured_query=structured_query,
+                        raw_query=raw_query,
+                        query_processing_ms=query_processing_ms,
+                    )
 
             # -------------------------------------------------------------
             # 2. Step 9: Hybrid Retrieval (Orchestrating Vector + Lexical + RRF)

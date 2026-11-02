@@ -156,9 +156,9 @@ class SentenceSplitter:
         lines = [line.strip() for line in protected.split("\n") if line.strip()]
 
         raw_segments: list[str] = []
-        # Forward-matching pattern capturing sentences with optional trailing citation markers.
+        # Forward-matching pattern capturing sentences with optional trailing citation markers or quotation marks.
         sentence_extractor = re.compile(
-            r"[^\n.!?]+(?:[.!?]+(?:\s*\[source_\d+\])*)|[^\n]+",
+            r"[^\n.!?]+(?:[.!?]+(?:\s*(?:\[source_\d+\]|[\"\'”]))*)*|[^\n]+",
             re.IGNORECASE,
         )
 
@@ -207,8 +207,8 @@ class SentenceSplitter:
             # Collapse any double spaces left from removing citations
             text_without_citations = re.sub(r"\s+", " ", text_without_citations).strip()
 
-            # Skip empty remnants
-            if not text_without_citations:
+            # Skip empty or punctuation-only remnants (e.g. orphan quotes or brackets)
+            if not text_without_citations or not any(c.isalnum() for c in text_without_citations):
                 continue
 
             # Check if this segment is conversational preamble or refusal

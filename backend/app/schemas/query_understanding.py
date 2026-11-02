@@ -21,6 +21,7 @@ class QueryIntent(str, Enum):
     FACT_LOOKUP = "fact_lookup"
     AMBIGUOUS = "ambiguous"
     OUT_OF_SCOPE = "out_of_scope"
+    DOCUMENT_SUMMARY = "document_summary"
 
 
 class StructuredQuery(BaseModel):
@@ -60,6 +61,14 @@ class StructuredQuery(BaseModel):
     requires_retrieval: bool = Field(
         default=True,
         description="Whether query requires document retrieval over authorized knowledge bases.",
+    )
+    requires_document_summary: bool = Field(
+        default=False,
+        description="Whether query requests a whole-document summary or overview rather than chunk QA.",
+    )
+    target_document_hint: str | None = Field(
+        default=None,
+        description="Document title or filename hint extracted from the query if specified.",
     )
     clarification_prompt: str | None = Field(
         default=None,

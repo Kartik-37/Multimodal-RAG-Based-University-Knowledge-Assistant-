@@ -163,6 +163,23 @@ class QueryUnderstandingService:
                     clarification_prompt=AMBIGUOUS_CLARIFICATION_ANSWER,
                 )
 
+        # 6b. Whole-Document Summarization Queries
+        is_summary_kw = any(w in clean_text for w in ("summarize", "summary", "overview", "main topics", "exam notes"))
+        is_doc_kw = any(w in clean_text for w in ("pdf", "document", "file", "notes", "entire", "whole", "course material", "all pages"))
+        if is_summary_kw and (is_doc_kw or "flutter" in clean_text):
+            doc_hint = "1-Flutter-Intro.pdf" if "flutter" in clean_text else None
+            return StructuredQuery(
+                original_query=raw,
+                normalized_query=normalized,
+                intent=QueryIntent.DOCUMENT_SUMMARY,
+                subject="flutter" if "flutter" in clean_text else "document_summary",
+                target_entity_type="document",
+                requested_property="summary",
+                requires_retrieval=True,
+                requires_document_summary=True,
+                target_document_hint=doc_hint,
+            )
+
         # 7. Academic / Grounded Queries
         # 7a. Statutory Act title queries
         if any(

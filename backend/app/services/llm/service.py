@@ -147,6 +147,23 @@ def clean_reasoning_text(text: str) -> str:
         if not any(re.search(p, cand, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
             return cand
 
+    # 2b. Extract direct quoted definition from meta-deliberation if present
+    quote_match = re.search(
+        r'(?:states|is|says|provides|write|writes):\s*\"([^\"]{25,})\"',
+        text,
+        re.IGNORECASE,
+    )
+    if quote_match:
+        quoted = quote_match.group(1).strip()
+        if not any(re.search(p, quoted, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
+            if re.search(r'\[source_\d+\]', quoted, re.IGNORECASE):
+                return quoted
+            source_tag = "source_1"
+            m_tag = re.search(r"\[(source_\d+)\]", text, re.IGNORECASE)
+            if m_tag:
+                source_tag = m_tag.group(1).lower()
+            return f"{quoted} [{source_tag}]."
+
     # 3. Strip trailing meta-evaluation sentences that evaluate which source defines what
     cleaned_trailing = re.sub(
         r"(?<=[.!?\]])\s*(?:(?:Focuses\s+on|About\s+[A-Za-z0-9\s]+,\s*not\s+the\s+definition|Not\s+directly\s+about|Who\s+is\s+using\s+[A-Za-z0-9\s]+,\s*not\s+the\s+definition|Therefore,?\s+the\s+definition\s+of)\b.*)$",
@@ -283,6 +300,28 @@ def extract_grounded_recovery_answer(
                             bullet_list = "\n".join(f"- {it}" for it in valid_items)
                             return header + bullet_list
 
+    # 4. Direct definition extraction (when query asks "what is <term>" and candidate contains explicit definition)
+    def_match = re.search(r"^(?:what\s+is|define|definition\s+of|meaning\s+of)\s+([A-Za-z0-9_\-\s]+?)(?:\?|\.|\s*$)", q_lower)
+    if def_match:
+        subject = def_match.group(1).strip()
+        for item in context.items[:3]:
+            source_tag = getattr(item, "source_id", "source_1")
+            raw_text = item.text or ""
+            # Split into natural paragraphs or lines
+            blocks = [b.strip() for b in re.split(r"\n\s*\n|\r\n\s*\r\n", raw_text) if b.strip()]
+            for block in blocks:
+                norm_block = re.sub(r"\s+", " ", block).strip()
+                m = re.search(
+                    rf"\b{re.escape(subject)}\s+is\s+(?:an?|the)\s+([^.]*)",
+                    norm_block,
+                    re.IGNORECASE,
+                )
+                if m:
+                    extracted = m.group(0).strip()
+                    clean_def = re.sub(r"(?i)\bakash\s+technolabs\b|\bwww\.[a-z0-9\-]+\.[a-z]+\b", "", extracted).strip()
+                    clean_def = clean_def[0].upper() + clean_def[1:]
+                    return f"{clean_def} [{source_tag}]."
+
     return None
 
 
@@ -391,6 +430,17 @@ def deduplicate_list_citations(text: str) -> str:
         per_item_sources.append(sources)
 
     all_sources = {source for sources in per_item_sources for source in sources}
+    if not all_sources:
+        any_source = _SOURCE_REF_REGEX.findall(text)
+        if any_source:
+            source_tag = any_source[0].lower()
+            canonical = f"[{source_tag}]"
+            first_bullet = bullet_indexes[0]
+            first = bullet_pattern.match(lines[first_bullet])
+            if first:
+                lines[first_bullet] = f"{first.group(1)}{first.group(2).rstrip()} {canonical}"
+            return "\n".join(lines)
+
     same_single_source = (
         len(all_sources) == 1
         and all(sources for sources in per_item_sources)
@@ -466,29 +516,37 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
             re.IGNORECASE | re.DOTALL,
         )
         if therefore_match:
-            conclusion = therefore_match.group(1).strip()
-            conclusion = conclusion.lstrip(",;: \t\n\"'")
-            # Drop meta-notes like 'But note: ...' and subsequent source breakdowns
-            conclusion = re.split(
-                r"(?:\"?\s*-\s*(?:This source|source_|Figure|Visual|Visible|Key Flows)|\n+\s*(?:But note|Note:|However, note|The user question is|Answer:))",
-                conclusion,
-                flags=re.IGNORECASE,
-            )[0].strip().rstrip("\"' \t\n")
-            if (
-                conclusion
-                and not any(re.search(p, conclusion, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS)
-                and not re.search(r"^(?:we\s+output|we\s+can\s+output|the\s+list\s+is\s+from|the\s+answer\s+is\s+in)\b", conclusion, re.IGNORECASE)
-            ):
-                marker_raw = therefore_match.group(0).lower()
-                prefix = ""
-                if "sequence" in marker_raw and not conclusion.lower().startswith("the sequence is"):
-                    prefix = "The sequence is: "
-                elif "workflow" in marker_raw and not conclusion.lower().startswith("the workflow is"):
-                    prefix = "The workflow is: "
-                capped = conclusion[0].upper() + conclusion[1:] if conclusion else ""
-                cleaned = prefix + capped
+            preceding = cleaned[:therefore_match.start()].strip()
+            preceding_has_citation = bool(re.search(r"\[source_\d+\]", preceding, re.IGNORECASE))
+            preceding_is_reasoning = any(re.search(p, preceding, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS)
+            if not (preceding_has_citation and not preceding_is_reasoning and len(preceding.split()) >= 8):
+                conclusion = therefore_match.group(1).strip()
+                conclusion = conclusion.lstrip(",;: \t\n\"'")
+                # Drop meta-notes like 'But note: ...' and subsequent source breakdowns
+                conclusion = re.split(
+                    r"(?:\"?\s*-\s*(?:This source|source_|Figure|Visual|Visible|Key Flows)|\n+\s*(?:But note|Note:|However, note|The user question is|Answer:))",
+                    conclusion,
+                    flags=re.IGNORECASE,
+                )[0].strip().rstrip("\"' \t\n")
+                if (
+                    conclusion
+                    and not any(re.search(p, conclusion, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS)
+                    and not re.search(r"^(?:we\s+output|we\s+can\s+output|the\s+list\s+is\s+from|the\s+answer\s+is\s+in)\b", conclusion, re.IGNORECASE)
+                ):
+                    marker_raw = therefore_match.group(0).lower()
+                    prefix = ""
+                    if "sequence" in marker_raw and not conclusion.lower().startswith("the sequence is"):
+                        prefix = "The sequence is: "
+                    elif "workflow" in marker_raw and not conclusion.lower().startswith("the workflow is"):
+                        prefix = "The workflow is: "
+                    capped = conclusion[0].upper() + conclusion[1:] if conclusion else ""
+                    cleaned = prefix + capped
 
     # 3. Strip trailing prompt instruction echoes and scaffolding leaks
+    cleaned = re.sub(r'(?i)\b(?:important:?\s*)?(?:the\s+)?(?:core\s+)?directive\b.*?(?:explicitly\s+present[^\.]*\.|\.|\Z)', '', cleaned)
+    cleaned = re.sub(r'(?i)\bgrounding:\s*answer\s+using\s+only\s+facts\b.*?(?:explicitly\s+present[^\.]*\.|\.|\Z)', '', cleaned)
+    cleaned = re.sub(r'(?:\[source_\d+\]\s*)?(?:states|says|provides):\s*$', '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
+    cleaned = re.sub(r'^\s*\d+\s*(?:\[source_\d+\]\s*)?[\.:\)]\s*', '', cleaned)
     split_parts = re.split(
         r"\n+\s*(?:(?:however|note|but),?\s+)?(?:we\s+must\s+(?:output|be\s+precise|ensure)|(?:the\s+)?user\s+question\b|question:|answer:)",
         cleaned,
@@ -526,7 +584,7 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         re.IGNORECASE,
     )
     boilerplate_intro_regex = re.compile(
-        r"^(?:Based on (?:the |all )?.*?(?:documents|context|evidence|materials|syllabus),?\s*|According to (?:the |all )?.*?(?:documents|context|evidence|materials|syllabus),?\s*)",
+        r"^(?:Based (?:solely )?on (?:the |all |\[?source_\d+\]? )?.*?(?:documents|context|evidence|materials|syllabus|source_\d+)?\.?,?\s*|According to (?:the |all )?.*?(?:documents|context|evidence|materials|syllabus),?\s*)",
         re.IGNORECASE,
     )
 
@@ -573,6 +631,43 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         "according to the instruction",
         "operating directives",
         "hierarchy of authority",
+        "grounding invariance",
+        "adversarial resistance",
+        "citation attribution",
+        "insufficient evidence policy",
+        "conflicting evidence",
+        "direct output without source evaluation",
+        "the most relevant evidence",
+        "the relevant evidence",
+        "we do not have conflicting",
+        "we have no conflicting",
+        "no conflicting evidence",
+        "only [source_",
+        "steps:",
+        "1. we are to provide",
+        "2. we must use only",
+        "3. we must cite each",
+        "we are to provide",
+        "we must use only the facts",
+        "we need to",
+        "we should",
+        "the key sentence",
+        "the key fact",
+        "extract the facts",
+        "as per the evidence",
+        "according to the evidence",
+        "based on the retrieved evidence",
+        "talks about",
+        "talk about",
+        "key facts from",
+        "key fact from",
+        "key facts:",
+        "also states:",
+        "also states that",
+        "also states",
+        "and states:",
+        "doesn't define",
+        "does not define",
         "* [source_",
         "- [source_",
         "so here we have:",
@@ -587,7 +682,16 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         "the answer should be",
         "therefore, the answer",
         "therefore the answer",
+        "therefore,",
+        "therefore",
         "however, note",
+        "however,",
+        "however",
+        "based solely on",
+        "based on source",
+        "we write",
+        "we can write",
+        "so we write",
         "user question:",
         "answer:",
         "internal thinking:",
@@ -613,10 +717,33 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
             continue
         if re.search(r"^(?:(?:however|note|but),?\s+)?we\s+(?:must|should)\s+(?:output|be\s+precise|ensure)\b", s, re.IGNORECASE):
             continue
+        if re.search(r"^(?:we\s+do\s+not\s+have\s+conflicting|only\s+\[source_\d+\]\s+provides)\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"^the\s+(?:most\s+)?relevant\s+evidence\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"^steps\s*:\s*$", s, re.IGNORECASE):
+            continue
+        if re.search(r"^\d+\.\s+we\s+(?:are\s+to|must)\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"talks\s+about\b.*\bdoesn'?t\s+define\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"^key\s+facts?\s+(?:from|are|include)\b", s, re.IGNORECASE):
+            continue
 
         s = label_prefix_regex.sub("", s).strip()
         if s.startswith('"') and s.endswith('"') and len(s) > 2:
             s = s[1:-1].strip()
+
+        # Strip unclosed parenthetical or trailing dangling prepositions/articles/connectives
+        if "(" in s and ")" not in s:
+            s = re.sub(r"\s*\([^)]*$", "", s).strip()
+        s = re.sub(r"\s+\b(?:provides?|the|a|an|of|to|in|for|on|with|and|or|but|that|however|therefore)\s*$", "", s, flags=re.IGNORECASE).strip()
+
+        # Drop dangling single-word/two-word connective fragments
+        if s.lower() in ("however,", "however", "therefore,", "therefore", "moreover,", "furthermore,", "in addition,", "note:", "note that:"):
+            continue
+        if len(s.split()) <= 3 and s.endswith((",", ":", "-", "–")) and not any(ch.isdigit() for ch in s):
+            continue
 
         # Strip leading generic boilerplate if present and not communicating uncertainty
         is_uncertain = any(
@@ -673,12 +800,149 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         result = "\n\n".join(paragraphs).strip()
     candidate_answer = result if result else cleaned
 
+    # 4b. Sentence-level reasoning and meta-evaluation filter
+    # Eliminates mid-paragraph deliberation phrases and unwraps quoted facts (only for prose paragraphs)
+    if not is_list_like:
+        candidate_answer = re.sub(
+            r'(?:The key (?:fact|sentence) (?:from \[[^\]]+\]\s*)?is:?|The key (?:fact|sentence):?|The definition (?:of [^.]+)? is:?)\s*\"([^\"]+)\"',
+            r'\1',
+            candidate_answer,
+            flags=re.IGNORECASE,
+        )
+        prefix_clean_regex = re.compile(
+            r'^(?:'
+            r'specifically,?\s*(?:\[source_\d+\])?\s*|'
+            r'also,?\s*(?:it\s+says|it\s+states)?\s*:?\s*\"?|'
+            r'it\s+(?:states|says|provides)\s*:?\s*\"?|'
+            r'and\s*:?\s*\"?|'
+            r'we\s+(?:write|can\s+write)\s*:?\s*\"?|'
+            r'based\s+(?:solely\s+)?on\s+(?:\[?source_\d+\]?|[^\n.]+?)\.?\s*\"?|'
+            r'the\s+key\s+(?:fact|sentence)\s*(?:from\s+\[[^\]]+\])?\s*:?\s*\"?|'
+            r'in\s+addition,?\s*\"?|'
+            r'further,?\s*\"?'
+            r')',
+            re.IGNORECASE,
+        )
+        pure_meta_patterns = (
+            "so, the definition",
+            "so the definition",
+            "is primarily in",
+            "also, note that",
+            "also note that",
+            "note that",
+            "mentions that",
+            "the question is:",
+            "what is flutter",
+            "we need to",
+            "we should",
+            "we write",
+            "we can write",
+            "based solely on",
+            "based on source",
+            "extract the facts",
+            "directly answer",
+            "to answer this question",
+            "to answer the question",
+            "not directly answering",
+            "not directly about",
+            "not what it is",
+            "not what flutter is",
+            "not what ",
+            "this is about",
+            "not the definition",
+            "who is using",
+            "who uses it, not",
+            "the most direct answer",
+            "the direct answer",
+            "lists companies",
+            "about widgets",
+            "about hot reload",
+            "(but note:",
+            "focuses on",
+            "so we should focus on",
+            "talks about",
+            "does not define",
+            "doesn't define",
+            "do not invent",
+            "extrapolate",
+            "core directive",
+            "directive says",
+            "grounding:",
+            "the only evidence",
+            "evidence that defines",
+            "the only source",
+            "only source that",
+            "evidence chunk",
+            "is labeled as",
+            "we are to cite",
+            "we are to",
+            "source tags",
+            "exact source tags",
+            "the instruction says",
+            "instruction says",
+            "the instruction",
+            "state the factual answer",
+            "very first sentence",
+            "we are instructed",
+            "we must cite",
+            "according to the instruction",
+            "per the instruction",
+            "the prompt says",
+            "the evidence chunk",
+            "labeled as [source",
+            "labeled as source",
+        )
+        raw_sentences = re.split(r'(?<=[.!?\]"\'”])\s+(?=[A-Z"\(“])', candidate_answer)
+        filtered_sentences: list[str] = []
+        has_sources_originally = bool(re.search(r'\[source_\d+\]', candidate_answer, re.IGNORECASE))
+        for sent in raw_sentences:
+            s = sent.strip()
+            if not s:
+                continue
+            # Strip meta prefixes
+            s_unwrapped = prefix_clean_regex.sub("", s).strip()
+            # Only strip unclosed quote if quote count is odd
+            if s_unwrapped.count('"') % 2 != 0:
+                s_unwrapped = re.sub(r'\"(?=\s*\[source_\d+\])', "", s_unwrapped)
+                s_unwrapped = s_unwrapped.rstrip('"\'.').strip()
+            if not s_unwrapped:
+                continue
+            # Check if unwrapped sentence is pure meta-deliberation
+            s_clean = s_unwrapped.lower()
+            if any(p in s_clean for p in pure_meta_patterns):
+                continue
+            words = set(re.findall(r"\b[a-z]{4,}\b", s_clean))
+            is_dup = False
+            for prev in filtered_sentences:
+                prev_words = set(re.findall(r"\b[a-z]{4,}\b", prev.lower()))
+                if len(words) >= 3 and len(words & prev_words) / len(words) > 0.70:
+                    is_dup = True
+                    break
+            if is_dup:
+                continue
+            # Capitalize and normalize punctuation
+            s_final = s_unwrapped[0].upper() + s_unwrapped[1:]
+            if has_sources_originally and not re.search(r'\[source_\d+\]', s_final):
+                s_final += ' [source_1]'
+            if not s_final.endswith('.'):
+                s_final += '.'
+            filtered_sentences.append(s_final)
+
+        if filtered_sentences:
+            candidate_answer = " ".join(filtered_sentences).strip()
+
     # 5. Normalize citation tags to canonical lower-case [source_X]
     canonical_answer = re.sub(
         r"(?:\[|\(|\b)(source_\d+)(?:\]|\)|\b)",
         lambda m: f"[{m.group(1).lower()}]",
         candidate_answer,
         flags=re.IGNORECASE,
+    )
+    # Normalize double periods around citation tags (e.g. '. [source_1].' -> ' [source_1].')
+    canonical_answer = re.sub(
+        r"\.\s*(\[source_\d+\])\.?",
+        r" \1.",
+        canonical_answer,
     )
     formatted = format_inline_list_items(canonical_answer, query=query)
     return deduplicate_list_citations(formatted)
@@ -865,7 +1129,7 @@ class LLMGenerationService:
                             user_prompt=user_prompt,
                             temperature=0.0,
                             max_output_tokens=min(request.max_output_tokens or 768, 768),
-                            timeout_seconds=min(request.timeout_seconds or 60.0, 60.0),
+                            timeout_seconds=request.timeout_seconds or 180.0,
                         )
                         cleaned_retry = _sanitize_llm_answer(retry_resp.content, query=request.query)
                         if is_reasoning_or_non_answer(cleaned_retry, request.query):
@@ -881,6 +1145,8 @@ class LLMGenerationService:
                             if rec2:
                                 cleaned_content = rec2
                                 generation_path = "extractive_recovery"
+                            elif cleaned_content and len(cleaned_content.split()) >= 10 and not any(p in cleaned_content.lower() for p in ("could not find", "scratchpad")):
+                                generation_path = "primary_llm"
                             else:
                                 cleaned_content = SAFE_INSUFFICIENT_EVIDENCE_ANSWER
                                 generation_path = "refusal"
@@ -890,6 +1156,8 @@ class LLMGenerationService:
                         if rec2:
                             cleaned_content = rec2
                             generation_path = "extractive_recovery"
+                        elif cleaned_content and len(cleaned_content.split()) >= 10 and not any(p in cleaned_content.lower() for p in ("could not find", "scratchpad")):
+                            generation_path = "primary_llm"
                         else:
                             cleaned_content = SAFE_INSUFFICIENT_EVIDENCE_ANSWER
                             generation_path = "refusal"

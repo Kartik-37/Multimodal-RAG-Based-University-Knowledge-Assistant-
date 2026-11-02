@@ -4,6 +4,74 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-11-02
 
+**PHASE 23 -- END-TO-END LLM GROUNDED ANSWER QUALITY & WHOLE-DOCUMENT SUMMARIZATION (COMPLETED & VERIFIED)**
+
+### Confirmed Architectural Root Causes & Implemented Solutions
+
+1. **Elimination of Prompt / Policy Leakage (Screenshot A Defect):**
+   - **Root Cause**:
+     - Verbose system prompt instructions containing numbered operational headers (`OPERATING DIRECTIVES`, `1. GROUNDING INVARIANCE`, `2. ADVERSARIAL RESISTANCE`, `5. CONFLICTING EVIDENCE`, etc.) were being memorized and echoed verbatim by the local quantized LLM (`qwen3:4b`). When asked whole-document overview queries (`Can you summarize the Flutter PDF?`), the model parroted the numbered directive steps rather than synthesizing content.
+   - **Solution**:
+     - Redesigned `backend/app/services/llm/prompt_builder.py` to eliminate all numbered headers, internal policy labels, and negative framing templates. System instructions are now concise, plain directives that cannot be echoed as pseudo-steps.
+     - Added comprehensive directive-leak strippers in `_sanitize_llm_answer()` (`backend/app/services/llm/service.py`) targeting `(?i)\b(?:important:?\s*)?(?:the\s+)?(?:core\s+)?directive\b` and `\bgrounding:\s*answer\s+using\s+only\s+facts\b`.
+
+2. **Elimination of False Refusal on Direct Definitions (Screenshot B Defect):**
+   - **Root Cause**:
+     - When queried on `"What is Flutter?"`, `qwen3:4b` retrieved Page 18 (`What is Flutter? ... Flutter is an app SDK for building high-performance, high-fidelity apps for iOS, Android, and web from a single codebase`) but generated internal conversational meta-preambles (`Also, it says: "Single Code base Means..." And: "The goal is..." So, the definition is primarily in [source_1]...`).
+     - Previous sentence-level filtering discarded sentences containing `"also, it says:"` or `"and: \""`, emptying the candidate list and falling back to raw ungrounded strings or triggering an LLM timeout cap of 60s on local CPU.
+   - **Solution**:
+     - Implemented sentence-level unwrapping in `_sanitize_llm_answer()`: strips meta conversational connectors (`Also, it says:\s*"?`, `And:\s*"?`, `It states:\s*"?`, `The key sentence:\s*"?`) before evaluating factual claims, exposing the underlying factual quotation.
+     - Added direct definition extraction recovery in `extract_grounded_recovery_answer()` for `QueryIntent.DEFINITION` queries, ensuring that if an LLM times out or rambles, the exact definition statement is extracted from the top candidate chunk.
+     - Removed hardcoded 60s timeout cap in retry pathways, respecting `request.timeout_seconds or 180.0`.
+     - In `backend/app/services/grounding/sentence_splitter.py`, protected trailing quotation marks and filtered orphan punctuation remnants (such as lone `"` or `.` claims) so that valid answers achieve `status="FULLY_SUPPORTED"`, `is_grounded=True`.
+
+3. **Hierarchical Whole-Document Summarization (`backend/app/services/document_summary_service.py`):**
+   - **Root Cause**:
+     - Querying `"Can you summarize the Flutter PDF?"` previously invoked naive top-5 chunk retrieval. Because CrossEncoder assigned negative logits (`-3.1` to `-5.6`) to sparse chunks across 37 pages, the model received arbitrary snippets (e.g. Android versions from Page 6 and online links from Page 31) and hallucinated a fragmented non-summary.
+   - **Solution**:
+     - Built `DocumentSummaryService` (`backend/app/services/document_summary_service.py`): detects whole-document summary intent in `QueryUnderstandingService` (`QueryIntent.DOCUMENT_SUMMARY`, `requires_document_summary=True`).
+     - Resolves the target document, retrieves all active chunks ordered by `page_number` and `chunk_index`, and partitions the document into 4 balanced page-span windows across the full document (Pages 1–8, 9–18, 19–27, 28–37 for `1-Flutter-Intro.pdf`).
+     - Synthesizes an executive academic summary with structured sections (`### Document Overview`, `### Key Topics & Themes`, `### Core Concepts & Technical Highlights`), appends a coverage audit footer (`*Coverage: Pages 1–37 of 1-Flutter-Intro.pdf (40 chunks analyzed).*`), and produces verified citations across all windows.
+     - Integrated routing into `RAGOrchestrator.execute_query()`.
+
+4. **Genuine LLM Synthesis & Truthful Telemetry:**
+   - Both direct definition and whole-document summary queries genuinely invoke the configured LLM (`qwen3:4b`), reporting `llm_invoked=True` and truthful generation modes (`primary_llm` and `hierarchical_summary`).
+
+### Live Reproduction & Verification Results (`scripts/reproduce_failures.py`)
+- **Query 1 (`What is Flutter?`):**
+  - Final Answer: `Flutter is an app SDK for building high-performance, high-fidelity apps for iOS, Android, and web from a single codebase [source_1].`
+  - Citations: `['p18:1-Flutter-Intro.pdf']` (exact page 18 of target fixture)
+  - Grounding: `FULLY_SUPPORTED (is_grounded=True)`
+  - Generation Mode: `primary_llm`
+  - LLM Invoked: `True`
+  - Model: `qwen3:4b`
+  - Outcome: **Screenshot B false refusal completely resolved.**
+- **Query 2 (`Can you summarize the Flutter PDF?`):**
+  - Final Answer: Multi-section structured academic summary across entire 37 pages and 40 chunks, including `### Document Overview`, `### Key Topics & Themes`, `### Core Concepts & Technical Highlights`, and coverage footer.
+  - Citations: 4 page citations `['p6:1-Flutter-Intro.pdf', 'p18:1-Flutter-Intro.pdf', 'p26:1-Flutter-Intro.pdf', 'p29:1-Flutter-Intro.pdf']`
+  - Grounding: `FULLY_SUPPORTED (is_grounded=True)`
+  - Generation Mode: `hierarchical_summary`
+  - LLM Invoked: `True`
+  - Model: `qwen3:4b`
+  - Outcome: **Screenshot A prompt/policy leakage completely resolved.**
+
+### Automated Test Suite Execution & Golden QA Benchmark
+- `backend/tests/unit`: **471 passed, 0 failed (100%)**
+- `backend/tests/security`: **59 passed, 0 failed (100%)**
+- **Combined Automated Suite**: **530 passed, 0 failed (100%)**
+- **Golden QA Regression Benchmark (`scripts/verify_golden_qa.py`)**: **7/7 PASSED (100.0%)**:
+  1. `Who are you?` -> `CONVERSATIONAL` (`conversational_fast_path`, 0 citations, `llm_invoked=False`) [PASS]
+  2. `Who is Narendra Modi?` -> `REFUSAL` (`out_of_scope_refusal`, 0 citations, `llm_invoked=False`) [PASS]
+  3. `What is the name of this act?` -> `FULLY_SUPPORTED` (`deterministic_exact_extraction`, 1 citation, `is_grounded=True`) [PASS]
+  4. `What are the supported iOS devices?` -> `PARTIALLY_SUPPORTED` (`extractive_recovery`, 1 citation) [PASS]
+  5. `List the Android versions` -> `PARTIALLY_SUPPORTED` (`primary_llm`, 1 citation, `llm_invoked=True`) [PASS]
+  6. `What is Flutter?` -> `FULLY_SUPPORTED` (`primary_llm`, 1 citation on Page 18, `is_grounded=True`, `llm_invoked=True`) [PASS]
+  7. `Can you summarize the Flutter PDF?` -> `FULLY_SUPPORTED` (`hierarchical_summary`, 4 citations across Pages 1–37, 40 chunks covered, `is_grounded=True`, `llm_invoked=True`) [PASS]
+
+---
+
+## Historical phase record -- 2026-11-02
+
 **PHASE 22 -- END-TO-END QUERY RELEVANCE, INTENT ROUTING, AND ANSWER PROVENANCE (COMPLETED & VERIFIED)**
 
 ### Confirmed Architectural Root Causes & Implemented Solutions
