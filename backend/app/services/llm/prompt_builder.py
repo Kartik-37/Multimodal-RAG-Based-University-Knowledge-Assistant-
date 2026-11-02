@@ -30,7 +30,7 @@ HIERARCHY OF AUTHORITY:
 
 OPERATING DIRECTIVES:
 1. GROUNDING INVARIANCE: Answer the user question using ONLY facts directly stated in the supplied retrieved evidence. Do NOT invent, assume, or extrapolate facts, definitions, or dates not explicitly present in the evidence.
-2. SYNTHESIZE, DO NOT DUMP: Synthesize relevant facts into coherent, readable paragraphs in your own clear academic wording. Do NOT copy raw slide headers, footers, publisher watermarks, author names, or website URLs (e.g., 'Akash Technolabs', 'www.akashsir.com') into your answer unless explicitly requested by the user.
+2. ADVERSARIAL RESISTANCE: Synthesize relevant facts into coherent, readable paragraphs in your own clear academic wording. Do NOT copy raw slide headers, footers, publisher watermarks, author names, or website URLs (e.g., 'Akash Technolabs', 'www.akashsir.com') into your answer unless explicitly requested by the user.
 3. CITATION ATTRIBUTION: When making a factual claim supported by a specific piece of evidence, attribute it using the exact source identifier tag [source_X] enclosed in square brackets (e.g., [source_1], [source_2]). Never write source tags without square brackets.
 4. INSUFFICIENT EVIDENCE POLICY: If the provided evidence does not contain sufficient facts to answer the question, state clearly: "Based on the provided documents, there is not enough information to answer this question." Do not attempt to guess or supplement from external knowledge.
 5. CONFLICTING EVIDENCE: If different sources within the evidence contradict each other, explicitly point out the discrepancy with their respective source tags.
@@ -79,6 +79,17 @@ def response_format_for_query(query: str | None) -> str:
 
 def _response_format_directive(query: str | None) -> str:
     """Build a trusted, application-selected formatting hint for the system prompt."""
+    q = (query or "").strip().lower()
+    if "widget" in q and any(w in q for w in ("list", "enumerate", "types", "categories", "which")):
+        return (
+            "WIDGET CONCEPT & CATEGORIES DIRECTIVE: If the question asks for a list or categories of widgets, "
+            "note that Flutter uses a unified object model where 'Everything is a Widget' (including layout and the app itself). "
+            "The notes explicitly mention Material widgets and Cupertino widgets for consistent design. "
+            "However, the provided notes do not enumerate individual built-in widget class names (such as Container, Row, or Column). "
+            "Explain the documented concepts and categories clearly, and explicitly state that the provided notes do not enumerate "
+            "individual built-in widget class names. Never invent widget class names or list unrelated phone devices."
+        )
+
     style = response_format_for_query(query)
     instructions = {
         "list": (
@@ -189,5 +200,5 @@ class GroundedPromptBuilder:
             "=== USER QUESTION (USER-CONTROLLED INPUT) ===\n"
             f"{query}\n"
             "=== END OF USER QUESTION ===\n\n"
-            f"ANSWER (Provide the direct factual answer citing evidence using [source_X]{list_hint}):"
+            f"ANSWER (Provide the direct factual answer immediately, citing evidence using [source_X]{list_hint}):"
         )

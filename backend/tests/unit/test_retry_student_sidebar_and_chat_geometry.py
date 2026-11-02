@@ -132,19 +132,19 @@ def test_out_of_scope_query_fast_path_bypasses_llm():
     assert "authorized course materials" in response.answer
 
 
-def test_extract_grounded_recovery_answer_relevant_factual():
+def test_extract_grounded_recovery_answer_statutory_exact():
     """
-    When relevant evidence exists (score >= 0.0), extract_grounded_recovery_answer
-    deterministically constructs the cited answer.
+    Verify narrowly scoped deterministic exact extraction for statutory Act title (Phase 22).
+    General academic questions are synthesized by the primary LLM, not extracted via arbitrary snippets.
     """
     context = ContextAssemblyResult(
-        query="What is Flutter?",
-        original_query="What is Flutter?",
+        query="What is the Act name?",
+        original_query="What is the Act name?",
         items=[
             make_test_context_item(
                 "source_1",
-                "Flutter is an open-source framework by Google for building multi-platform applications from a single codebase.",
-                reranker_score=4.5,
+                "1. (1) This Act may be called the Kaushalya The Skill University Act, 2021.",
+                reranker_score=8.5,
             ),
         ],
         total_items=1,
@@ -155,9 +155,9 @@ def test_extract_grounded_recovery_answer_relevant_factual():
         items_deduplicated=0,
     )
 
-    ans = extract_grounded_recovery_answer("What is Flutter?", context)
+    ans = extract_grounded_recovery_answer("What is the Act name?", context)
     assert ans is not None
-    assert "Flutter is an open-source framework" in ans
+    assert "Kaushalya" in ans
     assert "[source_1]" in ans
 
 

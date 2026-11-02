@@ -53,7 +53,27 @@ from backend.app.services.hybrid_retrieval import (
     HybridRetrievalService,
     get_hybrid_retrieval_service,
 )
+from backend.app.schemas.query_understanding import QueryIntent, StructuredQuery
+from backend.app.services.query_understanding import (
+    AMBIGUOUS_CLARIFICATION_ANSWER,
+    ASSISTANT_GREETING_ANSWER,
+    ASSISTANT_HELP_ANSWER,
+    ASSISTANT_IDENTITY_ANSWER,
+    ASSISTANT_THANKS_ANSWER,
+    QueryUnderstandingService,
+    get_query_understanding_service,
+)
+from backend.app.services.relevance_gate import (
+    QueryEvidenceRelevanceGate,
+    get_relevance_gate,
+)
+from backend.app.services.answer_alignment import (
+    AnswerAlignmentChecker,
+    get_answer_alignment_checker,
+)
 from backend.app.services.llm.service import (
+    INSUFFICIENT_COURSE_EVIDENCE_ANSWER,
+    SAFE_INSUFFICIENT_EVIDENCE_ANSWER,
     LLMGenerationService,
     get_llm_generation_service,
 )
@@ -145,6 +165,9 @@ class RAGOrchestrator:
         llm_service: LLMGenerationService | None = None,
         grounding_service: GroundingValidationService | None = None,
         telemetry_manager: TelemetryManager | None = None,
+        query_understanding: QueryUnderstandingService | None = None,
+        relevance_gate: QueryEvidenceRelevanceGate | None = None,
+        answer_alignment_checker: AnswerAlignmentChecker | None = None,
     ) -> None:
         self.query_processor = query_processor or get_query_processor()
         self.hybrid_service = hybrid_service or get_hybrid_retrieval_service()
@@ -153,6 +176,9 @@ class RAGOrchestrator:
         self.llm_service = llm_service or get_llm_generation_service()
         self.grounding_service = grounding_service or get_grounding_validation_service()
         self.telemetry_manager = telemetry_manager or get_telemetry_manager()
+        self.query_understanding = query_understanding or get_query_understanding_service()
+        self.relevance_gate = relevance_gate or get_relevance_gate()
+        self.answer_alignment_checker = answer_alignment_checker or get_answer_alignment_checker()
 
     async def execute_query(
         self,
@@ -184,14 +210,22 @@ class RAGOrchestrator:
         current_stage: str = "query_processing"
         stage_t0: float = time.perf_counter()
 
+        # Scoping resolution for top-level chat container
+        if isinstance(kb_id, (list, tuple, set)):
+            kb_ids_list = list(kb_id)
+            response_kb_id = kb_ids_list[0] if len(kb_ids_list) == 1 else None
+        else:
+            response_kb_id = kb_id
+
         try:
             # -------------------------------------------------------------
-            # 1. Step 11: Query Processing
+            # 1. Step 11: Query Processing & Structured Query Understanding
             # -------------------------------------------------------------
             current_stage = "query_processing"
             stage_t0 = time.perf_counter()
             qp_res = self.query_processor.process(raw_query)
             processed_query = qp_res.processed_query
+            structured_query = self.query_understanding.analyze(raw_query)
             query_processing_ms = round((time.perf_counter() - stage_t0) * 1000.0, 2)
             stages["query_processing"] = RAGStageTelemetry(
                 stage_name="query_processing",
@@ -203,8 +237,159 @@ class RAGOrchestrator:
                     "token_estimate": qp_res.token_estimate,
                     "has_quotes": qp_res.has_quotes,
                     "has_technical_tokens": qp_res.has_technical_tokens,
+                    "query_intent": structured_query.intent.value,
+                    "query_subject": structured_query.subject,
                 },
             )
+
+            # -------------------------------------------------------------
+            # Pre-RAG Routing: Conversational / Identity / Greeting / Help
+            # -------------------------------------------------------------
+            if structured_query.is_conversational:
+                if structured_query.intent == QueryIntent.IDENTITY:
+                    ans_text = ASSISTANT_IDENTITY_ANSWER
+                elif structured_query.intent == QueryIntent.GREETING:
+                    ans_text = ASSISTANT_GREETING_ANSWER
+                elif structured_query.intent == QueryIntent.HELP:
+                    ans_text = ASSISTANT_HELP_ANSWER
+                else:
+                    ans_text = ASSISTANT_THANKS_ANSWER
+
+                total_pipeline_ms = round((time.perf_counter() - t_pipeline_start) * 1000.0, 2)
+                grounding_summary = GroundingSummaryDTO(
+                    is_grounded=True,
+                    status="CONVERSATIONAL",
+                    citation_validity_rate=0.0,
+                    citation_coverage=0.0,
+                    claim_support_rate=0.0,
+                    unsupported_claim_rate=0.0,
+                    has_conflicts=False,
+                    claims=[],
+                )
+                latency_breakdown = ChatLatencyBreakdownDTO(
+                    query_processing_ms=query_processing_ms,
+                    retrieval_ms=0.0,
+                    reranking_ms=0.0,
+                    context_assembly_ms=0.0,
+                    llm_generation_ms=0.0,
+                    grounding_validation_ms=0.0,
+                    total_pipeline_ms=total_pipeline_ms,
+                )
+                return ChatQueryResponse(
+                    query=raw_query,
+                    processed_query=processed_query,
+                    knowledge_base_id=response_kb_id,
+                    answer=ans_text,
+                    is_empty_context=False,
+                    citations=[],
+                    grounding=grounding_summary,
+                    latency=latency_breakdown,
+                    model="conversational_fast_path",
+                    metadata={
+                        "generation_mode": "conversational_fast_path",
+                        "llm_invoked": False,
+                        "provider": "system",
+                        "model": "conversational_fast_path",
+                        "prompt_tokens": 0,
+                        "output_tokens": len(ans_text.split()),
+                        "query_intent": structured_query.intent.value,
+                        "query_subject": structured_query.subject,
+                    },
+                )
+
+            # -------------------------------------------------------------
+            # Pre-RAG Routing: Ambiguous Queries (Request Clarification)
+            # -------------------------------------------------------------
+            if structured_query.is_ambiguous:
+                ans_text = structured_query.clarification_prompt or AMBIGUOUS_CLARIFICATION_ANSWER
+                total_pipeline_ms = round((time.perf_counter() - t_pipeline_start) * 1000.0, 2)
+                grounding_summary = GroundingSummaryDTO(
+                    is_grounded=True,
+                    status="REFUSAL",
+                    citation_validity_rate=0.0,
+                    citation_coverage=0.0,
+                    claim_support_rate=0.0,
+                    unsupported_claim_rate=0.0,
+                    has_conflicts=False,
+                    claims=[],
+                )
+                latency_breakdown = ChatLatencyBreakdownDTO(
+                    query_processing_ms=query_processing_ms,
+                    retrieval_ms=0.0,
+                    reranking_ms=0.0,
+                    context_assembly_ms=0.0,
+                    llm_generation_ms=0.0,
+                    grounding_validation_ms=0.0,
+                    total_pipeline_ms=total_pipeline_ms,
+                )
+                return ChatQueryResponse(
+                    query=raw_query,
+                    processed_query=processed_query,
+                    knowledge_base_id=response_kb_id,
+                    answer=ans_text,
+                    is_empty_context=True,
+                    citations=[],
+                    grounding=grounding_summary,
+                    latency=latency_breakdown,
+                    model="ambiguous_clarification",
+                    metadata={
+                        "generation_mode": "ambiguous_clarification",
+                        "llm_invoked": False,
+                        "provider": "system",
+                        "model": "ambiguous_clarification",
+                        "prompt_tokens": 0,
+                        "output_tokens": len(ans_text.split()),
+                        "query_intent": structured_query.intent.value,
+                        "query_subject": structured_query.subject,
+                    },
+                )
+
+            # -------------------------------------------------------------
+            # Pre-RAG Routing: Out-of-Scope Queries (Truthful Refusal)
+            # -------------------------------------------------------------
+            if structured_query.is_out_of_scope:
+                ans_text = INSUFFICIENT_COURSE_EVIDENCE_ANSWER
+                total_pipeline_ms = round((time.perf_counter() - t_pipeline_start) * 1000.0, 2)
+                grounding_summary = GroundingSummaryDTO(
+                    is_grounded=True,
+                    status="REFUSAL",
+                    citation_validity_rate=0.0,
+                    citation_coverage=0.0,
+                    claim_support_rate=0.0,
+                    unsupported_claim_rate=0.0,
+                    has_conflicts=False,
+                    claims=[],
+                )
+                latency_breakdown = ChatLatencyBreakdownDTO(
+                    query_processing_ms=query_processing_ms,
+                    retrieval_ms=0.0,
+                    reranking_ms=0.0,
+                    context_assembly_ms=0.0,
+                    llm_generation_ms=0.0,
+                    grounding_validation_ms=0.0,
+                    total_pipeline_ms=total_pipeline_ms,
+                )
+                return ChatQueryResponse(
+                    query=raw_query,
+                    processed_query=processed_query,
+                    knowledge_base_id=response_kb_id,
+                    answer=ans_text,
+                    is_empty_context=True,
+                    citations=[],
+                    grounding=grounding_summary,
+                    latency=latency_breakdown,
+                    model="out_of_scope_refusal",
+                    metadata={
+                        "generation_mode": "out_of_scope_refusal",
+                        "llm_invoked": False,
+                        "provider": "system",
+                        "model": "out_of_scope_refusal",
+                        "prompt_tokens": 0,
+                        "output_tokens": len(ans_text.split()),
+                        "query_intent": structured_query.intent.value,
+                        "query_subject": structured_query.subject,
+                    },
+                )
 
             # -------------------------------------------------------------
             # 2. Step 9: Hybrid Retrieval (Orchestrating Vector + Lexical + RRF)
@@ -254,6 +439,14 @@ class RAGOrchestrator:
             )
 
             # -------------------------------------------------------------
+            # 3b. Query-to-Evidence Relevance Gating
+            # -------------------------------------------------------------
+            accepted_candidates, audit_log = self.relevance_gate.evaluate_candidates(
+                structured_query=structured_query,
+                candidates=reranked_items,
+            )
+
+            # -------------------------------------------------------------
             # 4. Step 12: Context Assembly
             # -------------------------------------------------------------
             current_stage = "context_assembly"
@@ -261,7 +454,7 @@ class RAGOrchestrator:
             context_req = ContextAssemblyRequest(
                 query=processed_query,
                 original_query=raw_query,
-                candidates=reranked_items,
+                candidates=accepted_candidates,
                 token_budget=token_budget,
                 max_items=k_rerank,
             )
@@ -277,11 +470,12 @@ class RAGOrchestrator:
                     "skipped_budget_count": assembled_context.items_skipped_budget,
                     "deduplicated_count": assembled_context.items_deduplicated,
                     "is_empty": (assembled_context.total_items == 0),
+                    "relevance_accepted_count": len(accepted_candidates),
                 },
             )
 
             # -------------------------------------------------------------
-            # 5. Step 13: Grounded LLM Generation (Deterministic Empty-Context Fast-Path)
+            # 5. Step 13: Grounded LLM Generation
             # -------------------------------------------------------------
             current_stage = "llm_generation"
             stage_t0 = time.perf_counter()
@@ -291,7 +485,63 @@ class RAGOrchestrator:
                 context=assembled_context,
             )
             llm_res = await self.llm_service.generate_grounded_answer(llm_req)
+
+            # -------------------------------------------------------------
+            # 5b. Answer-to-Question Alignment Validation
+            # -------------------------------------------------------------
+            is_aligned, align_reason = self.answer_alignment_checker.check_alignment(
+                structured_query=structured_query,
+                answer=llm_res.answer,
+            )
+            if not is_aligned:
+                logger.warning("Answer alignment failed (%s) for query: %s", align_reason, raw_query)
+                if assembled_context.total_items > 0:
+                    try:
+                        retry_req = LLMGenerationRequest(
+                            query=processed_query + f" (Synthesize only facts about {structured_query.subject})",
+                            original_query=raw_query,
+                            context=assembled_context,
+                        )
+                        retry_res = await self.llm_service.generate_grounded_answer(retry_req)
+                        retry_aligned, _ = self.answer_alignment_checker.check_alignment(
+                            structured_query=structured_query,
+                            answer=retry_res.answer,
+                        )
+                        if retry_aligned:
+                            llm_res = retry_res
+                            if llm_res.metadata:
+                                llm_res.metadata["generation_mode"] = "llm_retry"
+                        else:
+                            llm_res = LLMGenerationResponse(
+                                answer=INSUFFICIENT_COURSE_EVIDENCE_ANSWER,
+                                query=processed_query,
+                                original_query=raw_query,
+                                provider=llm_res.provider,
+                                model=llm_res.model,
+                                sources_available=[it.source_id for it in assembled_context.items],
+                                sources_referenced=[],
+                                is_empty_context=True,
+                                prompt_tokens=0,
+                                output_tokens=len(INSUFFICIENT_COURSE_EVIDENCE_ANSWER.split()),
+                                latency_ms=0.0,
+                                metadata={
+                                    "generation_mode": "insufficient_evidence_refusal",
+                                    "llm_invoked": True,
+                                    "reason": "alignment_failure",
+                                },
+                            )
+                    except Exception:
+                        pass
+
             llm_generation_ms = round((time.perf_counter() - stage_t0) * 1000.0, 2)
+
+            gen_mode = (
+                llm_res.metadata.get("generation_mode")
+                or llm_res.metadata.get("path")
+                or ("primary_llm" if not llm_res.is_empty_context else "insufficient_evidence_refusal")
+            )
+            llm_invoked = bool(llm_res.metadata.get("llm_invoked", gen_mode in ("primary_llm", "llm_retry")))
+
             stages["llm_generation"] = RAGStageTelemetry(
                 stage_name="llm_generation",
                 status="SUCCESS",
@@ -304,6 +554,8 @@ class RAGOrchestrator:
                     "output_tokens": llm_res.output_tokens,
                     "is_empty_context": llm_res.is_empty_context,
                     "sources_referenced_count": len(llm_res.sources_referenced),
+                    "generation_mode": gen_mode,
+                    "llm_invoked": llm_invoked,
                 },
             )
 
@@ -409,13 +661,6 @@ class RAGOrchestrator:
                         )
                     )
 
-            # Scoping resolution for top-level chat container
-            if isinstance(kb_id, (list, tuple, set)):
-                kb_ids_list = list(kb_id)
-                response_kb_id = kb_ids_list[0] if len(kb_ids_list) == 1 else None
-            else:
-                response_kb_id = kb_id
-
             # -------------------------------------------------------------
             # 9. Emit Structured Pipeline Telemetry
             # -------------------------------------------------------------
@@ -451,7 +696,22 @@ class RAGOrchestrator:
                 grounding=grounding_summary,
                 latency=latency_breakdown,
                 model=llm_res.model,
-                metadata={},
+                metadata={
+                    "generation_mode": gen_mode,
+                    "llm_invoked": llm_invoked,
+                    "provider": llm_res.provider,
+                    "model": llm_res.model,
+                    "prompt_tokens": llm_res.prompt_tokens,
+                    "output_tokens": llm_res.output_tokens,
+                    "relevance_summary": {
+                        "retrieved_count": len(hybrid_res.results),
+                        "reranked_count": len(reranked_items),
+                        "accepted_count": len(accepted_candidates),
+                        "assembled_count": assembled_context.total_items,
+                    },
+                    "query_intent": structured_query.intent.value,
+                    "query_subject": structured_query.subject,
+                },
             )
 
         except Exception as exc:

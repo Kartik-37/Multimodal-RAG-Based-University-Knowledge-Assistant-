@@ -2,7 +2,83 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase -- 2026-10-30
+## Current authoritative phase -- 2026-11-02
+
+**PHASE 22 -- END-TO-END QUERY RELEVANCE, INTENT ROUTING, AND ANSWER PROVENANCE (COMPLETED & VERIFIED)**
+
+### Confirmed Architectural Root Causes & Implemented Solutions
+
+1. **Pre-RAG Intent Routing & Assistant Identity (`backend/app/schemas/query_understanding.py`, `backend/app/services/query_understanding.py`, `backend/app/services/rag_orchestrator.py`):**
+   - **Root Cause**:
+     - Conversational identity queries (`"What is your name?"`, `"Who are you?"`), greetings (`"Hello"`), help, and out-of-scope non-academic queries (`"Who is Narendra Modi?"`) previously executed full hybrid vector retrieval, CrossEncoder reranking, and local LLM generation.
+     - Asking `"What is your name?"` retrieved course document chunks (e.g. Flutter slides) and forced the LLM to either hallucinate an identity or cite lecture slides for its own name.
+   - **Solution**:
+     - Created `QueryUnderstandingService` and `StructuredQuery` schema (`backend/app/schemas/query_understanding.py`, `backend/app/services/query_understanding.py`) executing before retrieval in `RAGOrchestrator.execute_query()`.
+     - Conversational identity, greeting, help, and thanks intents route immediately to deterministic canonical answers (`ASSISTANT_IDENTITY_ANSWER`, `ASSISTANT_GREETING_ANSWER`, etc.) in 0ms with 0 citations, `llm_invoked=False`, `generation_mode="conversational_fast_path"`, and `status="CONVERSATIONAL"`.
+     - Out-of-scope queries (`"Who is Narendra Modi?"`, general non-academic world knowledge) route immediately to `INSUFFICIENT_COURSE_EVIDENCE_ANSWER` in 0ms with 0 citations, `llm_invoked=False`, and `generation_mode="out_of_scope_refusal"`.
+     - Ambiguous queries (`"List"`) route immediately to structured clarification prompt in 0ms with 0 citations, `llm_invoked=False`, and `generation_mode="ambiguous_clarification"`.
+
+2. **Query-to-Evidence Relevance Gating (`backend/app/services/relevance_gate.py`):**
+   - **Root Cause**:
+     - When querying `"List of widgets"`, `ms-marco-MiniLM-L-6-v2` retrieved and reranked Page 8 (`[Visible Text & Labels]: iOS 26 Compatibility, iPhone 16e, iPhone 16...`) because it contained bullet items.
+     - Unsafe fallback shortcuts in `extract_grounded_recovery_answer()` dumped the first chunk with >= 3 bullets, returning iPhone models as an answer to a widget question.
+   - **Solution**:
+     - Created `QueryEvidenceRelevanceGate` (`backend/app/services/relevance_gate.py`) positioned strictly between CrossEncoder reranking and Context Assembly.
+     - Evaluates target entity types (`widget`, `device`, `version`, `act`, `native_app`, `hybrid_app`, `flutter`) against candidate chunks.
+     - When `target_entity_type == "widget"`, any candidate containing iPhone/iOS compatibility models is strictly REJECTED with audit reason `REJECTED_ENTITY_MISMATCH_IPHONES_NOT_WIDGETS`.
+     - When `target_entity_type == "device"`, iPhone chunks are accepted and non-device chunks rejected.
+     - Preserves Page 34 ("Everything is a Widget") and Page 20 (Material/Cupertino categories) for widget queries while blocking iPhone chunks from ever entering assembled context.
+
+3. **Entity-Aware Extraction & Recovery Reform (`backend/app/services/llm/service.py`):**
+   - **Root Cause**:
+     - Generic heuristics in `extract_grounded_recovery_answer()` blindly grabbed any chunk with 3 bullets or the first 2 sentences if score >= 0.0, injecting unrelated bullet lists into user answers.
+   - **Solution**:
+     - Rewrote `extract_grounded_recovery_answer()`: strictly restricted to verified entity-specific extractors:
+       1. Statutory Act short title (`"This Act may be called..."`) only for explicit Act title queries.
+       2. Supported iOS devices list (`"iPhone..."`) only for device/iPhone queries.
+       3. Android versions list only for version queries.
+     - Generic sentence-dumping and blind 3-bullet shortcuts completely deleted.
+     - If evidence is insufficient or mismatched, returns `None` and allows the LLM or orchestrator to produce a clean, honest refusal.
+
+4. **Answer-to-Question Alignment Validation (`backend/app/services/answer_alignment.py`):**
+   - **Root Cause**:
+     - If an LLM hallucinated entity classes or strayed into discussing unrelated devices, the answer was returned uncaught to the user.
+   - **Solution**:
+     - Created `AnswerAlignmentChecker` (`backend/app/services/answer_alignment.py`) validating that generated answers do not exhibit entity drift (e.g. flagging iPhones in widget answers, Act titles in identity queries).
+     - Integrated bounded retry in `RAGOrchestrator`: if initial generation misaligns, attempts at most one targeted regeneration (`generation_mode="llm_retry"`) or safely defaults to `INSUFFICIENT_COURSE_EVIDENCE_ANSWER`.
+
+5. **Generation Provenance & Telemetry Integrity (`backend/app/services/llm/ollama_provider.py`, `backend/app/services/rag_orchestrator.py`):**
+   - **Root Cause**:
+     - Ollama's `qwen3:4b` thinking capability generated internal reasoning on CPU before emitting content, requiring tuned token budgets and bounded generation timeouts.
+     - Previous telemetry did not explicitly differentiate deterministic fast-path from primary LLM generation.
+   - **Solution**:
+     - Configured `OllamaLLMProvider` with `"think": False` and safe answer extraction from `raw_content`.
+     - Set calibrated timeout and token bounds in `backend/app/core/config.py`: `LLM_MAX_OUTPUT_TOKENS: 384` and `LLM_REQUEST_TIMEOUT_SECONDS: 180.0`.
+     - Telemetry and response metadata explicitly propagate `generation_mode` (`conversational_fast_path`, `out_of_scope_refusal`, `ambiguous_clarification`, `primary_llm`, `llm_retry`, `deterministic_exact_extraction`, `extractive_recovery`, `timeout_recovery`, `insufficient_evidence_refusal`) and truthful `llm_invoked` boolean.
+
+### Verification Suite Passed
+- `scripts/verify_phase22_benchmark.py`: **15 / 15 PASSED (100%)**
+  - Case 1: `What is your name?` -> Assistant identity, 0 citations, `conversational_fast_path`, `llm_invoked=False` (PASSED).
+  - Case 2: `Who are you?` -> Assistant identity, 0 citations, `conversational_fast_path`, `llm_invoked=False` (PASSED).
+  - Case 3: `Hello` -> Greeting message, 0 citations, `conversational_fast_path`, `llm_invoked=False` (PASSED).
+  - Case 4: `Who is Narendra Modi?` -> Honest refusal, 0 citations, `out_of_scope_refusal`, `llm_invoked=False` (PASSED).
+  - Case 5: `List` -> Clarification request, 0 citations, `ambiguous_clarification`, `llm_invoked=False` (PASSED).
+  - Case 6: `List of widgets` -> Zero iPhones, zero Page 8 citations, truthful refusal/concept (PASSED).
+  - Case 7: `List the widgets` -> Zero iPhones, zero Page 8 citations, cites Page 34 ("Everything is a Widget") (PASSED).
+  - Case 8: `What is a widget in Flutter?` -> Definition of widget, cites Page 34 (PASSED).
+  - Case 9: `Which widget categories are mentioned in the notes?` -> Material & Cupertino categories, cites Page 34, zero iPhones (PASSED).
+  - Case 10: `List of supported iOS devices` -> Lists iPhone 16e, 16 Pro..., cites Page 8 (PASSED).
+  - Case 11: `What is a native app?` -> Definition of native app, cites Page 3 (PASSED).
+  - Case 12: `What are the benefits of native apps?` -> Lists high speed, offline functionality, enhanced security, cites Page 4/20 (PASSED).
+  - Case 13: `What is a hybrid app?` -> Hybrid app definition, cites Page 9 & 10 (PASSED).
+  - Case 14: `What is the Act name?` against Flutter KB -> Honest refusal, zero citations, cross-document isolation preserved (PASSED).
+  - Case 15: `What is the Act name?` against KSU Act KB -> Statutory title “Kaushalya” the Skill University Act 2021, cites Page 1 (PASSED).
+- `backend/tests/unit/test_query_relevance_and_provenance.py`: **10 / 10 passed (100%)**
+- `backend/tests/unit/test_retry_student_sidebar_and_chat_geometry.py` & `test_new_chat_and_vertical_timeline.py`: **28 / 28 passed (100%)**
+
+---
+
+## Historical phase record -- 2026-10-30
 
 **PHASE 21 -- ACT NAME RETRIEVAL & ACCURATE GROUNDING, REPEATED QUESTION DELIVERY & TURN IDENTITY, AND CHAT SEPARATOR ALIGNMENT (COMPLETED & VERIFIED)**
 

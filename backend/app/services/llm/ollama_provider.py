@@ -91,6 +91,7 @@ class OllamaLLMProvider(BaseLLMProvider):
             "model": self._model_name,
             "messages": messages,
             "stream": False,
+            "think": False,
             "keep_alive": "15m",
             "options": {
                 "temperature": temp,

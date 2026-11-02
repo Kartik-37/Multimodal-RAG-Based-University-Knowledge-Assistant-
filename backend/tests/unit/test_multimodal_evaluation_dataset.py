@@ -411,7 +411,7 @@ class TestMultimodalEvaluationDataset:
         mock_vision = MockVisionProvider(is_available_flag=True)
         call_count = 0
 
-        def _side_effect(image_bytes: bytes, page_number: int) -> VisualAnalysisResult:
+        def _side_effect(image_bytes: bytes, page_number: int, *args, **kwargs) -> VisualAnalysisResult:
             nonlocal call_count
             call_count += 1
             if call_count == 1:

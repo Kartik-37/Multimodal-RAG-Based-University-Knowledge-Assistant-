@@ -9,6 +9,7 @@ Orchestrates the grounded generation stage:
 5. Returns safe execution metadata without leaking internal secrets.
 """
 
+
 import logging
 import re
 import threading
@@ -164,95 +165,122 @@ def extract_grounded_recovery_answer(
 ) -> str | None:
     """
     Deterministically construct a grounded, fully-cited answer from validated assembled evidence
-    when model generation fails, returns a non-answer, or times out.
-    Works generally across any course material with diagrams, tables, or itemized lists.
-    Emits standard Markdown double-newlines for robust list rendering.
+    ONLY for narrowly scoped, strictly verified entity types:
+    1. Statutory Act Title extraction: when query explicitly asks for Act title and candidate contains statutory naming formula.
+    2. iOS Supported Devices: when query explicitly asks for supported iOS devices/iPhones and candidate contains the device table.
+    3. Android Versions: when query explicitly asks for Android versions and candidate contains the version table.
+    For all other queries, returns None so that primary LLM synthesis or safe refusal is used.
     """
     if not context or not getattr(context, "items", None):
         return None
 
     q_lower = query.strip().lower()
-    is_list_query = any(w in q_lower for w in ("list", "enumerate", "versions", "steps", "types"))
 
-    # 0. Academic / Statutory Act Title extraction
-    if any(p in q_lower for p in ("act name", "name of the act", "name of this act", "short title", "title of the act", "title of this act", "which act", "what act", "act title")):
+    # 1. Academic / Statutory Act Title extraction
+    if any(
+        p in q_lower
+        for p in (
+            "act name",
+            "name of the act",
+            "name of this act",
+            "short title",
+            "title of the act",
+            "title of this act",
+            "which act",
+            "what act",
+            "act title",
+        )
+    ):
         for item in context.items:
             text = (item.text or "").strip()
             # Look for statutory naming formula: "This Act may be called <Name>"
             m = re.search(r"This Act may be called\s+([^\r\n.]+)", text, re.IGNORECASE)
             if m:
                 raw_name = m.group(1).strip()
-                # Clean quote variations or unicode replacement characters
                 clean_name = re.sub(r"[\uFFFD'`]+", '"', raw_name)
                 clean_name = re.sub(r"[‘'’]", '"', clean_name)
-                # Format canonical academic title with bold and exact quotes
                 if "Kaushalya" in clean_name:
                     clean_name = re.sub(r'["\']?Kaushalya["\']?', '“Kaushalya”', clean_name)
                 source_tag = getattr(item, "source_id", "source_1")
                 return f"The Act is titled the **{clean_name}** [{source_tag}]."
 
-    # Check assembled items in ranked order
-    for item in context.items:
-        text = (item.text or "").strip()
-        source_tag = getattr(item, "source_id", "source_1")
-
-        # 1. Visual/Diagram Chunk with "[Visible Text & Labels]:"
-        if "[Visible Text & Labels]:" in text:
-            match = re.search(
-                r"\[Visible Text & Labels\]:\s*([^\n]+)",
-                text,
-                re.IGNORECASE,
-            )
-            if match:
-                raw_labels = match.group(1).strip()
-                parts = [p.strip() for p in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_labels) if p.strip()]
-                valid_items = [
-                    p for p in parts
-                    if p.lower() not in ("android all versions", "2008 to 2025", "none", "n/a")
-                    and not p.startswith("[")
-                    and len(p) > 2
-                ]
-                if is_list_query and len(valid_items) >= 2:
-                    header = f"Based on [{source_tag}], the following items are listed:\n\n"
-                    bullet_list = "\n".join(f"- {it}" for it in valid_items)
-                    return header + bullet_list
-
-        # 2. Markdown or bulleted list in text chunk
-        if is_list_query:
-            bullet_lines = [
-                line.strip()
-                for line in text.splitlines()
-                if re.match(r"^[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line.strip())
-            ]
-            if len(bullet_lines) >= 3:
-                header = f"Based on [{source_tag}], the details are:\n\n"
-                bullet_list = "\n".join(
-                    f"{b}" for b in bullet_lines
+    # 2. Supported iOS devices extraction (ONLY when query specifically asks for iOS devices / iPhones)
+    if any(
+        p in q_lower
+        for p in (
+            "supported ios",
+            "supported iphone",
+            "supported iphones",
+            "ios device",
+            "ios devices",
+            "iphone compatibility",
+            "list the supported iphones",
+            "list of supported ios devices",
+        )
+    ):
+        for item in context.items:
+            text = (item.text or "").strip()
+            source_tag = getattr(item, "source_id", "source_1")
+            if "[Visible Text & Labels]:" in text and any(k in text.lower() for k in ("iphone", "ios")):
+                match = re.search(
+                    r"\[Visible Text & Labels\]:\s*([^\n]+)",
+                    text,
+                    re.IGNORECASE,
                 )
-                return header + bullet_list
+                if match:
+                    raw_labels = match.group(1).strip()
+                    parts = [p.strip() for p in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_labels) if p.strip()]
+                    valid_items = [
+                        p for p in parts
+                        if "iphone" in p.lower() or "ios" in p.lower()
+                    ]
+                    if valid_items:
+                        header = f"Based on [{source_tag}], the supported iOS devices are:\n\n"
+                        bullet_list = "\n".join(f"- {it}" for it in valid_items)
+                        return header + bullet_list
 
-    # 3. For ordinary factual queries where top item has strong relevance
-    for item in context.items[:3]:
-        score = getattr(item, "reranker_score", 0.0) or 0.0
-        if score >= -8.5 and not is_list_query:
-            clean_text = re.sub(r"\[Visual [^\]]+\]:[^\n]*\n?", "", item.text).strip()
-            # Clean slide headers, publisher watermarks, and website URLs
-            clean_text = re.sub(r"(?i)\bakash\s+technolabs\b[^\n]*\n?", "", clean_text)
-            clean_text = re.sub(r"(?i)www\.[a-z0-9\-]+(?:\.[a-z]{2,})+", "", clean_text)
-            clean_text = re.sub(r"(?m)^What is [A-Za-z0-9\s\?]+$\n?", "", clean_text)
-            clean_text = re.sub(r"^[▪•\-\*]\s*", "", clean_text, flags=re.MULTILINE).strip()
-            clean_text = re.sub(r"\r?\n(?!\s*[-*•▪●▸\d+.]\s+)", " ", clean_text)
-            clean_text = re.sub(r"[ \t]+", " ", clean_text)
-            sentences = [
-                s.strip()
-                for s in re.split(r"(?<=[.!?])\s+", clean_text)
-                if len(s.strip()) > 20 and not s.strip().startswith("[")
-            ]
-            if sentences:
-                ans = " ".join(sentences[:2])
-                if f"[{item.source_id}]" not in ans:
-                    ans = f"{ans} [{item.source_id}]"
-                return ans
+    # 3. Android versions extraction (ONLY when query specifically asks for Android versions)
+    if any(
+        p in q_lower
+        for p in (
+            "android version",
+            "android versions",
+            "versions of android",
+            "list of android versions",
+        )
+    ):
+        for item in context.items:
+            text = (item.text or "").strip()
+            source_tag = getattr(item, "source_id", "source_1")
+            if "android version" in text.lower() or "[Visible Text & Labels]:" in text:
+                bullet_lines = [
+                    line.strip()
+                    for line in text.splitlines()
+                    if re.match(r"^[-*•▪●▸\d+.]\s+Android", line.strip(), re.IGNORECASE)
+                ]
+                if len(bullet_lines) >= 3:
+                    header = f"Based on [{source_tag}], the Android versions are:\n\n"
+                    bullet_list = "\n".join(bullet_lines)
+                    return header + bullet_list
+                if "[Visible Text & Labels]:" in text and "android" in text.lower():
+                    match = re.search(
+                        r"\[Visible Text & Labels\]:\s*([^\n]+)",
+                        text,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        raw_labels = match.group(1).strip()
+                        parts = [p.strip() for p in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_labels) if p.strip()]
+                        valid_items = [
+                            p for p in parts
+                            if p.lower() not in ("android all versions", "2008 to 2025", "none", "n/a")
+                            and not p.startswith("[")
+                            and len(p) > 2
+                        ]
+                        if len(valid_items) >= 2:
+                            header = f"Based on [{source_tag}], the Android versions are:\n\n"
+                            bullet_list = "\n".join(f"- {it}" for it in valid_items)
+                            return header + bullet_list
 
     return None
 
@@ -716,33 +744,50 @@ class LLMGenerationService:
                 metadata={"fast_path": True, "reason": "greeting"},
             )
 
-        # 2b. Direct grounded extractive answer fast-path
-        # Immediately extract verified statutory titles and high-confidence factual answers
-        rec_direct = extract_grounded_recovery_answer(request.query, request.context)
-        if rec_direct and not is_reasoning_or_non_answer(rec_direct, request.query):
-            sources_ref = list(dict.fromkeys(
-                m.group(1).lower()
-                for m in _SOURCE_REF_REGEX.finditer(rec_direct)
-                if m.group(1).lower() in sources_available
-            ))
-            return LLMGenerationResponse(
-                answer=rec_direct,
-                query=request.query,
-                original_query=request.original_query,
-                provider=self.provider.provider_name,
-                model=request.model or self.provider.model_name,
-                sources_available=sources_available,
-                sources_referenced=sources_ref,
-                is_empty_context=False,
-                prompt_tokens=0,
-                output_tokens=len(rec_direct.split()),
-                latency_ms=0.0,
-                metadata={
-                    "fast_path": True,
-                    "reason": "grounded_extractive",
-                    "path": "extractive_recovery",
-                },
+        # 2b. Deterministic statutory Act title extraction fast-path
+        # ONLY for explicit Act title questions against authorized statutory Act documents
+        is_act_title_query = any(
+            p in clean_q
+            for p in (
+                "act name",
+                "name of the act",
+                "name of this act",
+                "short title",
+                "title of the act",
+                "title of this act",
+                "which act",
+                "what act",
+                "act title",
             )
+        )
+        if is_act_title_query:
+            rec_direct = extract_grounded_recovery_answer(request.query, request.context)
+            if rec_direct and not is_reasoning_or_non_answer(rec_direct, request.query):
+                sources_ref = list(dict.fromkeys(
+                    m.group(1).lower()
+                    for m in _SOURCE_REF_REGEX.finditer(rec_direct)
+                    if m.group(1).lower() in sources_available
+                ))
+                return LLMGenerationResponse(
+                    answer=rec_direct,
+                    query=request.query,
+                    original_query=request.original_query,
+                    provider=self.provider.provider_name,
+                    model=request.model or self.provider.model_name,
+                    sources_available=sources_available,
+                    sources_referenced=sources_ref,
+                    is_empty_context=False,
+                    prompt_tokens=0,
+                    output_tokens=len(rec_direct.split()),
+                    latency_ms=0.0,
+                    metadata={
+                        "generation_mode": "deterministic_exact_extraction",
+                        "llm_invoked": False,
+                        "fast_path": True,
+                        "reason": "act_title_exact",
+                        "path": "deterministic_exact_extraction",
+                    },
+                )
 
         # 2c. Out-of-scope / low-relevance fast-path
         # When all retrieved context chunks have a negative CrossEncoder score below the calibrated
@@ -767,6 +812,8 @@ class LLMGenerationService:
                 output_tokens=len(INSUFFICIENT_COURSE_EVIDENCE_ANSWER.split()),
                 latency_ms=0.0,
                 metadata={
+                    "generation_mode": "insufficient_evidence_refusal",
+                    "llm_invoked": False,
                     "fast_path": True,
                     "reason": "low_relevance",
                     "max_reranker_score": max_score,
@@ -868,12 +915,19 @@ class LLMGenerationService:
                 model=getattr(self.provider, "model_name", "qwen3:4b"),
                 prompt_tokens=0,
                 output_tokens=len(cleaned_content.split()),
-                safe_metadata={"generation_path": generation_path, "recovery_used": (generation_path != "primary_llm")},
+                safe_metadata={
+                    "generation_mode": generation_path,
+                    "generation_path": generation_path,
+                    "llm_invoked": (generation_path in ("primary_llm", "llm_retry")),
+                    "recovery_used": (generation_path not in ("primary_llm", "llm_retry")),
+                },
             )
         else:
             if not provider_resp.safe_metadata:
                 provider_resp.safe_metadata = {}
+            provider_resp.safe_metadata["generation_mode"] = generation_path
             provider_resp.safe_metadata["generation_path"] = generation_path
+            provider_resp.safe_metadata["llm_invoked"] = (generation_path in ("primary_llm", "llm_retry"))
 
         # 5b. Attribute supporting context items to uncited factual claims
         has_list = any(re.match(r"^\s*[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line) for line in cleaned_content.splitlines())
@@ -942,6 +996,9 @@ class LLMGenerationService:
 
         # 7. Safe metadata assembly (excluding internals or raw traces)
         safe_metadata = dict(provider_resp.safe_metadata)
+        safe_metadata["generation_mode"] = safe_metadata.get("generation_mode", generation_path)
+        safe_metadata["generation_path"] = safe_metadata.get("generation_path", generation_path)
+        safe_metadata["llm_invoked"] = safe_metadata.get("llm_invoked", generation_path in ("primary_llm", "llm_retry"))
         safe_metadata["sources_available_count"] = len(sources_available)
         safe_metadata["sources_referenced_count"] = len(sources_referenced)
 
