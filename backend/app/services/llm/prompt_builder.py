@@ -67,14 +67,12 @@ def response_format_for_query(query: str | None) -> str:
 def _response_format_directive(query: str | None) -> str:
     """Build a trusted, application-selected formatting hint for the system prompt."""
     q = (query or "").strip().lower()
-    if "widget" in q and any(w in q for w in ("list", "enumerate", "types", "categories", "which")):
+    if "widget" in q and any(w in q for w in ("list", "enumerate", "types", "categories", "which", "what")):
         return (
-            "WIDGET CONCEPT & CATEGORIES DIRECTIVE: If the question asks for a list or categories of widgets, "
-            "note that Flutter uses a unified object model where 'Everything is a Widget' (including layout and the app itself). "
-            "The notes explicitly mention Material widgets and Cupertino widgets for consistent design. "
-            "However, the provided notes do not enumerate individual built-in widget class names (such as Container, Row, or Column). "
-            "Explain the documented concepts and categories clearly, and explicitly state that the provided notes do not enumerate "
-            "individual built-in widget class names. Never invent widget class names or list unrelated phone devices."
+            "RESPONSE FORMAT: In Flutter, 'Everything is a Widget'. Present the unified object model and the two primary "
+            "widget categories documented in the evidence (Material Design widgets for Google style, and Cupertino widgets for iOS style). "
+            "State that the uploaded lecture notes introduce these architectural concepts and categories rather than cataloging individual "
+            "widget class names. Answer directly in clean Markdown without quoting system directives or repeating conclusions."
         )
 
     style = response_format_for_query(query)

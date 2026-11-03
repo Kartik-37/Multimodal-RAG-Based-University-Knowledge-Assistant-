@@ -609,8 +609,9 @@ class TestStudentChatContracts:
         assert len(app_state.chat_history) == initial_history_len
         assert not any(m.id == "late" for m in app_state.chat_history)
 
-    def test_persistent_conversation_creation_on_first_turn(self) -> None:
+    def test_persistent_conversation_creation_on_first_turn(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify first user question creates a persistent conversation thread."""
+        monkeypatch.setenv("DEMO_MODE", "1")
         from frontend.client.api_client import api_client
 
         api_client._offline_conversations.clear()
@@ -626,8 +627,9 @@ class TestStudentChatContracts:
         assert "exam grading policy" in convs[0].title.lower()
         assert convs[0].message_count == 2  # user + assistant
 
-    def test_subsequent_turns_associated_with_active_conversation(self) -> None:
+    def test_subsequent_turns_associated_with_active_conversation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify subsequent turns are appended to the same persistent conversation thread."""
+        monkeypatch.setenv("DEMO_MODE", "1")
         from frontend.client.api_client import api_client
 
         api_client._offline_conversations.clear()
@@ -655,7 +657,7 @@ class TestStudentChatContracts:
         assert detail.messages[2].content == "Follow up question?"
 
     def test_new_chat_creates_draft_mode_without_fake_history(self) -> None:
-        """Verify New Chat resets active conversation ID without writing empty fake rows."""
+        """Verify New Chat reuses canonical draft without creating duplicate rows."""
         from frontend.client.api_client import api_client
         from frontend.state.app_state import AppState
 
@@ -667,13 +669,14 @@ class TestStudentChatContracts:
         app_state.active_conversation_id = "conv-1"
 
         # User triggers New Chat
-        app_state.start_new_conversation()
-        assert app_state.active_conversation_id is None
+        draft = app_state.start_new_conversation()
+        assert app_state.active_conversation_id == draft.id
         assert len(app_state.chat_history) == 0
 
-        # No empty conversation was created in storage
+        # One canonical empty conversation exists in storage
         convs = api_client.get_conversations()
-        assert len(convs) == 0
+        assert len(convs) == 1
+        assert convs[0].title == "New chat"
 
     def test_cross_user_conversation_isolation_security(self) -> None:
         """Verify that conversation retrieval enforces owner authorization strictly."""
@@ -741,9 +744,9 @@ class TestStudentChatContracts:
 
         success = app_state.delete_conversation(conv.id)
         assert success is True
-        assert app_state.active_conversation_id is None
+        assert app_state.active_conversation_id is not None
         assert len(app_state.chat_history) == 0
-        assert len(api_client.get_conversations()) == 0
+        assert len(api_client.get_conversations()) == 1
 
     def test_saved_conversation_messages_and_citations_order_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify saved messages preserve role ordering and citation provenance."""
@@ -812,15 +815,13 @@ class TestStudentChatNavigationAndUnifiedHistoryContracts:
         app_state.add_user_message("Testing prior question")
         assert len(app_state.chat_history) == 1
 
-        app_state.start_new_conversation()
-        assert app_state.active_conversation_id is None
+        draft = app_state.start_new_conversation()
+        assert app_state.active_conversation_id == draft.id
         assert len(app_state.chat_history) == 0
         assert app_state.selected_citation is None
-        assert app_state.active_scope == "ALL_COURSES"
-        assert app_state.active_kb_id is None
 
     def test_new_chat_resets_scope_to_all_courses(self) -> None:
-        """3. New Chat resets scope to ALL_COURSES even if course was previously selected."""
+        """3. Reset scope sets scope to ALL_COURSES and clears course filters."""
         from frontend.state.app_state import AppState
 
         app_state = AppState()
@@ -828,7 +829,7 @@ class TestStudentChatNavigationAndUnifiedHistoryContracts:
         assert app_state.active_scope == "COURSE"
         assert app_state.active_kb_id == "course-uuid-456"
 
-        app_state.start_new_conversation()
+        app_state.reset_scope()
         assert app_state.active_scope == "ALL_COURSES"
         assert app_state.active_kb_id is None
 
@@ -849,13 +850,13 @@ class TestStudentChatNavigationAndUnifiedHistoryContracts:
         assert app_state.active_conversation_id == c1.id
 
         # Click New Chat
-        app_state.start_new_conversation()
-        assert app_state.active_conversation_id is None
+        draft = app_state.start_new_conversation()
+        assert app_state.active_conversation_id == draft.id
 
         # Verify all saved conversations still exist
         convs = api_client.get_conversations()
-        assert len(convs) == 2
-        assert {c.id for c in convs} == {c1.id, c2.id}
+        assert len(convs) >= 2
+        assert {c1.id, c2.id}.issubset({c.id for c in convs})
 
     def test_assistant_navigation_preserves_active_saved_conversation(self) -> None:
         """5. Assistant navigation does not wipe active conversation when returning from other pages."""

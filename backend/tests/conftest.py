@@ -41,13 +41,23 @@ def db_engine(app_settings: Settings):
     test_engine.dispose()
 
 
+_root_test_db_available: bool | None = None
+
+
+def _is_db_available(engine) -> bool:
+    global _root_test_db_available
+    if _root_test_db_available is None:
+        from backend.app.db.session import check_database_connection
+        _root_test_db_available = check_database_connection(engine)
+    return _root_test_db_available
+
+
 @pytest.fixture(scope="session", autouse=True)
 def configure_test_db(db_engine) -> Generator[None, None, None]:
     """Ensure all database operations (including background tasks) bind to test database."""
     import backend.app.db.session as db_session_module
-    from backend.app.db.session import check_database_connection
 
-    if not check_database_connection(db_engine):
+    if not _is_db_available(db_engine):
         yield
         return
 
@@ -62,9 +72,7 @@ def configure_test_db(db_engine) -> Generator[None, None, None]:
 @pytest.fixture(scope="function", autouse=True)
 def clean_rate_limit_entries(db_engine) -> Generator[None, None, None]:
     """Ensure rate limit counters do not leak across test cases."""
-    from backend.app.db.session import check_database_connection
-
-    if not check_database_connection(db_engine):
+    if not _is_db_available(db_engine):
         yield
         return
 

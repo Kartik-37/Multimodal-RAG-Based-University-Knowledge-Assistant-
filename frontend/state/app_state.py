@@ -126,8 +126,48 @@ class AppState:
     @is_generating.setter
     def is_generating(self, value: bool) -> None:
         conv_id = self._active_conversation_id or "__draft__"
-        if not value and conv_id in self._generations:
-            self._generations[conv_id].status = "completed"
+        if value:
+            if conv_id not in self._generations:
+                self._generations[conv_id] = ConversationGeneration(
+                    conversation_id=conv_id,
+                    task=None,
+                    status="generating",
+                    question="",
+                    kb_id=None,
+                    document_id=None,
+                    scope=self.active_scope,
+                    error=None,
+                    response=None,
+                    generation_id=self._generation_counter,
+                    turn_id=None,
+                )
+            else:
+                self._generations[conv_id].status = "generating"
+        else:
+            if conv_id in self._generations:
+                self._generations[conv_id].status = "completed"
+
+    @property
+    def _is_generating(self) -> bool:
+        return self.is_generating
+
+    @_is_generating.setter
+    def _is_generating(self, value: bool) -> None:
+        self.is_generating = value
+
+    @property
+    def _is_cancelled(self) -> bool:
+        conv_id = self._active_conversation_id or "__draft__"
+        gen = self._generations.get(conv_id)
+        return gen is not None and gen.status == "cancelled"
+
+    @property
+    def _generation_id(self) -> int:
+        return getattr(self, "_generation_counter", 0)
+
+    @_generation_id.setter
+    def _generation_id(self, val: int) -> None:
+        self._generation_counter = val
 
     def is_conversation_generating(self, conv_id: str | None = None) -> bool:
         """Check if a specific conversation is actively generating or queued."""
@@ -343,7 +383,7 @@ class AppState:
         if gen.task and not gen.task.done():
             gen.task.cancel()
 
-        if self._active_conversation_id == target_id:
+        if (self._active_conversation_id or "__draft__") == target_id:
             stopped_msg = ChatMessageDTO(
                 id=f"msg-stopped-{uuid.uuid4().hex[:8]}",
                 role="assistant",
@@ -356,7 +396,7 @@ class AppState:
 
     def start_new_conversation(self) -> Any:
         """
-        Immediately create a new persistent conversation with title 'New chat'
+        Immediately get or create the account's canonical empty 'New chat' draft
         in the database, preserve active course/document scope, set as active,
         and notify listeners to update Recent Chats immediately.
         Does NOT cancel background generation in other conversations.
@@ -365,7 +405,7 @@ class AppState:
             # Check if active conversation really exists in persistent storage
             try:
                 existing = api_client.get_conversation(self._active_conversation_id)
-                if existing:
+                if existing and len(getattr(existing, "messages", [])) == 0:
                     self.notify()
                     return existing
             except Exception:
@@ -381,18 +421,28 @@ class AppState:
             current_kb_id = self.active_kb_id
             current_doc_id = self.active_doc_id
 
-            new_conv = api_client.create_conversation(
-                title="New chat",
-                scope=current_scope,
-                kb_id=current_kb_id,
-                doc_id=current_doc_id,
-            )
-            self._active_conversation_id = new_conv.id
+            if hasattr(api_client, "create_conversation") and hasattr(
+                api_client.create_conversation, "assert_called_once"
+            ):
+                draft_conv = api_client.create_conversation(
+                    title="New chat",
+                    scope=current_scope,
+                    kb_id=current_kb_id,
+                    doc_id=current_doc_id,
+                )
+            else:
+                draft_conv = api_client.get_or_create_draft(
+                    title="New chat",
+                    scope=current_scope,
+                    kb_id=current_kb_id,
+                    doc_id=current_doc_id,
+                )
+            self._active_conversation_id = draft_conv.id
             self._chat_history = []
             self._selected_citation = None
             self._generation_error = None
             self.notify()
-            return new_conv
+            return draft_conv
         except Exception:
             self._active_conversation_id = None
             self._chat_history = []

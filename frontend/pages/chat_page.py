@@ -586,450 +586,295 @@ def register_chat_page() -> None:
             def render_composer_scope() -> None:
                 composer_scope_container.clear()
                 with composer_scope_container:
-                    if not is_admin:
-                        is_all_courses = (
-                            active_scope["scope"] == "ALL_COURSES"
-                            or not active_scope.get("kb_id")
-                        )
-                        current_course = (
-                            next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
-                            if not is_all_courses
-                            else None
-                        )
-                        current_label = (
-                            current_course.name if current_course else "All available courses"
-                        )
-                        pill_icon = "public" if is_all_courses else "menu_book"
+                    cur_mode = active_scope.get("scope", "ALL_COURSES")
+                    selected_kb = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
+                    is_custom_scope = (cur_mode != "ALL_COURSES")
 
-                        # Scope Pill Selector Trigger inside composer bottom toolbar
-                        btn_classes = (
-                            "scope-selector-btn h-[38px] sm:h-[40px] px-3.5 sm:px-4 text-[13px] sm:text-sm font-medium "
-                            "text-primary-navy bg-surface hover:bg-surface-elevated border "
-                            + ("border-gold/70 bg-gold-light/30 " if not is_all_courses else "border-subtle ")
-                            + "hover:border-gold/80 rounded-full transition-all shadow-none group flex items-center"
+                    if cur_mode == "ALL_COURSES":
+                        pill_label = "All Published Courses" if is_admin else "All available courses"
+                        pill_icon = "public"
+                    elif cur_mode == "COURSE":
+                        pill_label = selected_kb.name if selected_kb else "Select Course..."
+                        pill_icon = "menu_book"
+                    else:  # DOCUMENT
+                        pill_label = (
+                            active_scope["selected_doc"].original_filename
+                            if active_scope.get("selected_doc")
+                            else "Select Document..."
                         )
-                        with (
-                            ui.button()
-                            .props("no-caps outline rounded")
-                            .classes(btn_classes)
-                            .props(f'title="{html.escape(current_label, quote=True)}"')
-                            .props('aria-label="Search scope selector"')
-                        ):
-                            with ui.row().classes("items-center gap-2 no-wrap"):
-                                ui.icon(pill_icon, size="16px").classes("text-gold shrink-0")
-                                ui.label(current_label).classes(
-                                    "max-w-[160px] xs:max-w-[220px] sm:max-w-[320px] md:max-w-[380px] truncate text-left font-sans text-[13px] sm:text-sm font-medium leading-none"
-                                )
-                                ui.icon("unfold_more", size="15px").classes(
-                                    "text-secondary-navy/60 group-hover:text-gold transition-colors shrink-0"
-                                )
+                        pill_icon = "description"
 
-                            # Attached Scope Popover Menu
-                            with ui.menu().props(
-                                'anchor="top start" self="bottom start" :offset="[0, 56]"'
-                            ).classes(
-                                "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[320px] sm:w-[360px] max-w-[calc(100vw-2rem)]"
-                            ) as scope_menu:
-                                with ui.column().classes("w-full gap-1.5"):
-                                    # Header & Reset to All
+                    btn_classes = (
+                        "scope-selector-btn h-[38px] sm:h-[40px] px-3.5 sm:px-4 text-[13px] sm:text-sm font-medium "
+                        "text-primary-navy bg-surface hover:bg-surface-elevated border "
+                        + ("border-gold/70 bg-gold-light/30 " if is_custom_scope else "border-subtle ")
+                        + "hover:border-gold/80 rounded-full transition-all shadow-none group flex items-center"
+                    )
+                    aria_lbl = "Admin search scope selector" if is_admin else "Search scope selector"
+
+                    with (
+                        ui.button()
+                        .props("no-caps outline rounded")
+                        .classes(btn_classes)
+                        .props(f'title="{html.escape(pill_label, quote=True)}"')
+                        .props(f'aria-label="{aria_lbl}"')
+                    ):
+                        with ui.row().classes("items-center gap-2 no-wrap"):
+                            trigger_pill_icon = ui.icon(pill_icon, size="16px").classes("text-gold shrink-0")
+                            trigger_pill_label = ui.label(pill_label).classes(
+                                "max-w-[160px] xs:max-w-[220px] sm:max-w-[320px] md:max-w-[380px] truncate text-left font-sans text-[13px] sm:text-sm font-medium leading-none"
+                            )
+                            ui.icon("unfold_more", size="15px").classes(
+                                "text-secondary-navy/60 group-hover:text-gold transition-colors shrink-0"
+                            )
+
+                        # Attached Scope Popover Menu
+                        with ui.menu().props(
+                            'anchor="top start" self="bottom start" :offset="[0, 56]"'
+                        ).classes(
+                            "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[320px] sm:w-[380px] max-w-[calc(100vw-2rem)]"
+                        ) as scope_menu:
+                            menu_content_container = ui.column().classes("w-full gap-2")
+
+                            def render_menu_content() -> None:
+                                menu_content_container.clear()
+                                cur_m = active_scope.get("scope", "ALL_COURSES")
+                                cur_k = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
+                                is_custom = (cur_m != "ALL_COURSES")
+
+                                # Update trigger button label and icon
+                                if cur_m == "ALL_COURSES":
+                                    trigger_pill_label.text = "All Published Courses" if is_admin else "All available courses"
+                                    trigger_pill_icon.name = "public"
+                                elif cur_m == "COURSE":
+                                    trigger_pill_label.text = cur_k.name if cur_k else "Select Course..."
+                                    trigger_pill_icon.name = "menu_book"
+                                else:
+                                    trigger_pill_label.text = (
+                                        active_scope["selected_doc"].original_filename
+                                        if active_scope.get("selected_doc")
+                                        else "Select Document..."
+                                    )
+                                    trigger_pill_icon.name = "description"
+
+                                with menu_content_container:
+                                    # Header & Reset Action
                                     with ui.row().classes(
-                                        "w-full items-center justify-between px-1.5 pt-0.5 pb-1"
+                                        "w-full items-center justify-between px-1.5 pt-0.5 pb-1 border-b border-subtle/60"
                                     ):
-                                        ui.label("Course Search Scope").classes(
+                                        header_title = "Admin Scope Mode" if is_admin else "Search Scope"
+                                        ui.label(header_title).classes(
                                             "text-[11px] font-bold font-sans uppercase tracking-wider text-secondary-navy"
                                         )
-                                        if not is_all_courses:
+                                        if is_custom:
+                                            def reset_scope_action():
+                                                active_scope["scope"] = "ALL_COURSES"
+                                                active_scope["kb_id"] = None
+                                                active_scope["doc_id"] = None
+                                                active_scope["selected_doc"] = None
+                                                state.reset_scope()
+                                                scope_menu.close()
+                                                render_composer_scope()
+                                                render_header()
+                                                render_action_btn()
+
                                             ui.button(
                                                 "Reset to All",
-                                                on_click=lambda: (
-                                                    scope_menu.close(),
-                                                    select_student_scope("ALL_COURSES", None),
-                                                ),
+                                                on_click=reset_scope_action,
                                             ).props("flat dense no-caps").classes(
                                                 "text-[11px] text-gold hover:text-primary-navy font-semibold p-0"
                                             )
 
-                                    # Search Filter Input
-                                    search_filter = (
-                                        ui.input(placeholder="Search courses...")
-                                        .props("dense outlined rounded clearable autofocus")
-                                        .classes("w-full text-xs font-sans px-0.5 pb-1")
-                                    )
-
-                                    # Options Container
-                                    options_container = ui.column().classes(
-                                        "w-full max-h-56 overflow-y-auto gap-0.5"
-                                    )
-
-                                    def update_menu_options(query_filter: str = "") -> None:
-                                        options_container.clear()
-                                        with options_container:
-                                            q_clean = query_filter.strip().lower()
-
-                                            # 1. "All available courses" row
-                                            if (
-                                                not q_clean
-                                                or "all" in q_clean
-                                                or "course" in q_clean
-                                            ):
-                                                all_classes = (
-                                                    "bg-surface font-semibold text-primary-navy border border-gold/40"
-                                                    if is_all_courses
-                                                    else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
-                                                )
-                                                with (
-                                                    ui.row()
-                                                    .classes(
-                                                        f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {all_classes}"
-                                                    )
-                                                    .on(
-                                                        "click",
-                                                        lambda: (
-                                                            scope_menu.close(),
-                                                            select_student_scope(
-                                                                "ALL_COURSES", None
-                                                            ),
-                                                        ),
-                                                    )
-                                                ):
-                                                    with ui.row().classes(
-                                                        "items-center gap-2 min-w-0"
-                                                    ):
-                                                        ui.icon("public", size="15px").classes(
-                                                            "text-gold shrink-0"
-                                                            if is_all_courses
-                                                            else "text-secondary-navy/70 shrink-0"
-                                                        )
-                                                        with ui.column().classes(
-                                                            "gap-0 min-w-0"
-                                                        ):
-                                                            ui.label(
-                                                                "All available courses"
-                                                            ).classes(
-                                                                "text-xs leading-tight font-sans"
-                                                            )
-                                                            ui.label(
-                                                                "Search across all authorized courses"
-                                                            ).classes(
-                                                                "text-[10px] text-secondary-navy/70 leading-tight"
-                                                            )
-                                                    if is_all_courses:
-                                                        ui.icon("check", size="16px").classes(
-                                                            "text-gold shrink-0"
-                                                        )
-
-                                            ui.separator().classes("my-0.5 opacity-60")
-
-                                            # 2. Individual courses
-                                            filtered_kbs = [
-                                                k
-                                                for k in kbs
-                                                if not q_clean
-                                                or q_clean in k.name.lower()
-                                                or (
-                                                    k.description
-                                                    and q_clean in k.description.lower()
-                                                )
-                                            ]
-
-                                            if not filtered_kbs:
-                                                if q_clean:
-                                                    with ui.row().classes(
-                                                        "w-full p-2.5 justify-center text-center"
-                                                    ):
-                                                        ui.label(
-                                                            f'No courses match "{query_filter.strip()}"'
-                                                        ).classes(
-                                                            "text-xs text-secondary-navy italic"
-                                                        )
+                                    # 3 Segmented Scope Mode Buttons
+                                    with ui.row().classes("w-full bg-surface p-1 rounded-xl gap-1"):
+                                        def set_mode(m: str):
+                                            active_scope["scope"] = m
+                                            if m == "ALL_COURSES":
+                                                active_scope["kb_id"] = None
+                                                active_scope["doc_id"] = None
+                                                active_scope["selected_doc"] = None
+                                                state.set_scope("ALL_COURSES", None, None)
+                                                scope_menu.close()
+                                                render_composer_scope()
+                                            elif m == "COURSE":
+                                                active_scope["doc_id"] = None
+                                                active_scope["selected_doc"] = None
+                                                if active_scope.get("kb_id") not in [k.id for k in kbs]:
+                                                    active_scope["kb_id"] = None
+                                                state.set_scope("COURSE", active_scope.get("kb_id"), None)
+                                                render_menu_content()
+                                            elif m == "DOCUMENT":
+                                                if active_scope.get("kb_id") not in [k.id for k in kbs]:
+                                                    active_scope["kb_id"] = None
+                                                    active_scope["doc_id"] = None
+                                                    active_scope["selected_doc"] = None
                                                 else:
-                                                    with ui.row().classes(
-                                                        "w-full p-2.5 justify-center text-center"
-                                                    ):
-                                                        ui.label(
-                                                            "No additional courses available"
-                                                        ).classes(
-                                                            "text-xs text-secondary-navy italic"
-                                                        )
-                                            else:
-                                                for k in filtered_kbs:
-                                                    is_selected = (
-                                                        not is_all_courses
-                                                        and active_scope.get("kb_id") == k.id
-                                                    )
-                                                    row_classes = (
-                                                        "bg-surface font-semibold text-primary-navy border border-gold/40"
-                                                        if is_selected
-                                                        else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
-                                                    )
-                                                    with (
-                                                        ui.row()
-                                                        .classes(
-                                                            f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_classes}"
-                                                        )
-                                                        .on(
-                                                            "click",
-                                                            lambda target_id=k.id: (
-                                                                scope_menu.close(),
-                                                                select_student_scope(
-                                                                    "COURSE", target_id
-                                                                ),
-                                                            ),
-                                                        )
-                                                    ):
-                                                        with ui.row().classes(
-                                                            "items-center gap-2 min-w-0 flex-1"
-                                                        ):
-                                                            ui.icon(
-                                                                "menu_book", size="15px"
-                                                            ).classes(
-                                                                "text-gold shrink-0"
-                                                                if is_selected
-                                                                else "text-secondary-navy/70 shrink-0"
-                                                            )
-                                                            with ui.column().classes(
-                                                                "gap-0 min-w-0 flex-1"
-                                                            ):
-                                                                ui.label(k.name).classes(
-                                                                    "text-xs leading-tight font-sans break-words"
-                                                                )
-                                                                doc_txt = (
-                                                                    f"{k.document_count} documents"
-                                                                    if k.document_count
-                                                                    else "Course materials"
-                                                                )
-                                                                ui.label(doc_txt).classes(
-                                                                    "text-[10px] text-secondary-navy/70 leading-tight"
-                                                                )
-                                                        if is_selected:
-                                                            ui.icon("check", size="16px").classes(
-                                                                "text-gold shrink-0"
-                                                            )
-
-                                    search_filter.on_value_change(
-                                        lambda e: update_menu_options(e.value or "")
-                                    )
-                                    update_menu_options()
-                    else:
-                        # Polished Admin Scope Pill Trigger and Upward Popover Menu
-                        admin_mode = active_scope.get("scope", "ALL_COURSES")
-                        selected_kb = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
-
-                        if admin_mode == "ALL_COURSES":
-                            pill_label = "All Published Courses"
-                            pill_icon = "public"
-                            is_custom_scope = False
-                        elif admin_mode == "COURSE":
-                            pill_label = selected_kb.name if selected_kb else "Select Course..."
-                            pill_icon = "menu_book"
-                            is_custom_scope = True
-                        else:  # DOCUMENT
-                            pill_label = active_scope["selected_doc"].original_filename if active_scope.get("selected_doc") else "Select Document..."
-                            pill_icon = "description"
-                            is_custom_scope = True
-
-                        btn_classes = (
-                            "scope-selector-btn h-[38px] sm:h-[40px] px-3.5 sm:px-4 text-[13px] sm:text-sm font-medium "
-                            "text-primary-navy bg-surface hover:bg-surface-elevated border "
-                            + ("border-gold/70 bg-gold-light/30 " if is_custom_scope else "border-subtle ")
-                            + "hover:border-gold/80 rounded-full transition-all shadow-none group flex items-center"
-                        )
-                        with (
-                            ui.button()
-                            .props("no-caps outline rounded")
-                            .classes(btn_classes)
-                            .props(f'title="{html.escape(pill_label, quote=True)}"')
-                            .props('aria-label="Admin search scope selector"')
-                        ):
-                            with ui.row().classes("items-center gap-2 no-wrap"):
-                                trigger_pill_icon = ui.icon(pill_icon, size="16px").classes("text-gold shrink-0")
-                                trigger_pill_label = ui.label(pill_label).classes(
-                                    "max-w-[160px] xs:max-w-[220px] sm:max-w-[320px] md:max-w-[380px] truncate text-left font-sans text-[13px] sm:text-sm font-medium leading-none"
-                                )
-                                ui.icon("unfold_more", size="15px").classes(
-                                    "text-secondary-navy/60 group-hover:text-gold transition-colors shrink-0"
-                                )
-
-                            # Attached Upward-Opening Scope Popover Menu
-                            with ui.menu().props(
-                                'anchor="top start" self="bottom start" :offset="[0, 56]"'
-                            ).classes(
-                                "scope-popover-menu p-3 bg-surface-elevated border border-gold/30 shadow-xl rounded-2xl w-[320px] sm:w-[380px] max-w-[calc(100vw-2rem)]"
-                            ) as admin_scope_menu:
-                                menu_content_container = ui.column().classes("w-full gap-2")
-
-                                def render_menu_content() -> None:
-                                    menu_content_container.clear()
-                                    cur_mode = active_scope.get("scope", "ALL_COURSES")
-                                    cur_kb = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
-                                    is_custom = cur_mode != "ALL_COURSES"
-
-                                    # Update trigger button label and icon
-                                    if cur_mode == "ALL_COURSES":
-                                        trigger_pill_label.text = "All Published Courses"
-                                        trigger_pill_icon.name = "public"
-                                    elif cur_mode == "COURSE":
-                                        trigger_pill_label.text = cur_kb.name if cur_kb else "Select Course..."
-                                        trigger_pill_icon.name = "menu_book"
-                                    else:
-                                        trigger_pill_label.text = active_scope["selected_doc"].original_filename if active_scope.get("selected_doc") else "Select Document..."
-                                        trigger_pill_icon.name = "description"
-
-                                    with menu_content_container:
-                                        # Header & Reset Action
-                                        with ui.row().classes("w-full items-center justify-between px-1.5 pt-0.5 pb-1 border-b border-subtle/60"):
-                                            ui.label("Admin Scope Mode").classes(
-                                                "text-[11px] font-bold font-sans uppercase tracking-wider text-secondary-navy"
-                                            )
-                                            if is_custom:
-                                                def reset_admin_scope():
-                                                    active_scope["scope"] = "ALL_COURSES"
-                                                    active_scope["kb_id"] = None
-                                                    active_scope["doc_id"] = None
-                                                    active_scope["selected_doc"] = None
-                                                    state.reset_scope()
-                                                    admin_scope_menu.close()
-                                                    render_composer_scope()
-                                                    render_header()
-                                                    render_action_btn()
-                                                ui.button(
-                                                    "Reset to All",
-                                                    on_click=reset_admin_scope,
-                                                ).props("flat dense no-caps").classes(
-                                                    "text-[11px] text-gold hover:text-primary-navy font-semibold p-0"
-                                                )
-
-                                        # 3 Segmented Scope Mode Buttons
-                                        with ui.row().classes("w-full bg-surface p-1 rounded-xl gap-1"):
-                                            def set_admin_mode(m: str):
-                                                active_scope["scope"] = m
-                                                if m == "ALL_COURSES":
-                                                    active_scope["kb_id"] = None
-                                                    active_scope["doc_id"] = None
-                                                    active_scope["selected_doc"] = None
-                                                    state.set_scope("ALL_COURSES", None, None)
-                                                    admin_scope_menu.close()
-                                                    render_composer_scope()
-                                                elif m == "COURSE":
-                                                    active_scope["doc_id"] = None
-                                                    active_scope["selected_doc"] = None
-                                                    if active_scope.get("kb_id") not in [k.id for k in kbs]:
-                                                        active_scope["kb_id"] = None
-                                                    state.set_scope("COURSE", active_scope.get("kb_id"), None)
-                                                    render_menu_content()
-                                                elif m == "DOCUMENT":
-                                                    if active_scope.get("kb_id") not in [k.id for k in kbs]:
-                                                        active_scope["kb_id"] = None
-                                                        active_scope["doc_id"] = None
-                                                        active_scope["selected_doc"] = None
-                                                    else:
-                                                        load_docs_for_current_kb()
-                                                    state.set_scope("DOCUMENT", active_scope.get("kb_id"), active_scope.get("doc_id"))
-                                                    render_menu_content()
-                                                render_header()
-                                                render_action_btn()
-
-                                            for m_key, m_lbl, m_ic in [
-                                                ("ALL_COURSES", "All Courses", "public"),
-                                                ("COURSE", "Course", "menu_book"),
-                                                ("DOCUMENT", "Document", "description"),
-                                            ]:
-                                                is_cur = (cur_mode == m_key)
-                                                mode_cls = (
-                                                    "flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg text-center transition-all "
-                                                    + ("bg-surface-navy text-inverted shadow-sm " if is_cur else "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated ")
-                                                )
-                                                with ui.row().classes(f"{mode_cls} items-center justify-center gap-1 cursor-pointer").on(
-                                                    "click", lambda mk=m_key: set_admin_mode(mk)
-                                                ):
-                                                    ui.icon(m_ic, size="13px")
-                                                    ui.label(m_lbl).classes("text-[11px]")
-
-                                        # Content based on mode
-                                        if cur_mode == "COURSE":
-                                            with ui.column().classes("w-full gap-1 pt-1"):
-                                                ui.label("Select Target Course:").classes("text-[11px] font-semibold text-secondary-navy px-1")
-                                                admin_search = (
-                                                    ui.input(placeholder="Search courses...")
-                                                    .props("dense outlined rounded clearable autofocus")
-                                                    .classes("w-full text-xs font-sans px-0.5 pb-1")
-                                                )
-                                                courses_container = ui.column().classes("w-full max-h-48 overflow-y-auto gap-0.5")
-
-                                                def update_admin_course_list(q_text: str = "") -> None:
-                                                    courses_container.clear()
-                                                    q_c = q_text.strip().lower()
-                                                    matched_kbs = [
-                                                        k
-                                                        for k in kbs
-                                                        if not q_c
-                                                        or q_c in k.name.lower()
-                                                        or (k.description and q_c in k.description.lower())
-                                                    ]
-                                                    with courses_container:
-                                                        if not matched_kbs:
-                                                            ui.label(
-                                                                f'No courses match "{q_text.strip()}"' if q_c else "No courses available"
-                                                            ).classes("text-xs text-secondary-navy italic p-2 text-center")
-                                                        for k in matched_kbs:
-                                                            is_sel = (active_scope.get("kb_id") == k.id)
-                                                            row_cls = (
-                                                                "bg-surface font-semibold text-primary-navy border border-gold/40"
-                                                                if is_sel
-                                                                else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
-                                                            )
-                                                            def select_course(cid=k.id):
-                                                                active_scope["kb_id"] = cid
-                                                                state.set_scope("COURSE", cid, None)
-                                                                load_docs_for_current_kb()
-                                                                admin_scope_menu.close()
-                                                                render_composer_scope()
-                                                                render_header()
-                                                                render_action_btn()
-                                                            with ui.row().classes(
-                                                                f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
-                                                            ).on("click", select_course):
-                                                                with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
-                                                                    ui.icon("menu_book", size="14px").classes("text-gold" if is_sel else "text-secondary-navy/70")
-                                                                    with ui.column().classes("gap-0 min-w-0 flex-1"):
-                                                                        ui.label(k.name).classes("text-xs font-sans truncate")
-                                                                        doc_txt = f"{k.document_count} documents" if k.document_count else "Course materials"
-                                                                        ui.label(doc_txt).classes("text-[10px] text-secondary-navy/70 leading-tight")
-                                                                if is_sel:
-                                                                    ui.icon("check", size="15px").classes("text-gold shrink-0")
-
-                                                admin_search.on_value_change(lambda e: update_admin_course_list(e.value or ""))
-                                                update_admin_course_list()
-                                        elif cur_mode == "DOCUMENT":
-                                            with ui.column().classes("w-full gap-1 pt-1"):
-                                                ui.label("Course:").classes("text-[11px] font-semibold text-secondary-navy px-1")
-                                                course_options = {k.id: k.name for k in kbs}
-                                                def on_doc_kb_change(e: Any):
-                                                    active_scope["kb_id"] = e.value
-                                                    active_scope["doc_id"] = None
-                                                    active_scope["selected_doc"] = None
-                                                    state.set_scope("DOCUMENT", e.value, None)
                                                     load_docs_for_current_kb()
+                                                state.set_scope("DOCUMENT", active_scope.get("kb_id"), active_scope.get("doc_id"))
+                                                render_menu_content()
+                                            render_header()
+                                            render_action_btn()
+
+                                        for m_key, m_lbl, m_ic in [
+                                            ("ALL_COURSES", "All Courses", "public"),
+                                            ("COURSE", "Course", "menu_book"),
+                                            ("DOCUMENT", "Document", "description"),
+                                        ]:
+                                            is_cur = (cur_m == m_key)
+                                            mode_cls = (
+                                                "flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg text-center transition-all "
+                                                + (
+                                                    "bg-surface-navy text-inverted shadow-sm "
+                                                    if is_cur
+                                                    else "text-secondary-navy hover:text-primary-navy hover:bg-surface-elevated "
+                                                )
+                                            )
+                                            with ui.row().classes(
+                                                f"{mode_cls} items-center justify-center gap-1 cursor-pointer"
+                                            ).on("click", lambda mk=m_key: set_mode(mk)):
+                                                ui.icon(m_ic, size="13px")
+                                                ui.label(m_lbl).classes("text-[11px]")
+
+                                    # Content based on mode
+                                    if cur_m == "COURSE":
+                                        with ui.column().classes("w-full gap-1 pt-1"):
+                                            ui.label("Select Target Course:").classes(
+                                                "text-[11px] font-semibold text-secondary-navy px-1"
+                                            )
+                                            course_search = (
+                                                ui.input(placeholder="Search courses...")
+                                                .props("dense outlined rounded clearable autofocus")
+                                                .classes("w-full text-xs font-sans px-0.5 pb-1")
+                                            )
+                                            courses_container = ui.column().classes(
+                                                "w-full max-h-48 overflow-y-auto gap-0.5"
+                                            )
+
+                                            def update_course_list(q_text: str = "") -> None:
+                                                courses_container.clear()
+                                                q_c = q_text.strip().lower()
+                                                matched_kbs = [
+                                                    k
+                                                    for k in kbs
+                                                    if not q_c
+                                                    or q_c in k.name.lower()
+                                                    or (k.description and q_c in k.description.lower())
+                                                ]
+                                                with courses_container:
+                                                    if not matched_kbs:
+                                                        ui.label(
+                                                            f'No courses match "{q_text.strip()}"'
+                                                            if q_c
+                                                            else "No courses available"
+                                                        ).classes(
+                                                            "text-xs text-secondary-navy italic p-2 text-center"
+                                                        )
+                                                    for k in matched_kbs:
+                                                        is_sel = (active_scope.get("kb_id") == k.id)
+                                                        row_cls = (
+                                                            "bg-surface font-semibold text-primary-navy border border-gold/40"
+                                                            if is_sel
+                                                            else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
+                                                        )
+
+                                                        def select_course(cid=k.id):
+                                                            active_scope["kb_id"] = cid
+                                                            state.set_scope("COURSE", cid, None)
+                                                            load_docs_for_current_kb()
+                                                            scope_menu.close()
+                                                            render_composer_scope()
+                                                            render_header()
+                                                            render_action_btn()
+
+                                                        with ui.row().classes(
+                                                            f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
+                                                        ).on("click", select_course):
+                                                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                                                ui.icon("menu_book", size="14px").classes(
+                                                                    "text-gold" if is_sel else "text-secondary-navy/70"
+                                                                )
+                                                                with ui.column().classes("gap-0 min-w-0 flex-1"):
+                                                                    ui.label(k.name).classes("text-xs font-sans truncate")
+                                                                    doc_txt = (
+                                                                        f"{k.document_count} documents"
+                                                                        if k.document_count
+                                                                        else "Course materials"
+                                                                    )
+                                                                    ui.label(doc_txt).classes(
+                                                                        "text-[10px] text-secondary-navy/70 leading-tight"
+                                                                    )
+                                                            if is_sel:
+                                                                ui.icon("check", size="15px").classes("text-gold shrink-0")
+
+                                            course_search.on_value_change(
+                                                lambda e: update_course_list(e.value or "")
+                                            )
+                                            update_course_list()
+
+                                    elif cur_m == "DOCUMENT":
+                                        with ui.column().classes("w-full gap-1 pt-1"):
+                                            cur_doc_kb = next((k for k in kbs if k.id == active_scope.get("kb_id")), None)
+                                            if not cur_doc_kb:
+                                                # Step 1: Select course to list its documents
+                                                ui.label("Select Course for Document Scope:").classes(
+                                                    "text-[11px] font-semibold text-secondary-navy px-1"
+                                                )
+                                                doc_kb_container = ui.column().classes("w-full max-h-48 overflow-y-auto gap-0.5")
+                                                with doc_kb_container:
+                                                    if not kbs:
+                                                        ui.label("No courses available").classes(
+                                                            "text-xs text-secondary-navy italic p-2 text-center"
+                                                        )
+                                                    for k in kbs:
+                                                        def select_doc_course(cid=k.id):
+                                                            active_scope["kb_id"] = cid
+                                                            active_scope["doc_id"] = None
+                                                            active_scope["selected_doc"] = None
+                                                            state.set_scope("DOCUMENT", cid, None)
+                                                            load_docs_for_current_kb()
+                                                            render_menu_content()
+                                                            render_header()
+                                                            render_action_btn()
+
+                                                        with ui.row().classes(
+                                                            "w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
+                                                        ).on("click", select_doc_course):
+                                                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
+                                                                ui.icon("menu_book", size="14px").classes("text-secondary-navy/70")
+                                                                ui.label(k.name).classes("text-xs font-sans truncate")
+                                                            ui.icon("chevron_right", size="15px").classes("text-secondary-navy/50 shrink-0")
+                                            else:
+                                                # Step 2: Show selected course with change option & list documents
+                                                def change_doc_course():
+                                                    active_scope["kb_id"] = None
+                                                    active_scope["doc_id"] = None
+                                                    active_scope["selected_doc"] = None
+                                                    state.set_scope("DOCUMENT", None, None)
                                                     render_menu_content()
                                                     render_header()
                                                     render_action_btn()
-                                                ui.select(
-                                                    options=course_options,
-                                                    value=active_scope.get("kb_id"),
-                                                    on_change=on_doc_kb_change,
-                                                    label="Select Course",
-                                                ).props("dense outlined options-dense").classes("w-full text-xs font-sans")
 
-                                                ui.label("Select Document:").classes("text-[11px] font-semibold text-secondary-navy px-1 pt-1")
+                                                with ui.row().classes(
+                                                    "w-full items-center justify-between px-2.5 py-1.5 bg-surface rounded-lg border border-gold/30 mb-1"
+                                                ):
+                                                    with ui.row().classes("items-center gap-1.5 min-w-0 flex-1"):
+                                                        ui.icon("menu_book", size="14px").classes("text-gold shrink-0")
+                                                        ui.label(cur_doc_kb.name).classes("text-xs font-semibold text-primary-navy truncate")
+                                                    ui.button(
+                                                        "Change Course",
+                                                        on_click=change_doc_course,
+                                                    ).props("flat dense no-caps").classes(
+                                                        "text-[10px] text-gold hover:text-primary-navy font-semibold p-0"
+                                                    )
+
+                                                ui.label("Select Target Document:").classes(
+                                                    "text-[11px] font-semibold text-secondary-navy px-1 pt-0.5"
+                                                )
                                                 doc_container = ui.column().classes("w-full max-h-40 overflow-y-auto gap-0.5")
                                                 with doc_container:
-                                                    if not active_scope.get("kb_id"):
-                                                        ui.label("Select a course above to view available documents").classes(
+                                                    if not active_scope.get("docs"):
+                                                        ui.label("No published documents available in this course").classes(
                                                             "text-xs text-secondary-navy italic px-2 py-1"
-                                                        )
-                                                    elif not active_scope["docs"]:
-                                                        ui.label("No eligible documents available in this course").classes(
-                                                            "text-xs text-rose-700 italic px-2 py-1"
                                                         )
                                                     else:
                                                         for doc_item in active_scope["docs"]:
@@ -1039,24 +884,28 @@ def register_chat_page() -> None:
                                                                 if is_doc_sel
                                                                 else "hover:bg-surface text-secondary-navy hover:text-primary-navy border border-transparent"
                                                             )
+
                                                             def select_doc(d=doc_item):
                                                                 active_scope["doc_id"] = d.id
                                                                 active_scope["selected_doc"] = d
                                                                 state.set_scope("DOCUMENT", active_scope["kb_id"], d.id)
-                                                                admin_scope_menu.close()
+                                                                scope_menu.close()
                                                                 render_composer_scope()
                                                                 render_header()
                                                                 render_action_btn()
+
                                                             with ui.row().classes(
                                                                 f"w-full items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors {row_cls}"
                                                             ).on("click", select_doc):
                                                                 with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
-                                                                    ui.icon("description", size="14px").classes("text-gold" if is_doc_sel else "text-secondary-navy/70")
+                                                                    ui.icon("description", size="14px").classes(
+                                                                        "text-gold" if is_doc_sel else "text-secondary-navy/70"
+                                                                    )
                                                                     ui.label(doc_item.original_filename).classes("text-xs font-sans truncate")
                                                                 if is_doc_sel:
                                                                     ui.icon("check", size="15px").classes("text-gold shrink-0")
 
-                                render_menu_content()
+                            render_menu_content()
 
             # ------------------------------------------------------------------
             # Render Header (Identity & History Toggle & New Chat)

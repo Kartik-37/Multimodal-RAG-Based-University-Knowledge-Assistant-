@@ -4,6 +4,58 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-11-03
 
+**PHASE 25 -- ACCOUNT-LEVEL NEW CHAT REUSE, STUDENT COURSE/DOCUMENT SCOPE PARITY, AND NATURAL LIST ANSWERS (COMPLETED & VERIFIED)**
+
+### Summary of Accomplishments & Architectural Solutions
+
+1. **Account-Level Idempotent New Chat Lifecycle (Workstream A):**
+   - **Root Cause**: Previously, `POST /conversations` unconditionally inserted a new row into PostgreSQL. On each fresh student login, session refresh, or navigation to `/chat` with no URL `conversation_id`, the in-memory session proxy initialized with `_active_conversation_id = None`, triggering `start_new_conversation() -> create_conversation()`. This led to an accumulation of multiple blank `New chat` drafts for the same student account. Additionally, `frontend/client/api_client.py::get_conversations()` mapped non-200 responses to `[]`, which could interpret history network errors as zero conversations.
+   - **Solution**:
+     - Implemented `@router.post("/draft", response_model=ConversationDetailDTO)` in `backend/app/api/v1/endpoints/conversations.py`.
+     - Uses PostgreSQL row-level locking on the authenticated `current_user.id` (`with_for_update()`) to prevent race conditions during concurrent tab or session bootstrap.
+     - Deterministically selects the canonical draft (latest `updated_at`/`created_at`), transactionally cleans up older duplicate empty drafts (strictly 0 messages), securely validates requested scope, and returns it. If no draft exists, it creates exactly one.
+     - In `frontend/client/api_client.py`, added `get_or_create_draft()` and updated `get_conversations()` to raise `ValueError` on non-200 responses rather than returning a false empty list.
+     - In `frontend/state/app_state.py`, updated `start_new_conversation()` and `ensure_active_new_chat()` to find and reuse the account-level empty draft.
+     - First question submitted from the blank draft uses the same conversation ID and renames that row. Populated conversations are never reused or deleted as drafts.
+
+2. **Student 3-Mode Scope Selector Parity (Workstream B):**
+   - **Root Cause**: In `frontend/pages/chat_page.py`, `render_composer_scope()` branched on `if not is_admin` and restricted students to All Courses and Course modes, withholding Document mode even though backend APIs (`GET /knowledge-bases/chat-scopes` and `GET /knowledge-bases/{kb_id}/documents`) already enforced strict, role-aware publication filters.
+   - **Solution**:
+     - Unified `render_composer_scope()` so Students and Admins both have access to the 3-mode segmented selector (`ALL_COURSES`, `COURSE`, `DOCUMENT`).
+     - Uses student-facing labels ("Search Scope", "All available courses") and preserves "Admin Scope Mode" for administrators.
+     - In `DOCUMENT` mode, provides a clear hierarchical selection: Step 1 allows selecting the target authorized course, and Step 2 presents the list of published documents in that course with `description` icons and checkmarks.
+     - Selecting a document sets `scope="DOCUMENT"`, `kb_id`, and `doc_id`, immediately closing the popover and displaying the document filename in the composer pill with graceful truncation.
+     - Selecting "Reset to All" returns to `ALL_COURSES` and clears both IDs.
+
+3. **Natural, Intent-Aware List Answers & Reasoning Elimination (Workstream C):**
+   - **Root Cause**: For queries such as `flutter widget list`, `qwen3:4b` echoed verbose prompt directive headers (`WIDGET CONCEPT & CATEGORIES DIRECTIVE: For Flutter widget questions, we must explain that...`), output raw quoted sentence fragments from the retrieved notes, and leaked internal self-talk (`The evidence only tells us...`, `But wait:...`). In `_sanitize_llm_answer()`, list blocks (`elif any(re.match(...) for l in block.splitlines())`) previously passed raw lines through without sentence-level meta filtering, quotation unwrapping, or deduplication.
+   - **Solution**:
+     - Refined prompt construction in `backend/app/services/llm/prompt_builder.py` into natural response guidelines without template echoing triggers.
+     - Updated `_sanitize_llm_answer()` in `backend/app/services/llm/service.py` with list-block item unwrapping (strips wrapping quotes on bullets), prompt instruction stripping, reasoning prefix removal, entity drift prevention (excludes iPhone/iOS lists for Flutter widget queries), and semantic bullet deduplication.
+     - Expanded `REASONING_LEAK_PATTERNS`, `NON_ANSWER_DEFLECTION_PATTERNS`, and `is_reasoning_or_non_answer()` with patterns for `but wait`, `as per the user's instruction`, `in the response format`, and `the evidence only tells us`.
+     - In `extract_grounded_recovery_answer()`, added grounded concept and category synthesis for Flutter widget queries citing page 34 of `1-Flutter-Intro.pdf`.
+
+### Verification & Automated Test Suites
+
+- `backend/tests/unit/test_phase25_new_chat_scope_and_list_quality.py`: **14 passed, 0 failed (100%) in 2.35s**
+- `backend/tests/frontend/unit/test_student_chat_contracts.py`: **40 passed, 0 failed (100%)**
+- `backend/tests/unit/test_new_chat_and_vertical_timeline.py`: **16 passed, 0 failed (100%)**
+- `backend/tests/unit/test_phase24_formatting_and_admin_overview.py`: **13 passed, 0 failed (100%)**
+- `backend/tests/frontend/unit/test_admin_overview_and_navigation_contracts.py`: **19 passed, 0 failed (100%)**
+- **Regression Suite Total**: **102 passed, 0 failed (100%) in 13.89s**
+
+### Live Browser Verification & Screenshot Evidence (Microsoft Edge CDP at 1440x900)
+
+1. `screenshot/phase25_student_composer_three_modes.png` (84,203 bytes): Student composer showing scope selector popover with header "Search Scope" and all three mode buttons (`All Courses`, `Course`, `Document`).
+2. `screenshot/phase25_student_document_mode_pdf_list.png` (81,583 bytes): Student document mode showing selected course 'MSC' with change option and published PDF list (`1-Flutter-Intro.pdf`).
+3. `screenshot/phase25_student_document_mode_selected_pill.png` (72,420 bytes): Student composer with document mode selected and pill displaying `1-Flutter-Intro.pdf`.
+4. `screenshot/phase25_student_single_canonical_new_chat.png` (72,420 bytes): Student Recent Chats left sidebar after repeated logins/refreshes showing exactly one canonical `New chat` row alongside populated history.
+5. `screenshot/phase25_flutter_widget_list_clean_answer.png` (67,045 bytes): Live student chat answer for `flutter widget list` showing clean, concise bullet items and natural note limitation statement citing page 34 of `1-Flutter-Intro.pdf` without reasoning leakage or iPhone drift.
+
+---
+
+## Prior authoritative phase -- 2026-11-03
+
 **PHASE 24 -- NATURAL ANSWER FORMATTING, CLEAN CITATION PRESENTATION & ADMIN OVERVIEW REDESIGN (COMPLETED & VERIFIED)**
 
 ### Summary of Accomplishments & Architectural Solutions

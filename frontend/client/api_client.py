@@ -1704,7 +1704,7 @@ class FrontendAPIClient:
 
         resp = self._http.get("/conversations")
         if resp.status_code != 200:
-            return []
+            raise ValueError(f"Failed to fetch conversations ({resp.status_code}).")
         data = resp.json()
         return [
             ConversationSummaryDTO(
@@ -1772,6 +1772,46 @@ class FrontendAPIClient:
             created_at=str(data.get("created_at", "")),
             updated_at=str(data.get("updated_at", "")),
             messages=messages,
+        )
+
+    def get_or_create_draft(
+        self,
+        title: str = "New chat",
+        scope: str = "ALL_COURSES",
+        kb_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> ConversationDetailDTO:
+        """Atomically get or create the canonical empty New chat draft for current account."""
+        if not self._should_use_real_http() or not self.get_session_token():
+            # In offline / test mode, find any existing empty "New chat" draft first
+            for conv in self._offline_conversations.values():
+                if conv.title in ("New chat", "New Conversation") and len(conv.messages) == 0:
+                    conv.scope = scope
+                    conv.knowledge_base_id = kb_id
+                    conv.document_id = doc_id
+                    return conv
+            return self.create_conversation(title=title, scope=scope, kb_id=kb_id, doc_id=doc_id)
+
+        resp = self._http.post(
+            "/conversations/draft",
+            json={"title": title, "scope": scope, "knowledge_base_id": kb_id, "document_id": doc_id},
+        )
+        if resp.status_code not in (200, 201):
+            raise ValueError("Failed to get or create conversation draft.")
+        data = resp.json()
+        return ConversationDetailDTO(
+            id=str(data["id"]),
+            title=data["title"],
+            scope=data.get("scope", "ALL_COURSES"),
+            knowledge_base_id=str(data["knowledge_base_id"])
+            if data.get("knowledge_base_id")
+            else None,
+            document_id=str(data["document_id"])
+            if data.get("document_id")
+            else None,
+            created_at=str(data.get("created_at", "")),
+            updated_at=str(data.get("updated_at", "")),
+            messages=[],
         )
 
     def create_conversation(
@@ -2608,6 +2648,26 @@ class _SessionAPIClientProxy:
     def get_session_token(self) -> str | None:
         client = self._get_client()
         return client.get_session_token()
+
+    def get_or_create_draft(
+        self,
+        title: str = "New chat",
+        scope: str = "ALL_COURSES",
+        kb_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> ConversationDetailDTO:
+        client = self._get_client()
+        return client.get_or_create_draft(title=title, scope=scope, kb_id=kb_id, doc_id=doc_id)
+
+    def create_conversation(
+        self,
+        title: str = "New chat",
+        scope: str = "ALL_COURSES",
+        kb_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> ConversationDetailDTO:
+        client = self._get_client()
+        return client.create_conversation(title=title, scope=scope, kb_id=kb_id, doc_id=doc_id)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._get_client(), name)

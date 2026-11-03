@@ -14,8 +14,14 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
-from backend.app.api.deps import AuthenticatedUser, DatabaseSession
+from backend.app.api.deps import (
+    AuthenticatedUser,
+    DatabaseSession,
+    get_authorized_document,
+    get_authorized_knowledge_base,
+)
 from backend.app.models.conversation import ChatMessage, Conversation
+from backend.app.models.user import User
 from backend.app.schemas.conversation import (
     ChatMessageResponseDTO,
     ConversationDetailDTO,
@@ -80,6 +86,141 @@ def list_conversations(
             )
         )
     return summaries
+
+
+@router.post(
+    "/draft",
+    response_model=ConversationDetailDTO,
+    status_code=status.HTTP_200_OK,
+    summary="Get or create the canonical empty New chat draft for the authenticated user",
+)
+def get_or_create_draft(
+    payload: CreateConversationRequest,
+    current_user: AuthenticatedUser,
+    db: DatabaseSession,
+) -> ConversationDetailDTO:
+    """
+    Idempotent, concurrency-safe account-level draft lifecycle operation.
+    Guarantees at most ONE canonical, reusable, empty 'New chat' draft per account.
+    Reuses existing empty draft if present; creates exactly one if none exists.
+    Transactionally cleans up any duplicate older empty drafts.
+    """
+    # 1. Acquire row-level lock on current user to serialize draft checks across concurrent sessions/tabs
+    try:
+        db.query(User).filter(User.id == current_user.id).with_for_update().first()
+    except Exception:
+        # Graceful fallback if dialect does not support with_for_update
+        pass
+
+    # 2. Search only this user's conversations for eligible empty drafts (0 ChatMessages, New chat title)
+    msg_count_subq = (
+        db.query(
+            ChatMessage.conversation_id,
+            func.count(ChatMessage.id).label("m_count"),
+        )
+        .group_by(ChatMessage.conversation_id)
+        .subquery()
+    )
+
+    candidate_drafts = (
+        db.query(Conversation)
+        .outerjoin(msg_count_subq, Conversation.id == msg_count_subq.c.conversation_id)
+        .filter(
+            Conversation.user_id == current_user.id,
+            Conversation.title.in_(["New chat", "New Conversation"]),
+            func.coalesce(msg_count_subq.c.m_count, 0) == 0,
+        )
+        .order_by(
+            Conversation.updated_at.desc(),
+            Conversation.created_at.desc(),
+            Conversation.id.desc(),
+        )
+        .all()
+    )
+
+    # 3. Resolve requested scope securely
+    req_scope = (payload.scope or "ALL_COURSES").upper()
+    target_scope = "ALL_COURSES"
+    target_kb_id: uuid.UUID | None = None
+    target_doc_id: uuid.UUID | None = None
+
+    if req_scope == "COURSE" and payload.knowledge_base_id:
+        try:
+            kb = get_authorized_knowledge_base(payload.knowledge_base_id, current_user, db)
+            target_scope = "COURSE"
+            target_kb_id = kb.id
+        except Exception:
+            pass
+    elif req_scope == "DOCUMENT" and payload.knowledge_base_id and payload.document_id:
+        try:
+            doc = get_authorized_document(
+                document_id=payload.document_id,
+                knowledge_base_id=payload.knowledge_base_id,
+                current_user=current_user,
+                db=db,
+            )
+            target_scope = "DOCUMENT"
+            target_kb_id = doc.knowledge_base_id
+            target_doc_id = doc.id
+        except Exception:
+            pass
+
+    if candidate_drafts:
+        canonical_draft = candidate_drafts[0]
+
+        # Clean up any older empty duplicate rows transactionally
+        if len(candidate_drafts) > 1:
+            for dup in candidate_drafts[1:]:
+                logger.info(
+                    "Cleaning up duplicate empty draft %s for user %s",
+                    dup.id,
+                    current_user.id,
+                )
+                db.delete(dup)
+
+        # Update scope if requested
+        if payload.scope is not None or payload.knowledge_base_id is not None or payload.document_id is not None:
+            canonical_draft.scope = target_scope
+            canonical_draft.knowledge_base_id = target_kb_id
+            canonical_draft.document_id = target_doc_id
+
+        canonical_draft.updated_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(canonical_draft)
+
+        return ConversationDetailDTO(
+            id=canonical_draft.id,
+            title=canonical_draft.title,
+            scope=canonical_draft.scope,
+            knowledge_base_id=canonical_draft.knowledge_base_id,
+            document_id=canonical_draft.document_id,
+            created_at=canonical_draft.created_at,
+            updated_at=canonical_draft.updated_at,
+            messages=[],
+        )
+
+    # 4. No eligible empty draft exists: create exactly one
+    conv = Conversation(
+        user_id=current_user.id,
+        title="New chat",
+        scope=target_scope,
+        knowledge_base_id=target_kb_id,
+        document_id=target_doc_id,
+    )
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+
+    return ConversationDetailDTO(
+        id=conv.id,
+        title=conv.title,
+        scope=conv.scope,
+        knowledge_base_id=conv.knowledge_base_id,
+        document_id=conv.document_id,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        messages=[],
+    )
 
 
 @router.post(
