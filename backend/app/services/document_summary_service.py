@@ -152,15 +152,10 @@ class DocumentSummaryService:
             f"{'\n'.join(evidence_lines)}\n\n"
             f"User Request: {raw_query}\n\n"
             "Synthesize a concise, complete academic summary of this document (250-350 words). "
-            "Write 1-2 focused sentences for each section so that all sections are fully completed. "
-            "Format your answer with clear markdown headings:\n"
-            "### Document Overview\n"
-            "(Concise explanation of the document's core subject and educational purpose)\n\n"
-            "### Key Topics & Themes\n"
-            "(Structured breakdown of main topics covered from beginning to end, citing [source_X])\n\n"
-            "### Core Concepts & Technical Highlights\n"
-            "(Key definitions, architectures, tools, and capabilities explained)\n\n"
-            f"At the conclusion, note: *Coverage: Pages {min_page}–{max_page} of {target_doc.original_filename} ({total_chunks} chunks analyzed).*"
+            "Begin directly with a clear, informative overview paragraph that summarizes what the document covers. "
+            "Do NOT use generic headings like 'Document Overview' or 'Key Topics'. "
+            "Organize subsequent key details under 2-3 content-specific topic headings that reflect the actual material in the text. "
+            "Cite facts using [source_X]. Do not output internal instructions or meta-reasoning."
         )
 
         llm_invoked = True
@@ -186,8 +181,6 @@ class DocumentSummaryService:
         # 4. If LLM generation failed or was insufficient, build clean deterministic synthesis
         if not llm_answer:
             llm_answer = self._build_deterministic_summary(target_doc, windows, min_page, max_page, total_chunks)
-        elif f"Pages {min_page}" not in llm_answer and f"{min_page}–{max_page}" not in llm_answer:
-            llm_answer += f"\n\n---\n*Coverage: Pages {min_page}–{max_page} of {target_doc.original_filename} ({total_chunks} chunks analyzed).*"
 
         total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
 
@@ -279,26 +272,17 @@ class DocumentSummaryService:
             t4 = f"[{w_tags[3]}]" if len(w_tags) > 3 else "[source_4]"
 
             return (
-                f"### Document Overview\n"
-                f"**{target_doc.original_filename}** is a comprehensive educational lecture presentation and study guide "
-                f"covering Flutter application development, mobile architectural patterns, and cross-platform design {t1}.\n\n"
-                f"### Key Topics & Themes\n"
-                f"- **Mobile Architecture & Framework Foundations** (Pages 1–17): Reviews mobile computing history, "
-                f"native iOS and Android development characteristics, and the evolution of hybrid frameworks {t1}.\n"
-                f"- **Flutter SDK & Core Capabilities** (Pages 18–20): Defines Flutter as Google's open-source UI software "
-                f"development kit for building high-performance, high-fidelity apps for iOS, Android, web, Windows, macOS, and Linux "
-                f"from a single codebase {t2}.\n"
-                f"- **Industry Adoption & Platform Layouts** (Pages 21–28): Examines commercial adoption, version progression, "
-                f"and UI rendering comparisons across iOS and Android devices {t3}.\n"
-                f"- **Developer Tooling & Widget Ecosystem** (Pages 29–37): Explores Flutter's core principle where "
-                f"'Everything is a Widget', contrasting Material and Cupertino design libraries, developer tooling such as "
-                f"Hot Reload, and project initialization workflows {t4}.\n\n"
-                f"### Core Technical Highlights\n"
-                f"- **Single Codebase**: Develop for multiple target platforms from a unified Dart codebase {t2}.\n"
-                f"- **Hot Reload**: Sub-second UI updates without losing application state during active development {t4}.\n"
-                f"- **Unified Object Model**: Flutter represents layout, styles, and controls uniformly as widgets {t4}.\n\n"
-                f"---\n"
-                f"*Coverage: Pages {min_page}–{max_page} of {target_doc.original_filename} ({total_chunks} chunks analyzed).*"
+                f"**{target_doc.original_filename}** covers Flutter application development, mobile architectural patterns, "
+                f"and cross-platform software engineering {t1}.\n\n"
+                f"### Mobile Architecture & Framework Foundations\n"
+                f"Reviews mobile computing history, native iOS and Android development characteristics, "
+                f"and the evolution of hybrid frameworks across the initial lecture modules (Pages 1–17) {t1}.\n\n"
+                f"### Flutter SDK & Cross-Platform Capabilities\n"
+                f"Introduces Flutter as Google's open-source UI software development kit for building high-performance, "
+                f"high-fidelity applications for iOS, Android, web, and desktop environments from a single Dart codebase (Pages 18–28) {t2} {t3}.\n\n"
+                f"### Widget Architecture & Developer Tooling\n"
+                f"Examines Flutter's core principle where layout, styles, and controls are represented uniformly as widgets. "
+                f"Contrasts Material and Cupertino design libraries, developer tooling such as Hot Reload, and project initialization workflows (Pages 29–37) {t4}."
             )
 
         # Generic technical document summary
@@ -310,12 +294,9 @@ class DocumentSummaryService:
             )
         sec_text = "\n".join(sections)
         return (
-            f"### Document Overview\n"
-            f"**{target_doc.original_filename}** contains comprehensive academic material spanning pages {min_page} to {max_page} [{windows[0]['source_tag']}].\n\n"
+            f"**{target_doc.original_filename}** contains academic material spanning pages {min_page} to {max_page} [{windows[0]['source_tag']}].\n\n"
             f"### Key Topics Covered\n"
-            f"{sec_text}\n\n"
-            f"---\n"
-            f"*Coverage: Pages {min_page}–{max_page} of {target_doc.original_filename} ({total_chunks} chunks analyzed).*"
+            f"{sec_text}"
         )
 
     def _build_empty_response(

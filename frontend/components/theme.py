@@ -352,38 +352,74 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     outline-offset: 2px !important;
 }
 
-/* Markdown Rendering with High Readability */
+/* Markdown Rendering with High Readability and Scoped Typography */
 .safe-markdown {
     display: block !important;
     width: 100% !important;
     min-width: 0 !important;
     align-self: stretch !important;
-    line-height: 1.7;
-    font-size: 0.95rem;
-    color: #0E1D61;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    line-height: 1.7 !important;
+    font-size: 1rem !important;
+    color: #0E1D61 !important;
     word-break: break-word;
     overflow-wrap: anywhere;
     max-width: 100%;
     box-sizing: border-box;
 }
 
-.safe-markdown h1, .safe-markdown h2, .safe-markdown h3, .safe-markdown h4 {
-    font-family: 'Source Serif 4', Georgia, serif;
-    color: #0E1D61;
-    margin-top: 1.25rem;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
+.safe-markdown h1 {
+    font-family: 'Source Serif 4', Georgia, serif !important;
+    font-size: 1.5rem !important;
+    line-height: 1.3 !important;
+    color: #0E1D61 !important;
+    margin-top: 1.25rem !important;
+    margin-bottom: 0.5rem !important;
+    font-weight: 600 !important;
+}
+
+.safe-markdown h2 {
+    font-family: 'Source Serif 4', Georgia, serif !important;
+    font-size: 1.3125rem !important;
+    line-height: 1.35 !important;
+    color: #0E1D61 !important;
+    margin-top: 1.15rem !important;
+    margin-bottom: 0.45rem !important;
+    font-weight: 600 !important;
+}
+
+.safe-markdown h3 {
+    font-family: 'Source Serif 4', Georgia, serif !important;
+    font-size: 1.125rem !important;
+    line-height: 1.4 !important;
+    color: #0E1D61 !important;
+    margin-top: 1rem !important;
+    margin-bottom: 0.4rem !important;
+    font-weight: 600 !important;
+}
+
+.safe-markdown h4 {
+    font-family: 'Source Serif 4', Georgia, serif !important;
+    font-size: 1rem !important;
+    line-height: 1.4 !important;
+    color: #0E1D61 !important;
+    margin-top: 0.85rem !important;
+    margin-bottom: 0.35rem !important;
+    font-weight: 600 !important;
 }
 
 .safe-markdown p {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-size: 1rem !important;
+    line-height: 1.7 !important;
     max-width: 100%;
-    margin-bottom: 0.85rem;
+    margin-bottom: 0.85rem !important;
     word-break: break-word;
     overflow-wrap: anywhere;
 }
 
 .safe-markdown p:last-child {
-    margin-bottom: 0;
+    margin-bottom: 0 !important;
 }
 
 .safe-markdown ul {
@@ -404,8 +440,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 .safe-markdown li {
     display: list-item !important;
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-size: 1rem !important;
     margin-bottom: 0.35rem !important;
-    line-height: 1.6 !important;
+    line-height: 1.65 !important;
     word-break: break-word !important;
     overflow-wrap: anywhere !important;
 }
@@ -415,7 +453,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     color: #0E1D61;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
-    font-size: 0.825rem;
+    font-size: 0.875rem;
     font-family: 'JetBrains Mono', monospace;
     border: 1px solid #D8CFBF;
     word-break: break-word;
@@ -449,6 +487,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     overflow-x: auto;
     border-collapse: collapse;
     margin-bottom: 0.85rem;
+}
+
+.safe-markdown th, .safe-markdown td {
+    border: 1px solid #D8CFBF;
+    padding: 0.45rem 0.75rem;
+    text-align: left;
+}
+
+.safe-markdown th {
+    background-color: #F5F0E8;
+    font-weight: 600;
+    color: #0E1D61;
 }
 
 /* Chat Layout Restraints - Prohibit horizontal scrolling and guarantee vertical timeline */

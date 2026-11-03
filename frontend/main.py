@@ -271,12 +271,13 @@ def init_ui() -> None:
 
 
 if __name__ in {"__main__", "__mp_main__"}:
+    import os
     init_ui()
     ui.run(
         title=settings.APP_NAME,
         port=8080,
         show=False,
-        reload=settings.DEBUG,
+        reload=settings.DEBUG and not os.environ.get("NO_RELOAD"),
         favicon="🎓",
         storage_secret=settings.SECRET_KEY,
         reconnect_timeout=300.0,

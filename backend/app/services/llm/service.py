@@ -505,6 +505,23 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
     # 1. Strip private reasoning channels and <think> blocks
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
+    # Protect code blocks and tables from line-level stripping, capitalizing, or flattening
+    code_blocks: list[str] = []
+
+    def _save_cb(m: re.Match) -> str:
+        code_blocks.append(m.group(0))
+        return f"\n\n__CODE_BLOCK_{len(code_blocks)-1}__\n\n"
+
+    cleaned = re.sub(r"(?s)(?:```|~~~).*?(?:```|~~~)", _save_cb, cleaned)
+
+    tables: list[str] = []
+
+    def _save_tb(m: re.Match) -> str:
+        tables.append(m.group(0).strip())
+        return f"\n\n__TABLE_BLOCK_{len(tables)-1}__\n\n"
+
+    cleaned = re.sub(r"(?m)^(?:\|[^\n]+\|\s*(?:\r?\n|$)){2,}", _save_tb, cleaned)
+
     # 2. Check for explicit conclusion marker, unless content already contains an itemized list
     raw_lines = cleaned.splitlines()
     has_itemized_list = any(re.match(r"^\s*[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line) for line in raw_lines)
@@ -584,7 +601,7 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         re.IGNORECASE,
     )
     boilerplate_intro_regex = re.compile(
-        r"^(?:Based (?:solely )?on (?:the |all |\[?source_\d+\]? )?.*?(?:documents|context|evidence|materials|syllabus|source_\d+)?\.?,?\s*|According to (?:the |all )?.*?(?:documents|context|evidence|materials|syllabus),?\s*)",
+        r"^(?:Based (?:solely )?on (?:the |all |\[?source_\d+\]? )?(?:[A-Za-z0-9_-]+\s+){0,4}(?:documents?|context|evidence|materials?|syllabus|source_\d+)\.?,?\s*|According to (?:the |all )?(?:[A-Za-z0-9_-]+\s+){0,4}(?:documents?|context|evidence|materials?|syllabus)\.?,?\s*)",
         re.IGNORECASE,
     )
 
@@ -702,6 +719,11 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
     for line in lines:
         s = line.strip()
         if not s:
+            if kept_lines and kept_lines[-1] != "":
+                kept_lines.append("")
+            continue
+        if s.startswith("__CODE_BLOCK_") or s.startswith("__TABLE_BLOCK_"):
+            kept_lines.append(s)
             continue
         if reasoning_step_regex.search(s):
             continue
@@ -771,6 +793,10 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
 
     formatted_lines: list[str] = []
     for line in kept_lines:
+        if line == "":
+            if formatted_lines and formatted_lines[-1] != "":
+                formatted_lines.append("")
+            continue
         is_bullet = bool(re.match(r"^(?:[-*•▪●▸]|\d+\.)\s+", line.strip()))
         if is_bullet and formatted_lines:
             prev_is_bullet = bool(re.match(r"^(?:[-*•▪●▸]|\d+\.)\s+", formatted_lines[-1].strip()))
@@ -778,158 +804,138 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
                 formatted_lines.append("")
         formatted_lines.append(line)
 
-    is_list_like = any(
-        re.match(r"^(?:step\s*\d+|[-*•▪●▸]|\d+\.)", line, re.IGNORECASE)
-        for line in kept_lines
+    # 4b. Block-aware Markdown Processing
+    # Preserves block boundaries (headings, paragraphs, lists, tables, code blocks)
+    # and executes sentence-level filtering ONLY on prose paragraph blocks.
+
+    # 1. Normalize headings: ensure headings have blank lines before and after,
+    # and separate inline text if heading was combined on same line.
+    source_text = "\n".join(formatted_lines).strip() or cleaned
+    norm_text = re.sub(
+        r'(?m)^(#{1,6}\s+[A-Za-z0-9\s&/\'\-]{2,50}?)(?:\s*[:—–-]\s*|\.\s+|\s{2,})([A-Z][^\n]+)$',
+        r'\1\n\n\2',
+        source_text,
     )
-    if is_list_like:
-        result = "\n".join(formatted_lines).strip()
+    norm_text = re.sub(r'(?m)^(#{1,6}\s+[^\n]+)$', r'\n\n\1\n\n', norm_text)
+
+    # 2. Split into distinct blocks by double newlines
+    raw_blocks = [b.strip() for b in re.split(r'\n{2,}', norm_text) if b.strip()]
+    cleaned_blocks: list[str] = []
+    has_sources_originally = bool(re.search(r'\[source_\d+\]', cleaned, re.IGNORECASE))
+
+    prefix_clean_regex = re.compile(
+        r'^(?:'
+        r'specifically,?\s*(?:\[source_\d+\])?\s*|'
+        r'also,?\s*(?:it\s+says|it\s+states)?\s*:?\s*\"?|'
+        r'it\s+(?:states|says|provides)\s*:?\s*\"?|'
+        r'and\s*:?\s*\"?|'
+        r'we\s+(?:write|can\s+write)\s*:?\s*\"?|'
+        r'based\s+(?:solely\s+)?on\s+(?:\[?source_\d+\]?|[^\n.]+?)\.?\s*\"?|'
+        r'the\s+key\s+(?:fact|sentence)\s*(?:from\s+\[[^\]]+\])?\s*:?\s*\"?|'
+        r'in\s+addition,?\s*\"?|'
+        r'further,?\s*\"?'
+        r')',
+        re.IGNORECASE,
+    )
+    pure_meta_patterns = (
+        "so, the definition", "so the definition", "is primarily in",
+        "also, note that", "also note that", "note that", "mentions that",
+        "the question is:", "what is flutter", "we need to", "we should",
+        "we write", "we can write", "based solely on", "based on source",
+        "extract the facts", "directly answer", "to answer this question",
+        "to answer the question", "not directly answering", "not directly about",
+        "not what it is", "not what flutter is", "not what ", "this is about",
+        "not the definition", "who is using", "who uses it, not",
+        "the most direct answer", "the direct answer", "lists companies",
+        "about widgets", "about hot reload", "(but note:", "focuses on",
+        "so we should focus on", "talks about", "does not define",
+        "doesn't define", "do not invent", "extrapolate", "core directive",
+        "directive says", "grounding:", "the only evidence",
+        "evidence that defines", "the only source", "only source that",
+        "evidence chunk", "is labeled as", "we are to cite", "we are to",
+        "source tags", "exact source tags", "the instruction says",
+        "instruction says", "the instruction", "state the factual answer",
+        "very first sentence", "we are instructed", "we must cite",
+        "according to the instruction", "per the instruction", "the prompt says",
+        "the evidence chunk", "labeled as [source", "labeled as source",
+    )
+
+    for block in raw_blocks:
+        if block.startswith("__CODE_BLOCK_"):
+            cleaned_blocks.append(block)
+        elif block.startswith("__TABLE_BLOCK_"):
+            cleaned_blocks.append(block)
+        # Check if block is a heading
+        elif re.match(r'^#{1,6}\s+', block):
+            # Strip generic boilerplate headings (Document Overview, Overview, Executive Summary)
+            if re.match(r'^#{1,6}\s+(?:Document\s+Overview|Overview|Executive\s+Summary)\b', block, re.IGNORECASE):
+                continue
+            h_clean = re.sub(r'[:.]\s*$', '', block).strip()
+            cleaned_blocks.append(h_clean)
+        # Check if code block
+        elif block.startswith('```') or block.startswith('~~~'):
+            cleaned_blocks.append(block)
+        # Check if table
+        elif block.startswith('|') and '\n|' in block:
+            cleaned_blocks.append(block)
+        # Check if horizontal rule
+        elif re.match(r'^[-*_]{3,}\s*$', block):
+            cleaned_blocks.append(block)
+        # Check if list block
+        elif any(re.match(r'^(?:[-*•▪●▸]|\d+\.)\s+', l.strip()) for l in block.splitlines()):
+            # Keep list lines intact, filtering any pure reasoning lines
+            lines = [l.strip() for l in block.splitlines() if l.strip()]
+            cleaned_blocks.append('\n'.join(lines))
+        else:
+            # Prose paragraph: collapse inner newlines then clean sentences
+            p_single_line = ' '.join(block.splitlines())
+            # Unwrap definition quotes
+            p_single_line = re.sub(
+                r'(?:The key (?:fact|sentence) (?:from \[[^\]]+\]\s*)?is:?|The key (?:fact|sentence):?|The definition (?:of [^.]+)? is:?)\s*\"([^\"]+)\"',
+                r'\1',
+                p_single_line,
+                flags=re.IGNORECASE,
+            )
+            raw_sentences = re.split(r'(?<=[.!?\]"\'”])\s+(?=[A-Z"\(“])', p_single_line)
+            filtered_sentences: list[str] = []
+
+            for sent in raw_sentences:
+                s = sent.strip()
+                if not s:
+                    continue
+                s_unwrapped = prefix_clean_regex.sub("", s).strip()
+                if s_unwrapped.count('"') % 2 != 0:
+                    s_unwrapped = re.sub(r'\"(?=\s*\[source_\d+\])', "", s_unwrapped)
+                    s_unwrapped = s_unwrapped.rstrip('"\'.').strip()
+                if not s_unwrapped:
+                    continue
+                s_clean = s_unwrapped.lower()
+                if any(p in s_clean for p in pure_meta_patterns):
+                    continue
+                words = set(re.findall(r"\b[a-z]{4,}\b", s_clean))
+                is_dup = False
+                for prev in filtered_sentences:
+                    prev_words = set(re.findall(r"\b[a-z]{4,}\b", prev.lower()))
+                    if len(words) >= 3 and len(words & prev_words) / len(words) > 0.70:
+                        is_dup = True
+                        break
+                if is_dup:
+                    continue
+                s_final = s_unwrapped[0].upper() + s_unwrapped[1:]
+                # In single-paragraph answers, if source was stripped, retain source_1
+                if len(raw_blocks) == 1 and has_sources_originally and not re.search(r'\[source_\d+\]', s_final):
+                    s_final += ' [source_1]'
+                if not s_final.endswith('.'):
+                    s_final += '.'
+                filtered_sentences.append(s_final)
+
+            if filtered_sentences:
+                cleaned_blocks.append(" ".join(filtered_sentences).strip())
+
+    if cleaned_blocks:
+        candidate_answer = "\n\n".join(cleaned_blocks).strip()
     else:
-        # Group into paragraphs while joining multi-line sentences within each paragraph
-        paragraphs: list[str] = []
-        current_p: list[str] = []
-        for line in formatted_lines:
-            if not line.strip():
-                if current_p:
-                    paragraphs.append(" ".join(current_p))
-                    current_p = []
-            else:
-                current_p.append(line.strip())
-        if current_p:
-            paragraphs.append(" ".join(current_p))
-        result = "\n\n".join(paragraphs).strip()
-    candidate_answer = result if result else cleaned
-
-    # 4b. Sentence-level reasoning and meta-evaluation filter
-    # Eliminates mid-paragraph deliberation phrases and unwraps quoted facts (only for prose paragraphs)
-    if not is_list_like:
-        candidate_answer = re.sub(
-            r'(?:The key (?:fact|sentence) (?:from \[[^\]]+\]\s*)?is:?|The key (?:fact|sentence):?|The definition (?:of [^.]+)? is:?)\s*\"([^\"]+)\"',
-            r'\1',
-            candidate_answer,
-            flags=re.IGNORECASE,
-        )
-        prefix_clean_regex = re.compile(
-            r'^(?:'
-            r'specifically,?\s*(?:\[source_\d+\])?\s*|'
-            r'also,?\s*(?:it\s+says|it\s+states)?\s*:?\s*\"?|'
-            r'it\s+(?:states|says|provides)\s*:?\s*\"?|'
-            r'and\s*:?\s*\"?|'
-            r'we\s+(?:write|can\s+write)\s*:?\s*\"?|'
-            r'based\s+(?:solely\s+)?on\s+(?:\[?source_\d+\]?|[^\n.]+?)\.?\s*\"?|'
-            r'the\s+key\s+(?:fact|sentence)\s*(?:from\s+\[[^\]]+\])?\s*:?\s*\"?|'
-            r'in\s+addition,?\s*\"?|'
-            r'further,?\s*\"?'
-            r')',
-            re.IGNORECASE,
-        )
-        pure_meta_patterns = (
-            "so, the definition",
-            "so the definition",
-            "is primarily in",
-            "also, note that",
-            "also note that",
-            "note that",
-            "mentions that",
-            "the question is:",
-            "what is flutter",
-            "we need to",
-            "we should",
-            "we write",
-            "we can write",
-            "based solely on",
-            "based on source",
-            "extract the facts",
-            "directly answer",
-            "to answer this question",
-            "to answer the question",
-            "not directly answering",
-            "not directly about",
-            "not what it is",
-            "not what flutter is",
-            "not what ",
-            "this is about",
-            "not the definition",
-            "who is using",
-            "who uses it, not",
-            "the most direct answer",
-            "the direct answer",
-            "lists companies",
-            "about widgets",
-            "about hot reload",
-            "(but note:",
-            "focuses on",
-            "so we should focus on",
-            "talks about",
-            "does not define",
-            "doesn't define",
-            "do not invent",
-            "extrapolate",
-            "core directive",
-            "directive says",
-            "grounding:",
-            "the only evidence",
-            "evidence that defines",
-            "the only source",
-            "only source that",
-            "evidence chunk",
-            "is labeled as",
-            "we are to cite",
-            "we are to",
-            "source tags",
-            "exact source tags",
-            "the instruction says",
-            "instruction says",
-            "the instruction",
-            "state the factual answer",
-            "very first sentence",
-            "we are instructed",
-            "we must cite",
-            "according to the instruction",
-            "per the instruction",
-            "the prompt says",
-            "the evidence chunk",
-            "labeled as [source",
-            "labeled as source",
-        )
-        raw_sentences = re.split(r'(?<=[.!?\]"\'”])\s+(?=[A-Z"\(“])', candidate_answer)
-        filtered_sentences: list[str] = []
-        has_sources_originally = bool(re.search(r'\[source_\d+\]', candidate_answer, re.IGNORECASE))
-        for sent in raw_sentences:
-            s = sent.strip()
-            if not s:
-                continue
-            # Strip meta prefixes
-            s_unwrapped = prefix_clean_regex.sub("", s).strip()
-            # Only strip unclosed quote if quote count is odd
-            if s_unwrapped.count('"') % 2 != 0:
-                s_unwrapped = re.sub(r'\"(?=\s*\[source_\d+\])', "", s_unwrapped)
-                s_unwrapped = s_unwrapped.rstrip('"\'.').strip()
-            if not s_unwrapped:
-                continue
-            # Check if unwrapped sentence is pure meta-deliberation
-            s_clean = s_unwrapped.lower()
-            if any(p in s_clean for p in pure_meta_patterns):
-                continue
-            words = set(re.findall(r"\b[a-z]{4,}\b", s_clean))
-            is_dup = False
-            for prev in filtered_sentences:
-                prev_words = set(re.findall(r"\b[a-z]{4,}\b", prev.lower()))
-                if len(words) >= 3 and len(words & prev_words) / len(words) > 0.70:
-                    is_dup = True
-                    break
-            if is_dup:
-                continue
-            # Capitalize and normalize punctuation
-            s_final = s_unwrapped[0].upper() + s_unwrapped[1:]
-            if has_sources_originally and not re.search(r'\[source_\d+\]', s_final):
-                s_final += ' [source_1]'
-            if not s_final.endswith('.'):
-                s_final += '.'
-            filtered_sentences.append(s_final)
-
-        if filtered_sentences:
-            candidate_answer = " ".join(filtered_sentences).strip()
+        candidate_answer = cleaned
 
     # 5. Normalize citation tags to canonical lower-case [source_X]
     canonical_answer = re.sub(
@@ -945,7 +951,12 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         canonical_answer,
     )
     formatted = format_inline_list_items(canonical_answer, query=query)
-    return deduplicate_list_citations(formatted)
+    result = deduplicate_list_citations(formatted)
+    for i, cb in enumerate(code_blocks):
+        result = result.replace(f"__CODE_BLOCK_{i}__", cb)
+    for i, tb in enumerate(tables):
+        result = result.replace(f"__TABLE_BLOCK_{i}__", tb)
+    return result
 
 
 class LLMGenerationService:

@@ -2,7 +2,40 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase -- 2026-11-02
+## Current authoritative phase -- 2026-11-03
+
+**PHASE 24 -- NATURAL ANSWER FORMATTING, CLEAN CITATION PRESENTATION & ADMIN OVERVIEW REDESIGN (COMPLETED & VERIFIED)**
+
+### Summary of Accomplishments & Architectural Solutions
+
+1. **Markdown Block Preservation (Defects 1 & 2 Resolved):**
+   - **Root Cause**: `_sanitize_llm_answer()` in `backend/app/services/llm/service.py` previously flattened sanitized sentences into a single string (`" ".join(filtered_sentences)`), discarding newlines, merging `###` headings with following paragraphs, and creating a giant serif block with literal `###` markers in user-facing text.
+   - **Solution**: Refactored `_sanitize_llm_answer()` into a Markdown block-aware pipeline. Fenced code blocks (``` / ~~~) and Markdown tables are placeholder-protected (`__CODE_BLOCK_X__`, `__TABLE_BLOCK_X__`) to prevent syntax distortion, keyword capitalization, or line-flattening. Paragraph blocks are separated by double newlines (`\n\n`), headings are isolated on dedicated lines with bounding blank lines, vertical lists are preserved intact, and sentence-level filtering executes strictly on prose paragraphs.
+
+2. **Natural Summary Scaffolding (Defect 3 Resolved):**
+   - **Root Cause**: Summaries previously enforced rigid boilerplate templates starting with `### Document Overview` and appended a raw audit footer (`*Coverage: Pages 1–37...*`) in student prose.
+   - **Solution**: Updated `DocumentSummaryService` (`backend/app/services/document_summary_service.py`), `prompt_builder.py`, and deterministic fallback routines to begin directly with a concise, informative opening overview paragraph, followed by content-specific topic headings only where helpful. Coverage telemetry and chunk counts are retained exclusively in structured metadata.
+
+3. **Clean Citation Presentation (Defect 4 Resolved):**
+   - **Root Cause**: Inline badges (`[1]`, `[2]`, `[source_1]`) interrupted student reading and created clutter.
+   - **Solution**: Added `strip_citation_markers()` in `frontend/client/citations.py` and updated `format_citation_links()` in `frontend/pages/chat_page.py` with `inline_badges=False` as the default chat renderer. Answer prose reads naturally without orphaned spaces before punctuation, while all citation objects, chunk mappings, page references, and the interactive `Cited Sources` drawer with `Inspect Provenance` and source-viewer navigation remain 100% functional.
+
+4. **Chat-Scoped Typography (`.safe-markdown`):**
+   - **Solution**: Configured explicit, scoped typography rules in `frontend/components/theme.py` for `.safe-markdown` (h1: 24px, h2: 21px, h3: 18px, h4: 16px, p: 16px / 1rem, li: 16px, line-height 1.3–1.7, clean table borders and code blocks) without leaking into global page headings.
+
+5. **Administrator Overview Redesign (`/dashboard`) (Defect 5 Resolved):**
+   - **Root Cause**: `/dashboard` was previously capped at `max-w-5xl` (1024px) with micro-typography (`text-xs`, `text-[11px]`, `text-[10px]`), resulting in excessive unused whitespace and cramped rows.
+   - **Solution**: Widened `/dashboard` in `frontend/pages/dashboard_page.py` to `max-w-7xl` (1280–1440px). Scaled operational typography to comfortable sizes (card headers 16–18px font-bold, course names 14–16px, document counts 12–13px, indexing progress 14–16px, activity ledger 12–14px). Preserved truthful operational telemetry, status board states, retry/refresh controls, RBAC permissions, and student redirection (`/dashboard` -> `/chat`).
+
+### Verification & Automated Test Suites
+- `backend/tests/unit/test_phase24_formatting_and_admin_overview.py`: **13 passed, 0 failed (100%)**
+- `backend/tests/unit/test_frontend.py`: **44 passed, 0 failed (100%)**
+- `backend/tests/frontend/unit/test_admin_overview_and_navigation_contracts.py` & `test_admin_part10b_health_admin_users_and_overview.py`: **48 passed, 0 failed (100%)**
+- `backend/tests/frontend/unit/test_student_dashboard_contracts.py`: **35 passed, 0 failed (100%)**
+
+---
+
+## Prior authoritative phase -- 2026-11-02
 
 **PHASE 23 -- END-TO-END LLM GROUNDED ANSWER QUALITY & WHOLE-DOCUMENT SUMMARIZATION (COMPLETED & VERIFIED)**
 

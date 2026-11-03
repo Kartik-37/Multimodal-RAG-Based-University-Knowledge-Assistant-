@@ -372,8 +372,9 @@ class TestStudentChatContracts:
         cleaned = _sanitize_llm_answer(uncertainty_msg)
         assert "not enough information" in cleaned
 
-    def test_api_client_concise_vs_detailed_generation_mock(self) -> None:
+    def test_api_client_concise_vs_detailed_generation_mock(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify offline api_client provides concise factual answers by default and detailed answers on request."""
+        monkeypatch.setenv("DEMO_MODE", "1")
         from frontend.client.api_client import api_client
 
         # Default query -> concise direct answer
@@ -395,22 +396,24 @@ class TestStudentChatContracts:
         assert "- **Weekly Laboratory Problem Sets" in msg_detailed.content
         assert len(msg_detailed.citations) > 0
 
-    async def test_selecting_course_changes_actual_query_scope_payload(self) -> None:
+    async def test_selecting_course_changes_actual_query_scope_payload(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify selecting a specific course changes the actual query scope payload and is not merely cosmetic."""
+        monkeypatch.setenv("DEMO_MODE", "1")
         from unittest.mock import MagicMock
 
         from frontend.client.api_client import api_client
         from frontend.state.app_state import AppState
 
         test_state = AppState()
-        original_send = api_client.send_chat_message
+        underlying_client = api_client.get_client() if hasattr(api_client, "get_client") else api_client._get_client()
+        original_send = underlying_client.send_chat_message
         mock_send = MagicMock(return_value=ChatMessageDTO(
             id="test-msg",
             role="assistant",
             content="Direct factual answer [1].",
             citations=[],
         ))
-        api_client.send_chat_message = mock_send
+        underlying_client.send_chat_message = mock_send
         try:
             # 1. Dispatch with ALL_COURSES
             active_scope = {"scope": "ALL_COURSES", "kb_id": None, "doc_id": None}
@@ -419,8 +422,9 @@ class TestStudentChatContracts:
                 question="What is the exam format?",
                 scope=active_scope["scope"],
             )
-            if test_state._active_task:
-                await test_state._active_task
+            gen1 = test_state._generations.get("__draft__")
+            if gen1 and gen1.task:
+                await gen1.task
 
             assert mock_send.call_count >= 1
             last_call = mock_send.call_args[1]
@@ -428,6 +432,7 @@ class TestStudentChatContracts:
             assert last_call["kb_id"] is None
 
             # 2. Transition to COURSE scope with specific course ID
+            test_state._generations.clear()
             selected_course_id = "00000000-0000-0000-0000-000000000099"
             active_scope = {"scope": "COURSE", "kb_id": selected_course_id, "doc_id": None}
             test_state.start_background_generation(
@@ -435,28 +440,31 @@ class TestStudentChatContracts:
                 question="What is the midterm date for this course?",
                 scope=active_scope["scope"],
             )
-            if test_state._active_task:
-                await test_state._active_task
+            gen2 = test_state._generations.get("__draft__")
+            if gen2 and gen2.task:
+                await gen2.task
 
             last_call2 = mock_send.call_args[1]
             assert last_call2["scope"] == "COURSE"
             assert last_call2["kb_id"] == selected_course_id
 
             # 3. Reset to ALL_COURSES
+            test_state._generations.clear()
             active_scope = {"scope": "ALL_COURSES", "kb_id": None, "doc_id": None}
             test_state.start_background_generation(
                 kb_id=active_scope["kb_id"] if active_scope["scope"] in ("COURSE", "DOCUMENT") else None,
                 question="When are tuition fees due across the university?",
                 scope=active_scope["scope"],
             )
-            if test_state._active_task:
-                await test_state._active_task
+            gen3 = test_state._generations.get("__draft__")
+            if gen3 and gen3.task:
+                await gen3.task
 
             last_call3 = mock_send.call_args[1]
             assert last_call3["scope"] == "ALL_COURSES"
             assert last_call3["kb_id"] is None
         finally:
-            api_client.send_chat_message = original_send
+            underlying_client.send_chat_message = original_send
 
     def test_only_authorized_courses_offered_for_selection(self) -> None:
         """Verify inactive or unauthorized courses are excluded from student scope options."""
@@ -737,8 +745,9 @@ class TestStudentChatContracts:
         assert len(app_state.chat_history) == 0
         assert len(api_client.get_conversations()) == 0
 
-    def test_saved_conversation_messages_and_citations_order_preserved(self) -> None:
+    def test_saved_conversation_messages_and_citations_order_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify saved messages preserve role ordering and citation provenance."""
+        monkeypatch.setenv("DEMO_MODE", "1")
         from frontend.client.api_client import api_client
         from frontend.state.app_state import AppState
 

@@ -23,6 +23,7 @@ from frontend.client.citations import (
     SemanticCitationRef,
     group_citations_by_document,
     replace_citation_markers,
+    strip_citation_markers,
 )
 from frontend.client.content_safety import sanitize_markdown_text
 from frontend.client.models import CitationDTO, KnowledgeBaseDTO
@@ -49,16 +50,28 @@ def generate_conversation_title(question: str) -> str:
 
 
 def format_citation_links(
-    text: str, citations: list[CitationDTO], message_id: str = ""
+    text: str,
+    citations: list[CitationDTO],
+    message_id: str = "",
+    inline_badges: bool = True,
 ) -> str:
-    """Format inline citations into interactive pills with stable message-id tracking."""
+    """Format citation markers in text.
+
+    If inline_badges=False, inline citation markers ([1], [source_1]) are
+    stripped from prose to ensure clean, natural reading, while all citations are
+    preserved in the Cited Sources section below.
+    If inline_badges=True, formats inline citations into interactive pills.
+    """
     if not citations or not text:
         return text
+
+    if not inline_badges:
+        return strip_citation_markers(text, citations)
 
     def _render_pill(ref: SemanticCitationRef) -> str:
         idx = ref.index
         cit = ref.citation
-        page_info = f" - Page {cit.page_number}" if cit.page_number else ""
+        page_info = f" • Page {cit.page_number}" if cit.page_number else ""
         title_text = html.escape(
             f"View {cit.document_name}{page_info} in Source Viewer", quote=True
         )
@@ -1151,7 +1164,7 @@ def register_chat_page() -> None:
                                         # Markdown answer content
                                         clean_content = sanitize_markdown_text(
                                             format_citation_links(
-                                                msg.content, msg.citations, message_id=msg.id
+                                                msg.content, msg.citations, message_id=msg.id, inline_badges=False
                                             )
                                         )
                                         ui.markdown(

@@ -536,6 +536,9 @@ class TestMarkdownOutputSecurityUnitContracts:
             )
         ]
         text = "According to the university charter [1]."
+        clean_default = format_citation_links(text, sample_cit, inline_badges=False)
+        assert clean_default == "According to the university charter."
+
         formatted = format_citation_links(text, sample_cit)
         sanitized = sanitize_markdown_text(formatted)
 

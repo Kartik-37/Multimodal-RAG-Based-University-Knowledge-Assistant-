@@ -152,6 +152,41 @@ def replace_citation_markers(
     return CODE_OR_CITATION_PATTERN.sub(_replace_match, text)
 
 
+def strip_citation_markers(text: str, citations: list[CitationDTO] | None = None) -> str:
+    """Strip inline citation markers from text while preserving code blocks and clean punctuation.
+
+    Leaves answer prose reading naturally without inline [1] or [source_1] badges,
+    while removing awkward whitespace before punctuation.
+    """
+    if not text:
+        return ""
+
+    lookup = build_citation_lookup(citations) if citations else None
+
+    def _replace_match(m: re.Match[str]) -> str:
+        if m.group("citation"):
+            if lookup is not None:
+                key = m.group("num").lower()
+                if key in lookup:
+                    return "\x00CIT\x00"
+                # If lookup is active and marker is not in lookup, check if it's a generic source_X tag
+                if m.group("citation").lower().startswith("[source_"):
+                    return "\x00CIT\x00"
+                return m.group(0)
+            return "\x00CIT\x00"
+        return m.group(0)
+
+    out = CODE_OR_CITATION_PATTERN.sub(_replace_match, text)
+    # Remove markers followed by punctuation, newline, or end of string along with preceding spaces
+    out = re.sub(r"[ \t]*(?:\x00CIT\x00[ \t]*)+(?=[.,;:!?\n]|$)", "", out)
+    # Remove markers at line start
+    out = re.sub(r"^(?:[ \t]*\x00CIT\x00[ \t]*)+", "", out, flags=re.MULTILINE)
+    # Replace remaining markers with a single space
+    out = re.sub(r"[ \t]*(?:\x00CIT\x00[ \t]*)+", " ", out)
+    return out
+
+
+
 def group_citations_by_document(
     citations: list[CitationDTO],
 ) -> list[DocumentCitationGroup]:

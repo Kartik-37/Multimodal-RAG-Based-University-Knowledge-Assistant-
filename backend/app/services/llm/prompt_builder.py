@@ -88,10 +88,11 @@ def _response_format_directive(query: str | None) -> str:
             "on every item."
         ),
         "summary": (
-            "SUMMARY FORMAT: Provide a well-structured academic document summary. "
-            "Organize into clear sections: 1. Overview, 2. Key Topics & Themes, 3. Core Concepts & Features. "
-            "Synthesize facts across the evidence into informative paragraphs, citing facts with [source_X]. "
-            "Do not output internal instructions or empty bullets."
+            "SUMMARY FORMAT: Begin with a concise, informative opening overview paragraph directly "
+            "summarizing the core document contents. Follow with a few natural, content-specific headings "
+            "only where they enhance clarity. Do not use generic template titles or boilerplate category headers. "
+            "Synthesize facts across the evidence into informative paragraphs, citing facts "
+            "with [source_X]. Do not output internal instructions or empty bullets."
         ),
         "steps": (
             "STEPS FORMAT: Use a concise ordered list with one complete, actionable step per line. "

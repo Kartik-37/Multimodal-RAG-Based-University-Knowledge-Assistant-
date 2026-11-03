@@ -142,16 +142,16 @@ def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> 
     # =========================================================================
     if system_health_error:
         with ui.row().classes(
-            "w-full items-center justify-between p-3.5 rounded-lg bg-surface-elevated border border-gold/40 gap-3"
+            "w-full items-center justify-between p-4 sm:p-5 rounded-xl bg-surface-elevated border border-gold/40 gap-3"
         ):
-            with ui.row().classes("items-center gap-2.5 min-w-0 flex-1"):
-                ui.icon("warning", size="18px").classes("text-amber-700 shrink-0")
+            with ui.row().classes("items-center gap-3 min-w-0 flex-1"):
+                ui.icon("warning", size="20px").classes("text-amber-700 shrink-0")
                 ui.label(f"Subsystem telemetry probe failed: {system_health_error}").classes(
-                    "text-xs sm:text-sm text-secondary-navy font-medium truncate"
+                    "text-sm sm:text-base text-secondary-navy font-medium truncate"
                 )
             ui.button("Retry Diagnostics", icon="refresh", on_click=on_refresh).props(
                 "outline dense no-caps"
-            ).classes("text-xs font-semibold text-primary-navy border-gold shrink-0")
+            ).classes("text-xs sm:text-sm font-semibold text-primary-navy border-gold shrink-0 px-3 py-1")
     elif system_health:
         status_val = (system_health.status or "unknown").lower()
         if status_val == "healthy":
@@ -186,55 +186,55 @@ def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> 
             status_title = "System Telemetry Status Unknown"
             status_detail = "Subsystem health status could not be established from available telemetry."
 
-        with ui.row().classes(f"w-full flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 sm:p-4 rounded-lg border {strip_bg} gap-2 sm:gap-3"):
-            with ui.row().classes("items-center gap-3 min-w-0 flex-1 w-full sm:w-auto"):
-                ui.label("●").classes(f"text-base {status_dot} leading-none shrink-0")
-                with ui.column().classes("gap-0 min-w-0 flex-1"):
-                    with ui.row().classes("items-center gap-2 flex-wrap"):
-                        ui.label(status_title).classes("text-xs sm:text-sm font-bold font-sans break-words")
+        with ui.row().classes(f"w-full flex-col sm:flex-row items-start sm:items-center justify-between p-4 sm:p-5 rounded-xl border {strip_bg} gap-3"):
+            with ui.row().classes("items-center gap-3.5 min-w-0 flex-1 w-full sm:w-auto"):
+                ui.label("●").classes(f"text-lg {status_dot} leading-none shrink-0")
+                with ui.column().classes("gap-0.5 min-w-0 flex-1"):
+                    with ui.row().classes("items-center gap-2.5 flex-wrap"):
+                        ui.label(status_title).classes("text-sm sm:text-base font-bold font-sans break-words")
                         if system_health.checked_at:
                             ui.label(f"• Verified {system_health.checked_at[:19].replace('T', ' ')}").classes(
-                                "text-[11px] font-mono opacity-70 hidden md:inline"
+                                "text-xs font-mono opacity-70 hidden md:inline"
                             )
-                    ui.label(status_detail).classes("text-xs opacity-85 line-clamp-2 sm:line-clamp-1")
+                    ui.label(status_detail).classes("text-xs sm:text-sm opacity-90 line-clamp-2 sm:line-clamp-1 leading-relaxed")
             if is_main or has_admin_permission(user, Permission.ADMIN_VIEW):
                 ui.button(
                     "Detailed Diagnostics",
                     icon="arrow_forward",
                     on_click=lambda: ui.navigate.to("/system-health"),
                 ).props("flat dense no-caps").classes(
-                    "text-xs font-bold text-primary-navy hover:text-gold shrink-0 px-2 self-start sm:self-auto"
+                    "text-xs sm:text-sm font-bold text-primary-navy hover:text-gold shrink-0 px-3 py-1 self-start sm:self-auto"
                 )
 
     # =========================================================================
     # B. Attention Required (Rendered ONLY when genuine issues exist)
     # =========================================================================
     if failed_jobs:
-        with ui.column().classes("w-full p-4 rounded-lg bg-rose-50/90 border border-rose-300 gap-3"):
+        with ui.column().classes("w-full p-4 sm:p-5 rounded-xl bg-rose-50/90 border border-rose-300 gap-3.5"):
             with ui.row().classes("w-full items-center justify-between"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("error", size="18px").classes("text-rose-700")
+                with ui.row().classes("items-center gap-2.5"):
+                    ui.icon("error", size="20px").classes("text-rose-700")
                     ui.label(f"Attention Required: {len(failed_jobs)} Failed Indexing Job(s)").classes(
-                        "text-xs sm:text-sm font-bold text-rose-950 font-sans tracking-wide"
+                        "text-sm sm:text-base font-bold text-rose-950 font-sans tracking-wide"
                     )
                 if can_index:
                     ui.button(
                         "Open Processing Queue",
                         icon="arrow_forward",
                         on_click=lambda: ui.navigate.to("/documents?view=processing"),
-                    ).props("flat dense no-caps").classes("text-xs font-bold text-rose-900 hover:underline")
+                    ).props("flat dense no-caps").classes("text-xs sm:text-sm font-bold text-rose-900 hover:underline")
 
-            with ui.column().classes("w-full gap-2"):
+            with ui.column().classes("w-full gap-2.5"):
                 for job in failed_jobs[:3]:
                     with ui.row().classes(
-                        "w-full items-center justify-between p-2.5 rounded bg-white/80 border border-rose-200 gap-2"
+                        "w-full items-center justify-between p-3 sm:p-3.5 rounded-lg bg-white/80 border border-rose-200 gap-3"
                     ):
-                        with ui.column().classes("gap-0.5 min-w-0 flex-1"):
+                        with ui.column().classes("gap-1 min-w-0 flex-1"):
                             ui.label(job.document_name or f"Document {job.document_id[:8]}").classes(
-                                "text-xs font-bold text-rose-950 truncate"
+                                "text-sm sm:text-base font-bold text-rose-950 truncate"
                             )
                             ui.label(job.error_message or "Vector embedding synthesis failed").classes(
-                                "text-[11px] text-rose-800 line-clamp-1"
+                                "text-xs sm:text-sm text-rose-800 line-clamp-1"
                             )
                         if can_retry_index:
 
@@ -248,7 +248,7 @@ def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> 
 
                             ui.button("Retry", icon="refresh", on_click=trigger_retry).props(
                                 "outline dense no-caps"
-                            ).classes("text-xs font-bold text-rose-900 border-rose-400 px-2.5 py-0.5")
+                            ).classes("text-xs sm:text-sm font-bold text-rose-900 border-rose-400 px-3 py-1")
 
     # =========================================================================
     # C. Primary Operational Workspace (Balanced 2 Columns on Desktop)
@@ -257,12 +257,12 @@ def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> 
         # ---------------------------------------------------------------------
         # Column 1: Academic Knowledge Repositories (Compact Summary)
         # ---------------------------------------------------------------------
-        with ui.column().classes("w-full p-5 bg-surface-elevated border border-subtle rounded-lg gap-3"):
-            with ui.row().classes("w-full items-center justify-between pb-2.5 border-b border-subtle"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("school", size="18px").classes("text-primary-navy")
+        with ui.column().classes("w-full p-5 sm:p-6 bg-surface-elevated border border-subtle rounded-xl gap-4"):
+            with ui.row().classes("w-full items-center justify-between pb-3 border-b border-subtle"):
+                with ui.row().classes("items-center gap-2.5"):
+                    ui.icon("school", size="20px").classes("text-primary-navy")
                     ui.label("Course Repositories").classes(
-                        "text-sm font-bold text-primary-navy font-editorial"
+                        "text-base sm:text-lg font-bold text-primary-navy font-editorial"
                     )
                 if can_view_courses:
                     ui.button(
@@ -270,65 +270,65 @@ def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> 
                         icon="arrow_forward",
                         on_click=lambda: ui.navigate.to("/knowledge-bases"),
                     ).props("flat dense no-caps").classes(
-                        "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+                        "text-xs sm:text-sm font-semibold text-secondary-navy hover:text-primary-navy"
                     )
 
             if course_summaries_error:
                 with ui.row().classes(
-                    "w-full p-3 rounded bg-canvas border border-subtle text-xs text-secondary-navy justify-between items-center"
+                    "w-full p-3.5 rounded-lg bg-canvas border border-subtle text-xs sm:text-sm text-secondary-navy justify-between items-center"
                 ):
                     ui.label(f"Course summaries unavailable: {course_summaries_error}")
                     ui.button("Retry", icon="refresh", on_click=on_refresh).props(
                         "flat dense no-caps"
-                    ).classes("text-xs font-bold text-primary-navy")
+                    ).classes("text-xs sm:text-sm font-bold text-primary-navy")
             elif course_summaries:
-                with ui.column().classes("w-full gap-0 border border-subtle rounded overflow-hidden"):
+                with ui.column().classes("w-full gap-0 border border-subtle rounded-lg overflow-hidden"):
                     for idx, c in enumerate(course_summaries[:4]):
                         border_b = "border-b border-subtle" if (idx < min(len(course_summaries), 4) - 1 or len(course_summaries) > 4) else ""
                         with (
                             ui.row()
                             .classes(
-                                f"w-full items-center justify-between p-3 bg-canvas hover:bg-surface transition-colors {border_b} cursor-pointer"
+                                f"w-full items-center justify-between p-3.5 sm:p-4 bg-canvas hover:bg-surface transition-colors {border_b} cursor-pointer"
                             )
                             .on("click", lambda e, cid=c.id: ui.navigate.to(f"/documents?kb_id={cid}"))
                         ):
-                            with ui.column().classes("gap-0.5 min-w-0 flex-1 pr-3"):
+                            with ui.column().classes("gap-1 min-w-0 flex-1 pr-3"):
                                 ui.label(c.name).classes(
-                                    "text-xs font-bold text-primary-navy truncate font-editorial"
+                                    "text-sm sm:text-base font-bold text-primary-navy truncate font-editorial"
                                 )
                                 ui.label(f"{c.active_documents} active • {c.total_documents} total documents").classes(
-                                    "text-[11px] text-secondary-navy"
+                                    "text-xs sm:text-[13px] text-secondary-navy font-medium"
                                 )
-                            with ui.row().classes("items-center gap-2 shrink-0"):
+                            with ui.row().classes("items-center gap-2.5 shrink-0"):
                                 ui.label(f"{c.indexed_documents} indexed").classes(
-                                    "text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                    "text-xs font-mono font-semibold px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200"
                                 )
-                                ui.icon("chevron_right", size="16px").classes("text-secondary-navy/60")
+                                ui.icon("chevron_right", size="18px").classes("text-secondary-navy/60")
                     if len(course_summaries) > 4:
                         with (
                             ui.row()
-                            .classes("w-full items-center justify-center p-2.5 bg-surface hover:bg-surface-elevated text-xs font-semibold text-primary-navy cursor-pointer")
+                            .classes("w-full items-center justify-center p-3 bg-surface hover:bg-surface-elevated text-xs sm:text-sm font-semibold text-primary-navy cursor-pointer")
                             .on("click", lambda: ui.navigate.to("/knowledge-bases"))
                         ):
                             ui.label(f"+ {len(course_summaries) - 4} more courses in Course Management →")
             else:
-                with ui.row().classes("w-full p-4 rounded bg-canvas border border-subtle items-center gap-3"):
-                    ui.icon("school", size="20px").classes("text-gold")
-                    with ui.column().classes("gap-0"):
-                        ui.label("No Courses Provisioned").classes("text-xs font-bold text-primary-navy")
+                with ui.row().classes("w-full p-5 rounded-lg bg-canvas border border-subtle items-center gap-3.5"):
+                    ui.icon("school", size="24px").classes("text-gold")
+                    with ui.column().classes("gap-0.5"):
+                        ui.label("No Courses Provisioned").classes("text-sm sm:text-base font-bold text-primary-navy")
                         ui.label("Create courses in Course Management to begin syllabus indexing.").classes(
-                            "text-xs text-secondary-navy"
+                            "text-xs sm:text-sm text-secondary-navy"
                         )
 
         # ---------------------------------------------------------------------
         # Column 2: Indexing & Vectorization Queue
         # ---------------------------------------------------------------------
-        with ui.column().classes("w-full p-5 bg-surface-elevated border border-subtle rounded-lg gap-3"):
-            with ui.row().classes("w-full items-center justify-between pb-2.5 border-b border-subtle"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("sync", size="18px").classes("text-primary-navy")
+        with ui.column().classes("w-full p-5 sm:p-6 bg-surface-elevated border border-subtle rounded-xl gap-4"):
+            with ui.row().classes("w-full items-center justify-between pb-3 border-b border-subtle"):
+                with ui.row().classes("items-center gap-2.5"):
+                    ui.icon("sync", size="20px").classes("text-primary-navy")
                     ui.label("Indexing Queue").classes(
-                        "text-sm font-bold text-primary-navy font-editorial"
+                        "text-base sm:text-lg font-bold text-primary-navy font-editorial"
                     )
                 if can_index:
                     ui.button(
@@ -336,105 +336,105 @@ def _render_dashboard_content(user: UserDTO, on_refresh: Callable[[], None]) -> 
                         icon="arrow_forward",
                         on_click=lambda: ui.navigate.to("/documents?view=processing"),
                     ).props("flat dense no-caps").classes(
-                        "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+                        "text-xs sm:text-sm font-semibold text-secondary-navy hover:text-primary-navy"
                     )
 
             if indexing_jobs_error:
                 with ui.row().classes(
-                    "w-full p-3 rounded bg-canvas border border-subtle text-xs text-secondary-navy justify-between items-center"
+                    "w-full p-3.5 rounded-lg bg-canvas border border-subtle text-xs sm:text-sm text-secondary-navy justify-between items-center"
                 ):
                     ui.label(f"Queue telemetry unavailable: {indexing_jobs_error}")
                     ui.button("Retry", icon="refresh", on_click=on_refresh).props(
                         "flat dense no-caps"
-                    ).classes("text-xs font-bold text-primary-navy")
+                    ).classes("text-xs sm:text-sm font-bold text-primary-navy")
             elif active_jobs:
-                with ui.column().classes("w-full gap-3"):
+                with ui.column().classes("w-full gap-3.5"):
                     ui.label(f"{len(active_jobs)} active vectorization job(s) in progress").classes(
-                        "text-xs font-bold text-amber-800 uppercase tracking-wider"
+                        "text-xs sm:text-sm font-bold text-amber-800 uppercase tracking-wider"
                     )
                     for job in active_jobs:
                         pct = min(100.0, max(0.0, job.progress_percent))
-                        with ui.column().classes("w-full p-3 rounded border border-amber-200 bg-amber-50/50 gap-1.5"):
+                        with ui.column().classes("w-full p-3.5 sm:p-4 rounded-lg border border-amber-200 bg-amber-50/50 gap-2"):
                             with ui.row().classes("w-full justify-between items-center"):
                                 ui.label(job.document_name or "Course Material").classes(
-                                    "text-xs font-bold text-primary-navy truncate max-w-[200px]"
+                                    "text-sm sm:text-base font-bold text-primary-navy truncate max-w-[280px]"
                                 )
                                 ui.label(f"Stage: {job.stage.replace('_', ' ').title()}").classes(
-                                    "text-[10px] font-bold text-amber-700 uppercase"
+                                    "text-xs font-bold text-amber-700 uppercase"
                                 )
                             ui.linear_progress(value=pct / 100.0, show_value=False).props(
                                 "rounded color=amber-7"
                             ).classes("w-full")
-                            with ui.row().classes("w-full justify-between text-[11px] font-mono text-secondary-navy"):
+                            with ui.row().classes("w-full justify-between text-xs sm:text-sm font-mono text-secondary-navy"):
                                 ui.label(f"{job.processed_chunks} / {job.total_chunks} chunks")
                                 ui.label(f"{pct:.0f}%")
             elif failed_jobs:
-                with ui.row().classes("w-full p-4 rounded bg-rose-50/60 border border-rose-200 items-center justify-between gap-3"):
-                    with ui.row().classes("items-center gap-2.5 min-w-0 flex-1"):
-                        ui.icon("warning", size="20px").classes("text-rose-700")
-                        with ui.column().classes("gap-0"):
-                            ui.label(f"{len(failed_jobs)} Failed Job(s) Need Attention").classes("text-xs font-bold text-rose-950")
-                            ui.label("Review diagnostics or retry in the Processing queue.").classes("text-xs text-rose-800")
-                    ui.button("View Queue", icon="arrow_forward", on_click=lambda: ui.navigate.to("/documents?view=processing")).props("flat dense no-caps").classes("text-xs font-bold text-rose-900")
+                with ui.row().classes("w-full p-4 sm:p-5 rounded-lg bg-rose-50/60 border border-rose-200 items-center justify-between gap-3"):
+                    with ui.row().classes("items-center gap-3 min-w-0 flex-1"):
+                        ui.icon("warning", size="24px").classes("text-rose-700")
+                        with ui.column().classes("gap-0.5"):
+                            ui.label(f"{len(failed_jobs)} Failed Job(s) Need Attention").classes("text-sm sm:text-base font-bold text-rose-950")
+                            ui.label("Review diagnostics or retry in the Processing queue.").classes("text-xs sm:text-sm text-rose-800")
+                    ui.button("View Queue", icon="arrow_forward", on_click=lambda: ui.navigate.to("/documents?view=processing")).props("flat dense no-caps").classes("text-xs sm:text-sm font-bold text-rose-900")
             else:
-                with ui.row().classes("w-full p-4 rounded bg-canvas border border-subtle items-center gap-3"):
-                    ui.icon("check_circle", size="20px").classes("text-emerald-700")
-                    with ui.column().classes("gap-0"):
-                        ui.label("Queue Idle").classes("text-xs font-bold text-primary-navy")
+                with ui.row().classes("w-full p-5 rounded-lg bg-canvas border border-subtle items-center gap-3.5"):
+                    ui.icon("check_circle", size="24px").classes("text-emerald-700")
+                    with ui.column().classes("gap-0.5"):
+                        ui.label("Queue Idle").classes("text-sm sm:text-base font-bold text-primary-navy")
                         ui.label("All document vector embeddings are currently synchronized.").classes(
-                            "text-xs text-secondary-navy"
+                            "text-xs sm:text-sm text-secondary-navy"
                         )
 
     # =========================================================================
     # D. Recent Activity Audit Ledger (if permitted)
     # =========================================================================
     if can_view_activity:
-        with ui.column().classes("w-full p-5 bg-surface-elevated border border-subtle rounded-lg gap-3"):
-            with ui.row().classes("w-full items-center justify-between pb-2.5 border-b border-subtle"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("history", size="18px").classes("text-primary-navy")
+        with ui.column().classes("w-full p-5 sm:p-6 bg-surface-elevated border border-subtle rounded-xl gap-4"):
+            with ui.row().classes("w-full items-center justify-between pb-3 border-b border-subtle"):
+                with ui.row().classes("items-center gap-2.5"):
+                    ui.icon("history", size="20px").classes("text-primary-navy")
                     ui.label("Recent Activity").classes(
-                        "text-sm font-bold text-primary-navy font-editorial"
+                        "text-base sm:text-lg font-bold text-primary-navy font-editorial"
                     )
                 ui.button(
                     "Full Audit Log",
                     icon="arrow_forward",
                     on_click=lambda: ui.navigate.to("/activity"),
                 ).props("flat dense no-caps").classes(
-                    "text-xs font-semibold text-secondary-navy hover:text-primary-navy"
+                    "text-xs sm:text-sm font-semibold text-secondary-navy hover:text-primary-navy"
                 )
 
             if recent_activity_error:
                 ui.label(f"Audit log unavailable: {recent_activity_error}").classes(
-                    "text-xs text-secondary-navy italic"
+                    "text-xs sm:text-sm text-secondary-navy italic"
                 )
             elif recent_activity:
-                with ui.column().classes("w-full gap-0 border border-subtle rounded overflow-hidden"):
+                with ui.column().classes("w-full gap-0 border border-subtle rounded-lg overflow-hidden"):
                     for idx, act in enumerate(recent_activity):
                         border_b = "border-b border-subtle/50" if idx < len(recent_activity) - 1 else ""
                         with ui.row().classes(
-                            f"w-full items-center justify-between p-2.5 bg-canvas hover:bg-surface/50 text-xs {border_b} gap-3"
+                            f"w-full items-center justify-between p-3 sm:p-3.5 bg-canvas hover:bg-surface/50 text-xs sm:text-sm {border_b} gap-3"
                         ):
-                            with ui.row().classes("items-center gap-2 min-w-0 flex-1"):
-                                ui.icon("check_circle", size="14px").classes("text-emerald-700 shrink-0")
+                            with ui.row().classes("items-center gap-2.5 min-w-0 flex-1"):
+                                ui.icon("check_circle", size="16px").classes("text-emerald-700 shrink-0")
                                 ui.label(f"{act.action} — {act.resource_name}").classes(
-                                    "font-semibold text-primary-navy truncate font-sans"
+                                    "font-semibold text-primary-navy truncate font-sans text-xs sm:text-sm"
                                 )
                                 ui.label(f"by {act.actor_name or act.actor_email}").classes(
-                                    "text-secondary-navy text-[11px] truncate hidden sm:inline"
+                                    "text-secondary-navy text-xs sm:text-[13px] truncate hidden sm:inline"
                                 )
                             ui.label(format_relative_time(act.timestamp)).classes(
-                                "text-[11px] font-mono text-secondary-navy shrink-0"
+                                "text-xs sm:text-[13px] font-mono text-secondary-navy shrink-0"
                             )
             else:
                 ui.label("No recent administrative events recorded.").classes(
-                    "text-xs text-secondary-navy italic py-2"
+                    "text-xs sm:text-sm text-secondary-navy italic py-2"
                 )
 
 
 def _render_admin_dashboard(user: UserDTO) -> None:
     """Admin dashboard wrapper providing in-place refresh capability."""
-    dashboard_box = ui.column().classes("w-full gap-6 max-w-5xl mx-auto")
+    dashboard_box = ui.column().classes("w-full gap-6 max-w-7xl mx-auto")
 
     def on_refresh() -> None:
         dashboard_box.clear()
