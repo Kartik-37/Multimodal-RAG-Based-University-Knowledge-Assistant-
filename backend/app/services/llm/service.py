@@ -24,7 +24,12 @@ from backend.app.schemas.llm import (
     LLMProviderResponse,
 )
 from backend.app.services.llm.base import BaseLLMProvider
-from backend.app.services.llm.exceptions import LLMResponseError, LLMTimeoutError
+from backend.app.services.llm.exceptions import (
+    LLMConnectionError,
+    LLMProviderError,
+    LLMResponseError,
+    LLMTimeoutError,
+)
 from backend.app.services.llm.ollama_provider import OllamaLLMProvider
 from backend.app.services.llm.prompt_builder import GroundedPromptBuilder, response_format_for_query
 
@@ -76,6 +81,22 @@ REASONING_LEAK_PATTERNS = [
     r"^(?:internal thinking|thinking|scratchpad):\s*",
     r"\b(?:but wait|as per the (?:user's|prompt) instruction|in the response format|the evidence only tells us|the evidence we have|we cannot provide a list of individual widget)\b",
     r"\b(?:evidence does not contain that information|does not explicitly state the two primary)\b",
+    r"\b(?:first,?\s*)?(?:looking at|analyzing|examining)\s+\[?source_\d+\]?\b",
+    r"\bfor the question\b",
+    r"\b(?:i|we)\s+should\s+(?:focus|cover|explain|highlight|start|mention)\b",
+    r"\b(?:i|we)\s+must\s+not\s+mention\b",
+    r"\b(?:i'll|i\s+will|we'll|we\s+will)\s+avoid\b",
+    r"\bstart with:\s*\"?",
+    r"\bthen add(?:\s+the)?:\s*\"?",
+    r"\bcite only\s+\[?source_\d+\]?\b",
+    r"\bcheck if\s+(?:i'm|we're|i\s+am|we\s+are)\b",
+    r"\bthe student-friendly explanation\b",
+    r"\bwhat are the concepts mentioned\b",
+    r"\bthe key point:\s*the evidence\b",
+    r"\b(?:i|we)\s+need to\s+(?:be|cite|check|ensure)\b",
+    r"\b(?:i|we)\s+should respond by\b",
+    r"\bthe user might be expecting\b",
+    r"\b(?:wait|but wait),?\s+(?:the\s+)?instructions?\b",
 ]
 
 
@@ -109,6 +130,9 @@ def is_reasoning_or_non_answer(text: str, query: str) -> bool:
         t_clean,
     ):
         return True
+    # Dangling fragment ending with preposition or incomplete connector (e.g. "provided in.")
+    if re.search(r"(?i)\b(?:is provided in|provided in|is stated in|stated in|is given in|can be found in)\s*[\.\!\?]?$", t_clean):
+        return True
     is_list_query = any(w in query.lower() for w in ("list", "enumerate", "versions", "steps"))
     if is_list_query:
         has_items = any(ch in text for ch in ("\n-", "\n*", "\n1.", "\n2.", "•", "▪", "●", "▸"))
@@ -117,10 +141,59 @@ def is_reasoning_or_non_answer(text: str, query: str) -> bool:
     return False
 
 
+def is_invalid_or_incomplete_answer(text: str, query: str = "") -> bool:
+    """
+    Validate whether sanitized model output is incomplete, pure deflection, or non-answer.
+    Ensures that trailing fragments, deflections, or scratchpad outputs trigger bounded retry.
+    """
+    t_clean = (text or "").strip()
+    if not t_clean:
+        return True
+
+    # Check for truncated prose output: prose paragraphs should terminate naturally
+    last_line = t_clean.splitlines()[-1].strip()
+    is_bullet = bool(re.match(r"^(?:[-*•▪●▸]|\d+\.)\s+", last_line))
+    if not is_bullet:
+        if last_line and not any(last_line.endswith(term) for term in (".", "!", "?", '"', "'", ")", "]", "```", "~~~")):
+            return True
+
+    # Incomplete sentence / dangling preposition fragment / pure deflection
+    # e.g., "The definition of Flutter is provided in." or "The answer is given in [source_1]."
+    if re.search(
+        r"(?i)\b(?:is provided in|provided in|is stated in|stated in|is given in|can be found in|refer to the cited|see the cited)\s*(?:\[source_\d+\]\s*)?[\.\!\?]?$",
+        t_clean,
+    ):
+        return True
+
+    # Dangling trailing connective / preposition / auxiliary / incomplete fragment (e.g. "I'll avoid", "consists of.")
+    if re.search(
+        r"(?i)\b(?:is|are|in|on|at|to|from|for|with|of|by|about|that|which|avoid|check|if|i'm|i'll|we'll|can|will|should|would|must|including|such as)\s*[\.\!\?]?$",
+        t_clean,
+    ):
+        return True
+
+    # Pure non-answer deflection patterns
+    for p in NON_ANSWER_DEFLECTION_PATTERNS:
+        if re.search(p, t_clean.lower()) and len(t_clean.split()) < 25:
+            return True
+
+    # Pure reasoning leakage without substantive answer
+    if is_reasoning_or_non_answer(t_clean, query):
+        return True
+
+    # Extremely short non-answer (fewer than 5 words that don't express lack of info)
+    if len(t_clean.split()) < 5 and not any(
+        kw in t_clean.lower()
+        for kw in ("not enough information", "insufficient", "could not find", "no information")
+    ):
+        return True
+
+    return False
+
+
 def clean_reasoning_text(text: str, query: str = "") -> str:
     """Extract final answer declaration or embedded itemized list from reasoning text if present."""
     # 1. Check if model extracted an itemized list inside its deliberation of a source
-    # e.g. - [source_1]: ... It lists:\n Android 1.0 ... or It includes:\n Android 1.0 ...
     list_match = re.search(
         r"(?:-\s*\[(source_\d+)\]:[^\n]*?(?:lists?|includes?|contains?|shows?|presents?):\s*\n?\s*)([^\n]+(?:\n(?!\s*(?:-\s*\[source_|\n|\bThe user\b|\bTherefore\b))[^\n]+)*)",
         text,
@@ -171,15 +244,16 @@ def clean_reasoning_text(text: str, query: str = "") -> str:
                 source_tag = m_tag.group(1).lower()
             return f"{quoted} [{source_tag}]."
 
-    # 3. Strip trailing meta-evaluation sentences that evaluate which source defines what
-    cleaned_trailing = re.sub(
-        r"(?<=[.!?\]])\s*(?:(?:Focuses\s+on|About\s+[A-Za-z0-9\s]+,\s*not\s+the\s+definition|Not\s+directly\s+about|Who\s+is\s+using\s+[A-Za-z0-9\s]+,\s*not\s+the\s+definition|Therefore,?\s+the\s+definition\s+of)\b.*)$",
-        "",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    ).strip()
-    if cleaned_trailing and cleaned_trailing != text and not is_reasoning_or_non_answer(cleaned_trailing, ""):
-        return cleaned_trailing
+    # 2c. Extract planned target sentences from reasoning (e.g. Start with: "..." Then add: "...")
+    quotes = re.findall(r'(?:Start with|Then add[^:]*|Answer|Write):\s*"([^"]{20,})"', text, re.IGNORECASE)
+    if quotes:
+        extracted = "\n\n".join(q.strip() for q in quotes if q.strip())
+        if extracted and not any(re.search(p, extracted, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
+            m_tag = re.search(r"\[(source_\d+)\]", text, re.IGNORECASE)
+            source_tag = m_tag.group(1).lower() if m_tag else "source_1"
+            if not re.search(r"\[source_\d+\]", extracted, re.IGNORECASE):
+                extracted = f"{extracted} [{source_tag}]."
+            return extracted
 
     return text
 
@@ -189,167 +263,12 @@ def extract_grounded_recovery_answer(
     context: Any,
 ) -> str | None:
     """
-    Deterministically construct a grounded, fully-cited answer from validated assembled evidence
-    ONLY for narrowly scoped, strictly verified entity types:
-    1. Statutory Act Title extraction: when query explicitly asks for Act title and candidate contains statutory naming formula.
-    2. iOS Supported Devices: when query explicitly asks for supported iOS devices/iPhones and candidate contains the device table.
-    3. Android Versions: when query explicitly asks for Android versions and candidate contains the version table.
-    For all other queries, returns None so that primary LLM synthesis or safe refusal is used.
+    Deprecated recovery helper.
+
+    In Phase 26, factual answers must be synthesized directly by the configured
+    LLM provider (Ollama) rather than constructed via deterministic Python templates.
+    Returns None so that primary LLM synthesis or safe refusal is authoritative.
     """
-    if not context or not getattr(context, "items", None):
-        return None
-
-    q_lower = query.strip().lower()
-
-    # 1. Academic / Statutory Act Title extraction
-    if any(
-        p in q_lower
-        for p in (
-            "act name",
-            "name of the act",
-            "name of this act",
-            "short title",
-            "title of the act",
-            "title of this act",
-            "which act",
-            "what act",
-            "act title",
-        )
-    ):
-        for item in context.items:
-            text = (item.text or "").strip()
-            # Look for statutory naming formula: "This Act may be called <Name>"
-            m = re.search(r"This Act may be called\s+([^\r\n.]+)", text, re.IGNORECASE)
-            if m:
-                raw_name = m.group(1).strip()
-                clean_name = re.sub(r"[\uFFFD'`]+", '"', raw_name)
-                clean_name = re.sub(r"[‘'’]", '"', clean_name)
-                if "Kaushalya" in clean_name:
-                    clean_name = re.sub(r'["\']?Kaushalya["\']?', '“Kaushalya”', clean_name)
-                source_tag = getattr(item, "source_id", "source_1")
-                return f"The Act is titled the **{clean_name}** [{source_tag}]."
-
-    # 2. Supported iOS devices extraction (ONLY when query specifically asks for iOS devices / iPhones)
-    if any(
-        p in q_lower
-        for p in (
-            "supported ios",
-            "supported iphone",
-            "supported iphones",
-            "ios device",
-            "ios devices",
-            "iphone compatibility",
-            "list the supported iphones",
-            "list of supported ios devices",
-        )
-    ):
-        for item in context.items:
-            text = (item.text or "").strip()
-            source_tag = getattr(item, "source_id", "source_1")
-            if "[Visible Text & Labels]:" in text and any(k in text.lower() for k in ("iphone", "ios")):
-                match = re.search(
-                    r"\[Visible Text & Labels\]:\s*([^\n]+)",
-                    text,
-                    re.IGNORECASE,
-                )
-                if match:
-                    raw_labels = match.group(1).strip()
-                    parts = [p.strip() for p in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_labels) if p.strip()]
-                    valid_items = [
-                        p for p in parts
-                        if "iphone" in p.lower() or "ios" in p.lower()
-                    ]
-                    if valid_items:
-                        header = f"Based on [{source_tag}], the supported iOS devices are:\n\n"
-                        bullet_list = "\n".join(f"- {it}" for it in valid_items)
-                        return header + bullet_list
-
-    # 3. Android versions extraction (ONLY when query specifically asks for Android versions)
-    if any(
-        p in q_lower
-        for p in (
-            "android version",
-            "android versions",
-            "versions of android",
-            "list of android versions",
-        )
-    ):
-        for item in context.items:
-            text = (item.text or "").strip()
-            source_tag = getattr(item, "source_id", "source_1")
-            if "android version" in text.lower() or "[Visible Text & Labels]:" in text:
-                bullet_lines = [
-                    line.strip()
-                    for line in text.splitlines()
-                    if re.match(r"^[-*•▪●▸\d+.]\s+Android", line.strip(), re.IGNORECASE)
-                ]
-                if len(bullet_lines) >= 3:
-                    header = f"Based on [{source_tag}], the Android versions are:\n\n"
-                    bullet_list = "\n".join(bullet_lines)
-                    return header + bullet_list
-                if "[Visible Text & Labels]:" in text and "android" in text.lower():
-                    match = re.search(
-                        r"\[Visible Text & Labels\]:\s*([^\n]+)",
-                        text,
-                        re.IGNORECASE,
-                    )
-                    if match:
-                        raw_labels = match.group(1).strip()
-                        parts = [p.strip() for p in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_labels) if p.strip()]
-                        valid_items = [
-                            p for p in parts
-                            if p.lower() not in ("android all versions", "2008 to 2025", "none", "n/a")
-                            and not p.startswith("[")
-                            and len(p) > 2
-                        ]
-                        if len(valid_items) >= 2:
-                            header = f"Based on [{source_tag}], the Android versions are:\n\n"
-                            bullet_list = "\n".join(f"- {it}" for it in valid_items)
-                            return header + bullet_list
-
-    # 4. Direct definition extraction (when query asks "what is <term>" and candidate contains explicit definition)
-    def_match = re.search(r"^(?:what\s+is|define|definition\s+of|meaning\s+of)\s+([A-Za-z0-9_\-\s]+?)(?:\?|\.|\s*$)", q_lower)
-    if def_match:
-        subject = def_match.group(1).strip()
-        for item in context.items[:3]:
-            source_tag = getattr(item, "source_id", "source_1")
-            raw_text = item.text or ""
-            # Split into natural paragraphs or lines
-            blocks = [b.strip() for b in re.split(r"\n\s*\n|\r\n\s*\r\n", raw_text) if b.strip()]
-            for block in blocks:
-                norm_block = re.sub(r"\s+", " ", block).strip()
-                m = re.search(
-                    rf"\b{re.escape(subject)}\s+is\s+(?:an?|the)\s+([^.]*)",
-                    norm_block,
-                    re.IGNORECASE,
-                )
-                if m:
-                    extracted = m.group(0).strip()
-                    clean_def = re.sub(r"(?i)\bakash\s+technolabs\b|\bwww\.[a-z0-9\-]+\.[a-z]+\b", "", extracted).strip()
-                    clean_def = clean_def[0].upper() + clean_def[1:]
-                    return f"{clean_def} [{source_tag}]."
-
-    # 5. Flutter widget queries
-    if "widget" in q_lower and any(w in q_lower for w in ("list", "what", "types", "categories", "enumerate")):
-        widget_item = None
-        category_item = None
-        for item in context.items:
-            t = (item.text or "").lower()
-            if "everything is a widget" in t or "app itself is a widget" in t or "unified" in t:
-                widget_item = item
-            if "material" in t and "cupertino" in t:
-                category_item = item
-        if widget_item or category_item:
-            tag1 = getattr(widget_item or category_item, "source_id", "source_1")
-            tag2 = getattr(category_item or widget_item, "source_id", "source_1")
-            return (
-                f"In Flutter, everything is a widget—including layout, structural elements, and the application itself [{tag1}]. "
-                f"The course materials highlight two primary widget categories for consistent design [{tag2}]:\n\n"
-                f"- **Material Design widgets**: Built-in widgets following Google's Material Design guidelines.\n"
-                f"- **Cupertino widgets**: Built-in widgets implementing iOS design patterns.\n\n"
-                f"*Note: The course notes introduce these core concepts and categories, but do not provide an itemized catalogue of individual widget class names.*"
-            )
-
     return None
 
 
@@ -525,7 +444,8 @@ def deduplicate_list_citations(text: str) -> str:
 def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
     """
     Strip model self-reasoning preambles, chain-of-thought evaluations, and instruction leaks.
-    Extracts the clean, direct factual answer with verified citations.
+    Extracts the clean, direct factual answer with verified citations while preserving valid
+    paragraphs, lists, headings, tables, and fenced code blocks.
     """
     if not text:
         return text
@@ -629,7 +549,7 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         re.IGNORECASE,
     )
     boilerplate_intro_regex = re.compile(
-        r"^(?:Based (?:solely )?on (?:the |all |\[?source_\d+\]? )?(?:[A-Za-z0-9_-]+\s+){0,4}(?:documents?|context|evidence|materials?|syllabus|source_\d+)\.?,?\s*|According to (?:the |all )?(?:[A-Za-z0-9_-]+\s+){0,4}(?:documents?|context|evidence|materials?|syllabus)\.?,?\s*)",
+        r"^(?:(?:So\s+)?Based (?:solely )?on (?:the |all |\[?source_\d+\]? )?(?:[A-Za-z0-9_-]+\s+){0,4}(?:documents?|context|evidence|materials?|syllabus|source_\d+)\.?,?\s*|According to (?:the |all )?(?:[A-Za-z0-9_-]+\s+){0,4}(?:documents?|context|evidence|materials?|syllabus)\.?,?\s*)",
         re.IGNORECASE,
     )
 
@@ -688,7 +608,6 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         "we have no conflicting",
         "no conflicting evidence",
         "only [source_",
-        "steps:",
         "1. we are to provide",
         "2. we must use only",
         "3. we must cite each",
@@ -702,17 +621,9 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         "as per the evidence",
         "according to the evidence",
         "based on the retrieved evidence",
-        "talks about",
-        "talk about",
         "key facts from",
         "key fact from",
         "key facts:",
-        "also states:",
-        "also states that",
-        "also states",
-        "and states:",
-        "doesn't define",
-        "does not define",
         "* [source_",
         "- [source_",
         "so here we have:",
@@ -729,6 +640,8 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         "therefore the answer",
         "therefore,",
         "therefore",
+        "in conclusion",
+        "in conclusion,",
         "however, note",
         "however,",
         "however",
@@ -743,6 +656,21 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         "internal thinking",
         "thinking:",
         "scratchpad:",
+        "first, looking at",
+        "looking at [source",
+        "for the question",
+        "the student-friendly explanation",
+        "important: i must",
+        "important: we must",
+        "start with:",
+        "then add",
+        "cite only",
+        "check if",
+        "i'll avoid",
+        "i will avoid",
+        "we'll avoid",
+        "what are the concepts mentioned",
+        "the key point:",
     )
     for line in lines:
         s = line.strip()
@@ -763,9 +691,13 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
             continue
         if s.lower().startswith("but note:") or s.lower().startswith("however, note:"):
             continue
-        if re.search(r"^(?:(?:however|note|but),?\s+)?(?:the\s+)?user\s+question\b", s, re.IGNORECASE):
+        if re.search(r"^(?:(?:however|note|but),?\s+)?(?:the\s+)?user\s+(?:question|might|may|asked)\b", s, re.IGNORECASE):
             continue
-        if re.search(r"^(?:(?:however|note|but),?\s+)?we\s+(?:must|should)\s+(?:output|be\s+precise|ensure)\b", s, re.IGNORECASE):
+        if re.search(r"^(?:(?:however|note|but),?\s+)?(?:i|we)\s+(?:must|should|need to|can only|will)\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"^(?:(?:so\s+)?based on the evidence,?\s+)?(?:i|we)\s+can\s+only\b", s, re.IGNORECASE):
+            continue
+        if re.search(r"^(?:wait|but wait),?\s+(?:the\s+)?instructions?\b", s, re.IGNORECASE):
             continue
         if re.search(r"^(?:we\s+do\s+not\s+have\s+conflicting|only\s+\[source_\d+\]\s+provides)\b", s, re.IGNORECASE):
             continue
@@ -780,14 +712,19 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
         if re.search(r"^key\s+facts?\s+(?:from|are|include)\b", s, re.IGNORECASE):
             continue
 
+        # Clean meta-evidence preamble from opening sentences (e.g. "First, looking at [source_1]: It clearly defines...")
+        s = re.sub(
+            r"^(?:(?:first|second|next|finally),?\s*)?(?:looking at|from|analyzing|examining)\s+\[?source_\d+\]?[^:]*:\s*(?:it\s+(?:clearly\s+)?(?:defines|states|explains|says|shows)\s+(?:that\s+)?)?",
+            "",
+            s,
+            flags=re.IGNORECASE,
+        ).strip()
+        if re.search(r"(?i)\b(?:avoid|check|i'm|i'll|we'll)\b", s) and len(s.split()) <= 4:
+            continue
+
         s = label_prefix_regex.sub("", s).strip()
         if s.startswith('"') and s.endswith('"') and len(s) > 2:
             s = s[1:-1].strip()
-
-        # Strip unclosed parenthetical or trailing dangling prepositions/articles/connectives
-        if "(" in s and ")" not in s:
-            s = re.sub(r"\s*\([^)]*$", "", s).strip()
-        s = re.sub(r"\s+\b(?:provides?|the|a|an|of|to|in|for|on|with|and|or|but|that|however|therefore)\s*$", "", s, flags=re.IGNORECASE).strip()
 
         # Drop dangling single-word/two-word connective fragments
         if s.lower() in ("however,", "however", "therefore,", "therefore", "moreover,", "furthermore,", "in addition,", "note:", "note that:"):
@@ -832,12 +769,6 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
                 formatted_lines.append("")
         formatted_lines.append(line)
 
-    # 4b. Block-aware Markdown Processing
-    # Preserves block boundaries (headings, paragraphs, lists, tables, code blocks)
-    # and executes sentence-level filtering ONLY on prose paragraph blocks.
-
-    # 1. Normalize headings: ensure headings have blank lines before and after,
-    # and separate inline text if heading was combined on same line.
     source_text = "\n".join(formatted_lines).strip() or cleaned
     norm_text = re.sub(
         r'(?m)^(#{1,6}\s+[A-Za-z0-9\s&/\'\-]{2,50}?)(?:\s*[:—–-]\s*|\.\s+|\s{2,})([A-Z][^\n]+)$',
@@ -846,91 +777,32 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
     )
     norm_text = re.sub(r'(?m)^(#{1,6}\s+[^\n]+)$', r'\n\n\1\n\n', norm_text)
 
-    # 2. Split into distinct blocks by double newlines
     raw_blocks = [b.strip() for b in re.split(r'\n{2,}', norm_text) if b.strip()]
     cleaned_blocks: list[str] = []
-    all_seen_sentences: list[str] = []
-    has_sources_originally = bool(re.search(r'\[source_\d+\]', cleaned, re.IGNORECASE))
-
-    prefix_clean_regex = re.compile(
-        r'^(?:'
-        r'the\s+(?:evidence|notes)\s+(?:explicitly\s+)?(?:states|says|state|say)\s*:?\s*\"?|'
-        r'specifically,?\s*(?:\[source_\d+\])?\s*|'
-        r'also,?\s*(?:it\s+says|it\s+states)?\s*:?\s*\"?|'
-        r'it\s+(?:states|says|provides)\s*:?\s*\"?|'
-        r'and\s*:?\s*\"?|'
-        r'we\s+(?:write|can\s+write)\s*:?\s*\"?|'
-        r'based\s+(?:solely\s+)?on\s+(?:\[?source_\d+\]?|[^\n.]+?)\.?\s*\"?|'
-        r'the\s+key\s+(?:fact|sentence)\s*(?:from\s+\[[^\]]+\])?\s*:?\s*\"?|'
-        r'in\s+addition,?\s*\"?|'
-        r'further,?\s*\"?'
-        r')',
-        re.IGNORECASE,
-    )
-    pure_meta_patterns = (
-        "so, the definition", "so the definition", "is primarily in",
-        "also, note that", "also note that", "note that", "mentions that",
-        "the question is:", "what is flutter", "we need to", "we should",
-        "we write", "we can write", "based solely on", "based on source",
-        "extract the facts", "directly answer", "to answer this question",
-        "to answer the question", "not directly answering", "not directly about",
-        "not what it is", "not what flutter is", "not what ", "this is about",
-        "not the definition", "who is using", "who uses it, not",
-        "the most direct answer", "the direct answer", "lists companies",
-        "about widgets", "about hot reload", "(but note:", "focuses on",
-        "so we should focus on", "talks about", "does not define",
-        "doesn't define", "do not invent", "extrapolate", "core directive",
-        "directive says", "grounding:", "the only evidence",
-        "evidence that defines", "the only source", "only source that",
-        "evidence chunk", "is labeled as", "we are to cite", "we are to",
-        "source tags", "exact source tags", "the instruction says",
-        "instruction says", "the instruction", "state the factual answer",
-        "very first sentence", "we are instructed", "we must cite",
-        "according to the instruction", "per the instruction", "the prompt says",
-        "the evidence chunk", "labeled as [source", "labeled as source",
-        "the answer should be", "the answer would be", "therefore, the answer",
-        "therefore the answer", "the evidence only states", "the evidence states",
-        "the evidence says", "the notes only state", "the notes do not enumerate",
-        "the notes do not provide", "the notes don't enumerate",
-        "does not enumerate individual", "doesn't enumerate individual",
-        "the provided notes do not enumerate", "the uploaded notes do not enumerate",
-        "the document does not enumerate", "we can answer by", "we can state that",
-        "to answer this question", "the relevant evidence states",
-        "the relevant evidence", "the question asks for", "the user is asking",
-        "internal thinking", "internal deliberation", "widget concept & categories directive",
-        "directive:", "prompt directive", "what i should answer", "self-talk",
-        "chain-of-thought", "evidence-assessment", "evidence assessment",
-    )
+    all_seen_items: list[str] = []
 
     for block in raw_blocks:
         if block.startswith("__CODE_BLOCK_"):
             cleaned_blocks.append(block)
         elif block.startswith("__TABLE_BLOCK_"):
             cleaned_blocks.append(block)
-        # Check if block is a heading
         elif re.match(r'^#{1,6}\s+', block):
-            # Strip generic boilerplate headings (Document Overview, Overview, Executive Summary)
             if re.match(r'^#{1,6}\s+(?:Document\s+Overview|Overview|Executive\s+Summary)\b', block, re.IGNORECASE):
                 continue
             h_clean = re.sub(r'[:.]\s*$', '', block).strip()
             cleaned_blocks.append(h_clean)
-        # Check if code block
         elif block.startswith('```') or block.startswith('~~~'):
             cleaned_blocks.append(block)
-        # Check if table
         elif block.startswith('|') and '\n|' in block:
             cleaned_blocks.append(block)
-        # Check if horizontal rule
         elif re.match(r'^[-*_]{3,}\s*$', block):
             cleaned_blocks.append(block)
-        # Check if list block
         elif any(re.match(r'^(?:[-*•▪●▸]|\d+\.)\s+', l.strip()) for l in block.splitlines()):
             filtered_list_lines: list[str] = []
             for l in block.splitlines():
                 line_str = l.strip()
                 if not line_str:
                     continue
-                # Extract bullet prefix and content
                 m_bullet = re.match(r'^((?:[-*•▪●▸]|\d+\.)\s+)(.*)$', line_str)
                 if m_bullet:
                     bullet_prefix = m_bullet.group(1)
@@ -939,89 +811,57 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
                     bullet_prefix = "- "
                     item_text = line_str
 
-                # Clean wrapping quotes around bullet items
                 if (item_text.startswith('"') and item_text.endswith('"')) or (item_text.startswith("'") and item_text.endswith("'")):
                     item_text = item_text[1:-1].strip()
 
                 item_clean = item_text.lower()
-                # Check for meta language / prompt echoes
-                if any(p in item_clean for p in pure_meta_patterns):
-                    continue
                 if any(item_clean.startswith(p) for p in reasoning_prefixes):
                     continue
-                if re.search(r'\b(?:for\s+[a-z\s]+\s+questions?,\s*(?:we\s+must|explain)|highlight\s+the\s+two\s+primary|we\s+must\s+explain|we\s+should\s+highlight)\b', item_clean):
-                    continue
 
-                # Query subject entity drift check (e.g. no iPhone in Flutter list)
                 if query and ("flutter" in query.lower() or "widget" in query.lower()):
                     if re.search(r'\b(?:iphone\s+\d+|ios\s+\d+|ipad)\b', item_clean):
                         continue
 
-                # Deduplicate identical or near-identical items
                 words = set(re.findall(r"\b[a-z]{4,}\b", item_clean))
                 is_dup = False
-                for prev in all_seen_sentences:
+                for prev in all_seen_items:
                     prev_words = set(re.findall(r"\b[a-z]{4,}\b", prev))
                     if len(words) >= 2 and len(prev_words) >= 2:
                         overlap = len(words & prev_words) / min(len(words), len(prev_words))
-                        if overlap > 0.65:
+                        if overlap > 0.85:
                             is_dup = True
                             break
                 if is_dup:
                     continue
-                all_seen_sentences.append(item_clean)
+                all_seen_items.append(item_clean)
                 filtered_list_lines.append(f"{bullet_prefix}{item_text}")
 
             if filtered_list_lines:
                 cleaned_blocks.append('\n'.join(filtered_list_lines))
         else:
-            # Prose paragraph: collapse inner newlines then clean sentences
-            p_single_line = ' '.join(block.splitlines())
-            # Unwrap definition quotes
-            p_single_line = re.sub(
-                r'(?:The key (?:fact|sentence) (?:from \[[^\]]+\]\s*)?is:?|The key (?:fact|sentence):?|The definition (?:of [^.]+)? is:?)\s*\"([^\"]+)\"',
-                r'\1',
-                p_single_line,
-                flags=re.IGNORECASE,
-            )
-            raw_sentences = re.split(r'(?<=[.!?\]"\'”])\s+(?=[A-Z"\(“])', p_single_line)
-            filtered_sentences: list[str] = []
+            # Prose paragraph: preserve complete educational content and sentences without destructive deletion
+            p_text = block.strip()
+            if is_reasoning_or_non_answer(p_text, query or "") and not re.search(r'\[source_\d+\]', p_text, re.IGNORECASE):
+                cand = clean_reasoning_text(p_text, query or "")
+                if cand != p_text and not is_reasoning_or_non_answer(cand, query or ""):
+                    cleaned_blocks.append(cand)
+                continue
 
-            for sent in raw_sentences:
-                s = sent.strip()
-                if not s:
-                    continue
-                s_unwrapped = prefix_clean_regex.sub("", s).strip()
-                if s_unwrapped.count('"') % 2 != 0:
-                    s_unwrapped = re.sub(r'\"(?=\s*\[source_\d+\])', "", s_unwrapped)
-                    s_unwrapped = s_unwrapped.rstrip('"\'.').strip()
-                if not s_unwrapped:
-                    continue
-                s_clean = s_unwrapped.lower()
-                if any(p in s_clean for p in pure_meta_patterns):
-                    continue
-                words = set(re.findall(r"\b[a-z]{4,}\b", s_clean))
-                is_dup = False
-                for prev in all_seen_sentences:
-                    prev_words = set(re.findall(r"\b[a-z]{4,}\b", prev))
-                    if len(words) >= 3 and len(prev_words) >= 3:
-                        overlap = len(words & prev_words) / min(len(words), len(prev_words))
-                        if overlap > 0.65:
-                            is_dup = True
-                            break
-                if is_dup:
-                    continue
-                all_seen_sentences.append(s_clean)
-                s_final = s_unwrapped[0].upper() + s_unwrapped[1:]
-                # In single-paragraph answers, if source was stripped, retain source_1
-                if len(raw_blocks) == 1 and has_sources_originally and not re.search(r'\[source_\d+\]', s_final):
-                    s_final += ' [source_1]'
-                if not s_final.endswith('.'):
-                    s_final += '.'
-                filtered_sentences.append(s_final)
-
-            if filtered_sentences:
-                cleaned_blocks.append(" ".join(filtered_sentences).strip())
+            # Deduplicate near-identical prose blocks (e.g. repeated concluding sentence)
+            block_clean = re.sub(r"\[source_\d+\]", "", p_text).strip().lower()
+            words = set(re.findall(r"\b[a-z]{4,}\b", block_clean))
+            is_dup = False
+            for prev in all_seen_items:
+                prev_words = set(re.findall(r"\b[a-z]{4,}\b", prev))
+                if len(words) >= 3 and len(prev_words) >= 3:
+                    overlap = len(words & prev_words) / min(len(words), len(prev_words))
+                    if overlap > 0.80:
+                        is_dup = True
+                        break
+            if is_dup:
+                continue
+            all_seen_items.append(block_clean)
+            cleaned_blocks.append(p_text)
 
     if cleaned_blocks:
         candidate_answer = "\n\n".join(cleaned_blocks).strip()
@@ -1081,7 +921,10 @@ class LLMGenerationService:
                 output_tokens=0,
                 latency_ms=0.0,
                 metadata={
+                    "generation_mode": "empty_context_refusal",
+                    "llm_invoked": False,
                     "fast_path": True,
+                    "provider_calls": 0,
                     "reason": "empty_context",
                 },
             )
@@ -1108,59 +951,18 @@ class LLMGenerationService:
                 prompt_tokens=0,
                 output_tokens=len(greeting_msg.split()),
                 latency_ms=0.0,
-                metadata={"fast_path": True, "reason": "greeting"},
+                metadata={
+                    "generation_mode": "greeting",
+                    "llm_invoked": False,
+                    "fast_path": True,
+                    "provider_calls": 0,
+                    "reason": "greeting",
+                },
             )
 
-        # 2b. Deterministic statutory Act title extraction fast-path
-        # ONLY for explicit Act title questions against authorized statutory Act documents
-        is_act_title_query = any(
-            p in clean_q
-            for p in (
-                "act name",
-                "name of the act",
-                "name of this act",
-                "short title",
-                "title of the act",
-                "title of this act",
-                "which act",
-                "what act",
-                "act title",
-            )
-        )
-        if is_act_title_query:
-            rec_direct = extract_grounded_recovery_answer(request.query, request.context)
-            if rec_direct and not is_reasoning_or_non_answer(rec_direct, request.query):
-                sources_ref = list(dict.fromkeys(
-                    m.group(1).lower()
-                    for m in _SOURCE_REF_REGEX.finditer(rec_direct)
-                    if m.group(1).lower() in sources_available
-                ))
-                return LLMGenerationResponse(
-                    answer=rec_direct,
-                    query=request.query,
-                    original_query=request.original_query,
-                    provider=self.provider.provider_name,
-                    model=request.model or self.provider.model_name,
-                    sources_available=sources_available,
-                    sources_referenced=sources_ref,
-                    is_empty_context=False,
-                    prompt_tokens=0,
-                    output_tokens=len(rec_direct.split()),
-                    latency_ms=0.0,
-                    metadata={
-                        "generation_mode": "deterministic_exact_extraction",
-                        "llm_invoked": False,
-                        "fast_path": True,
-                        "reason": "act_title_exact",
-                        "path": "deterministic_exact_extraction",
-                    },
-                )
-
-        # 2c. Out-of-scope / low-relevance fast-path
+        # 2b. Out-of-scope / low-relevance fast-path
         # When all retrieved context chunks have a negative CrossEncoder score below the calibrated
         # threshold (< -8.5), none of the available course documents contain relevant information for the query.
-        # Returning an immediate honest refusal prevents local CPU models from spending 45+ seconds
-        # generating runaway internal deliberation before timing out.
         max_score = max(
             (getattr(item, "reranker_score", 0.0) or 0.0)
             for item in request.context.items
@@ -1182,6 +984,7 @@ class LLMGenerationService:
                     "generation_mode": "insufficient_evidence_refusal",
                     "llm_invoked": False,
                     "fast_path": True,
+                    "provider_calls": 0,
                     "reason": "low_relevance",
                     "max_reranker_score": max_score,
                 },
@@ -1193,92 +996,76 @@ class LLMGenerationService:
             query=request.query, context=request.context
         )
 
-        # 4. Invoke the configured LLM provider
+        # 4. Invoke the configured LLM provider (Primary generation + Bounded retry)
         start_time = time.perf_counter()
         provider_resp: LLMProviderResponse | None = None
         generation_path: str = "primary_llm"
+        provider_calls: int = 0
+        retry_occurred: bool = False
+        cleaned_content: str = ""
+
         try:
+            provider_calls += 1
             provider_resp = await self.provider.generate(
                 system_instruction=system_instruction,
                 user_prompt=user_prompt,
                 temperature=request.temperature,
-                max_output_tokens=request.max_output_tokens,
+                max_output_tokens=request.max_output_tokens or 512,
                 timeout_seconds=request.timeout_seconds,
             )
-            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-            logger.debug("Raw LLM response before sanitization length: %d chars", len(provider_resp.content))
-
-            # 5. Sanitize answer to eliminate leaked CoT rambling
             cleaned_content = _sanitize_llm_answer(provider_resp.content, query=request.query)
 
-            # 5a. Detect reasoning leak or non-answer preamble and attempt extraction, bounded retry, or recovery
-            if is_reasoning_or_non_answer(cleaned_content, request.query):
-                candidate = clean_reasoning_text(provider_resp.content, query=request.query)
-                if candidate != provider_resp.content and not is_reasoning_or_non_answer(candidate, request.query):
-                    cleaned_content = candidate
-                    generation_path = "primary_llm"
-                else:
-                    # Bounded retry with focused answer-only directive
-                    retry_instruction = (
-                        self.prompt_builder.build_system_instruction(request.query)
-                        + "\n\nRETRY DIRECTIVE: Previous response contained internal deliberation or formatting failure. "
-                        "Synthesize and output ONLY the final grounded student-friendly answer. Do not include reasoning, "
-                        "deliberation, instructions, or source evaluation notes. If evidence is insufficient, state that plainly."
+            # 5a. Detect invalid, incomplete, or pure deliberation output and perform bounded single retry
+            if is_invalid_or_incomplete_answer(cleaned_content, request.query):
+                retry_instruction = (
+                    system_instruction
+                    + "\n\nRETRY INSTRUCTION: The previous response was incomplete or contained meta-commentary. "
+                    "Synthesize and output ONLY the direct, student-friendly factual answer explaining the concepts from the evidence. "
+                    "Do not include reasoning preambles, analysis of sources, or deflections such as 'the definition is provided in'. "
+                    "If the evidence is insufficient, state that plainly."
+                )
+                try:
+                    provider_calls += 1
+                    retry_occurred = True
+                    retry_resp = await self.provider.generate(
+                        system_instruction=retry_instruction,
+                        user_prompt=user_prompt,
+                        temperature=0.0,
+                        max_output_tokens=min(request.max_output_tokens or 768, 768),
+                        timeout_seconds=request.timeout_seconds or 180.0,
                     )
-                    try:
-                        retry_resp = await self.provider.generate(
-                            system_instruction=retry_instruction,
-                            user_prompt=user_prompt,
-                            temperature=0.0,
-                            max_output_tokens=min(request.max_output_tokens or 768, 768),
-                            timeout_seconds=request.timeout_seconds or 180.0,
+                    cleaned_retry = _sanitize_llm_answer(retry_resp.content, query=request.query)
+                    if not is_invalid_or_incomplete_answer(cleaned_retry, request.query):
+                        cleaned_content = cleaned_retry
+                        provider_resp = retry_resp
+                        generation_path = "llm_retry"
+                    else:
+                        cleaned_content = (
+                            "I could not synthesize a complete and verified answer from the available course evidence. "
+                            "Please try rephrasing your question or checking your course materials."
                         )
-                        cleaned_retry = _sanitize_llm_answer(retry_resp.content, query=request.query)
-                        if is_reasoning_or_non_answer(cleaned_retry, request.query):
-                            cand_retry = clean_reasoning_text(retry_resp.content, query=request.query)
-                            if cand_retry != retry_resp.content and not is_reasoning_or_non_answer(cand_retry, request.query):
-                                cleaned_retry = cand_retry
-                        if not is_reasoning_or_non_answer(cleaned_retry, request.query):
-                            cleaned_content = cleaned_retry
-                            provider_resp = retry_resp
-                            generation_path = "llm_retry"
-                        else:
-                            rec2 = extract_grounded_recovery_answer(request.query, request.context)
-                            if rec2:
-                                cleaned_content = rec2
-                                generation_path = "extractive_recovery"
-                            elif cleaned_content and len(cleaned_content.split()) >= 10 and not any(p in cleaned_content.lower() for p in ("could not find", "scratchpad")):
-                                generation_path = "primary_llm"
-                            else:
-                                cleaned_content = SAFE_INSUFFICIENT_EVIDENCE_ANSWER
-                                generation_path = "refusal"
-                    except Exception as retry_err:
-                        logger.warning("LLM generation retry failed: %s", retry_err)
-                        rec2 = extract_grounded_recovery_answer(request.query, request.context)
-                        if rec2:
-                            cleaned_content = rec2
-                            generation_path = "extractive_recovery"
-                        elif cleaned_content and len(cleaned_content.split()) >= 10 and not any(p in cleaned_content.lower() for p in ("could not find", "scratchpad")):
-                            generation_path = "primary_llm"
-                        else:
-                            cleaned_content = SAFE_INSUFFICIENT_EVIDENCE_ANSWER
-                            generation_path = "refusal"
-        except (LLMTimeoutError, LLMResponseError) as exc:
-            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-            logger.warning("Initial LLM generation failed (%s) after %s ms; attempting grounded recovery", exc, latency_ms)
-            rec_ans = extract_grounded_recovery_answer(request.query, request.context)
-            if rec_ans and not is_reasoning_or_non_answer(rec_ans, request.query):
-                cleaned_content = rec_ans
-                generation_path = "extractive_recovery" if isinstance(exc, LLMResponseError) else "timeout_recovery"
-            else:
-                max_score = max((getattr(item, "reranker_score", 0.0) or 0.0) for item in request.context.items)
-                if max_score < 0.0:
+                        generation_path = "generation_failed"
+                except Exception as retry_err:
+                    logger.warning("LLM generation retry failed: %s", retry_err)
                     cleaned_content = (
-                        "I could not find sufficient verified evidence in the course materials to answer your question completely."
+                        "I could not synthesize a complete and verified answer from the available course evidence. "
+                        "Please try rephrasing your question or checking your course materials."
                     )
-                    generation_path = "refusal"
-                else:
-                    raise exc
+                    generation_path = "generation_failed"
+        except (LLMTimeoutError, LLMConnectionError) as exc:
+            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
+            logger.warning("LLM provider communication error (%s) after %s ms", exc, latency_ms)
+            raise exc
+        except (LLMResponseError, LLMProviderError) as exc:
+            logger.warning("LLM generation response error: %s", exc)
+            cleaned_content = (
+                "I could not synthesize a complete and verified answer from the available course evidence. "
+                "Please try rephrasing your question or checking your course materials."
+            )
+            generation_path = "generation_failed"
+
+        latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
+        llm_invoked = provider_calls > 0
 
         if provider_resp is None:
             provider_resp = LLMProviderResponse(
@@ -1289,8 +1076,9 @@ class LLMGenerationService:
                 safe_metadata={
                     "generation_mode": generation_path,
                     "generation_path": generation_path,
-                    "llm_invoked": (generation_path in ("primary_llm", "llm_retry")),
-                    "recovery_used": (generation_path not in ("primary_llm", "llm_retry")),
+                    "llm_invoked": llm_invoked,
+                    "provider_calls": provider_calls,
+                    "retry_occurred": retry_occurred,
                 },
             )
         else:
@@ -1298,7 +1086,9 @@ class LLMGenerationService:
                 provider_resp.safe_metadata = {}
             provider_resp.safe_metadata["generation_mode"] = generation_path
             provider_resp.safe_metadata["generation_path"] = generation_path
-            provider_resp.safe_metadata["llm_invoked"] = (generation_path in ("primary_llm", "llm_retry"))
+            provider_resp.safe_metadata["llm_invoked"] = llm_invoked
+            provider_resp.safe_metadata["provider_calls"] = provider_calls
+            provider_resp.safe_metadata["retry_occurred"] = retry_occurred
 
         # 5b. Attribute supporting context items to uncited factual claims
         has_list = any(re.match(r"^\s*[-*•▪●▸\d+.]\s+[A-Za-z0-9]", line) for line in cleaned_content.splitlines())

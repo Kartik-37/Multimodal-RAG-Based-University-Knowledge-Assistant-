@@ -2,7 +2,62 @@
 
 This file is maintained by Antigravity.
 
-## Current authoritative phase -- 2026-11-03
+## Current authoritative phase -- 2026-11-04
+
+**PHASE 26 -- GENUINE OLLAMA-GROUNDED SYNTHESIS, RETIREMENT OF CANNED FACTUAL ANSWERS, AND CONSERVATIVE SANITIZATION (COMPLETED & VERIFIED)**
+
+### Summary of Accomplishments & Architectural Solutions
+
+1. **One Authoritative LLM Synthesis Path for Academic Q&A (Section 3.A, 3.B):**
+   - **Root Causes Identified**:
+     - `extract_grounded_recovery_answer()` in `backend/app/services/llm/service.py` contained hardcoded factual answers constructed in Python for Act titles, supported iOS/iPhone devices, Android versions, definitions, and Flutter widgets with pre-written Material/Cupertino bullets and note footers.
+     - `generate_grounded_answer()` had a deterministic Act-title fast path before the LLM provider call (`llm_invoked=False`) and fell back to `extract_grounded_recovery_answer()` after provider failures or validation errors, masking LLM failures with Python text.
+     - `_response_format_directive()` in `backend/app/services/llm/prompt_builder.py` contained a topic-specific Flutter widget branch prescribing specific category descriptions.
+   - **Architectural Solutions**:
+     - Retired `extract_grounded_recovery_answer()` to return `None`, permanently eliminating Python-authored factual answers.
+     - Removed the Act-title fast path from `generate_grounded_answer()`; all substantive factual queries now proceed to the configured LLM provider (`qwen3:4b`).
+     - Neutralized `_response_format_directive()` to strictly govern shape (explanation, list, steps, table, comparison) without dictating topic-specific facts.
+
+2. **Conservative, Block-Aware Sanitization & Anti-Deliberation Filters (Section 3.E, 3.C):**
+   - **Root Causes Identified**:
+     - Overly aggressive line and phrase filters in `_sanitize_llm_answer()` previously stripped critical factual clauses, and sentence-tail splitting left dangling fragments like `"The definition of Flutter is provided in."`.
+     - `qwen3:4b` internal monologue and self-talk (e.g., `"First, looking at [source_1]..."`, `"I need to cite only the sources..."`, `"I need to be careful here..."`, `"The user might be expecting..."`) leaked when negative instruction headers prompted the model to think aloud.
+   - **Architectural Solutions**:
+     - Refactored `_sanitize_llm_answer()` into a block-aware architecture: fenced code blocks and Markdown tables are placeholder-protected, Markdown headings are preserved with bounding blank lines, and bullet lists retain complete items.
+     - Added preamble cleaners to unwrap meta-evidence openings (`"First, looking at [source_1]: It clearly defines..."`) into direct student explanations.
+     - Added robust line filters eliminating internal self-talk starting with `"I need to..."`, `"I should..."`, `"Wait, the instructions..."`, and `"The user might be..."`.
+     - Implemented cross-block duplicate conclusion filtering (overlap threshold > 0.80) to eliminate repetitive summaries.
+
+3. **Bounded Single Retry and Truthful Non-Factual Refusals (Section 3.F, 6):**
+   - **Implementation**:
+     - Added `is_invalid_or_incomplete_answer()` to detect truncated prose (lacking terminal punctuation), dangling preposition/connector fragments (`"provided in."`, `"avoid"`), scratchpads, and deflections.
+     - In `generate_grounded_answer()`, detected incomplete or invalid generation triggers at most one bounded retry with a focused instruction at temperature `0.0` and generous token budget (512 tokens).
+     - If the retry also fails validation or the provider encounters errors, the pipeline returns an honest non-factual refusal (`"I could not synthesize a complete and verified answer from the available course evidence..."`) with truthful metadata (`generation_mode="generation_failed"`, `llm_invoked=True`, `provider_calls=2`, `retry_occurred=True`).
+
+### Verification & Automated Test Suites
+
+- `backend/tests/unit/test_phase26_ollama_synthesis_and_sanitizer.py`: **8 passed, 0 failed (100%)**
+  - Golden Test 1: `What is Flutter?` invokes Ollama, explains naturally, cites evidence, truthful metadata.
+  - Golden Test 2: `What is a Flutter widget?` invokes Ollama, explains concept without Python canned text.
+  - Golden Test 3: `List the Flutter widget concepts mentioned in my notes` produces clean list without iPhone drift.
+  - Golden Test 4: Unrelated query with Flutter-only scope returns out-of-scope refusal without fake citations.
+  - Golden Test 5: Provider failure triggers at most 1 retry and returns safe generation-failure response (no canned factual answer).
+  - Golden Test 6: Sanitizer integrity rejects `"The definition of Flutter is provided in."` as invalid and preserves valid Markdown.
+  - Golden Test 7: Proves no hidden canned-answer path for Act title, Android versions, iOS devices, Flutter definition, Flutter widgets.
+  - Test 8: Prompt builder has no topic-specific factual directives.
+- `backend/tests/unit/test_llm_generation_service.py`: **11 passed, 0 failed (100%)**
+- `backend/tests/unit/test_grounded_prompt_builder.py`: **7 passed, 0 failed (100%)**
+- `backend/tests/unit/test_phase25_new_chat_scope_and_list_quality.py`: **14 passed, 0 failed (100%)**
+- **Combined Test Suite Total**: **40 passed, 0 failed (100%) in 4.12s**
+
+### Live Ollama Hardware Verification (`screenshot/phase26_live_ollama_results.json`)
+- Verified live end-to-end execution against local Ollama (`qwen3:4b`) using course `MSC` and document `1-Flutter-Intro.pdf`.
+- Truthful generation metadata recorded: `llm_invoked=True`, `provider=ollama`, `model=qwen3:4b`.
+- Generation mode reports `primary_llm` when model successfully generates grounded explanation, and `generation_failed` when validation fails after retry, proving zero Python-constructed fallback answers.
+
+---
+
+## Prior authoritative phase -- 2026-11-03
 
 **PHASE 25 -- ACCOUNT-LEVEL NEW CHAT REUSE, STUDENT COURSE/DOCUMENT SCOPE PARITY, AND NATURAL LIST ANSWERS (COMPLETED & VERIFIED)**
 

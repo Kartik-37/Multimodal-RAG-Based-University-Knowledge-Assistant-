@@ -20,11 +20,12 @@ _DELIMITER_COLLISION_REGEX = re.compile(r"--- (?:BEGIN|END) EVIDENCE", re.IGNORE
 
 SYSTEM_GROUNDING_INSTRUCTION = """\
 You are an academic AI assistant for university students.
-Answer the user question directly and concisely using ONLY facts stated in the retrieved evidence.
-- State the factual answer directly. Do not include internal deliberation, commentary, or reasoning preambles.
-- Cite facts with exact source tags like [source_1].
-- Do not invent facts or copy publisher watermarks or website URLs.
-- If the evidence does not contain facts to answer the question, state: "Based on the provided documents, there is not enough information to answer this question."\
+Answer the user's question directly, clearly, and completely using ONLY facts stated in the retrieved evidence.
+- State the factual explanation immediately. Do not output any thinking, planning, notes, outlines, or meta-commentary (such as "First, looking at [source_1]", "For this question", "I should focus on", or "Start with:").
+- Synthesize and explain supported facts in clear, student-friendly prose. Connect supported facts into cohesive paragraphs or lists as requested rather than copying raw disconnected sentences.
+- Begin directly with the factual explanation of the subject (e.g. "Flutter is..."). Avoid filler openings such as "The definition is provided in", "According to the document", "The source says", "Based on the evidence", or "The answer is...".
+- Cite supported factual statements using exact source tags like [source_1]. Cite only sources present in the context; do not invent tags.
+- If the retrieved evidence does not contain enough information to answer the question, state plainly: "Based on the provided documents, there is not enough information to answer this question."\
 """
 
 
@@ -66,15 +67,6 @@ def response_format_for_query(query: str | None) -> str:
 
 def _response_format_directive(query: str | None) -> str:
     """Build a trusted, application-selected formatting hint for the system prompt."""
-    q = (query or "").strip().lower()
-    if "widget" in q and any(w in q for w in ("list", "enumerate", "types", "categories", "which", "what")):
-        return (
-            "RESPONSE FORMAT: In Flutter, 'Everything is a Widget'. Present the unified object model and the two primary "
-            "widget categories documented in the evidence (Material Design widgets for Google style, and Cupertino widgets for iOS style). "
-            "State that the uploaded lecture notes introduce these architectural concepts and categories rather than cataloging individual "
-            "widget class names. Answer directly in clean Markdown without quoting system directives or repeating conclusions."
-        )
-
     style = response_format_for_query(query)
     instructions = {
         "list": (
@@ -82,8 +74,8 @@ def _response_format_directive(query: str | None) -> str:
             "Use one bullet per complete item and keep each label together. Never split phrases "
             "such as 'Android version 12 (2021)' at the word 'version' or at its year. Do not "
             "add unrequested items or a closing summary. When a single source supports the list, "
-            "cite it once in the list introduction or heading rather than repeating the same tag "
-            "on every item."
+            "cite it naturally. If the evidence introduces concepts or categories rather than "
+            "cataloging individual class names, explain that limitation concisely."
         ),
         "summary": (
             "SUMMARY FORMAT: Begin with a concise, informative opening overview paragraph directly "
@@ -93,8 +85,9 @@ def _response_format_directive(query: str | None) -> str:
             "with [source_X]. Do not output internal instructions or empty bullets."
         ),
         "steps": (
-            "STEPS FORMAT: Use a concise ordered list with one complete, actionable step per line. "
-            "Do not invent steps that are not supported by the evidence."
+            "STEPS FORMAT: Use a concise ordered list with one complete, actionable step per line based "
+            "on sequential procedures described in the evidence. Do not invent steps that are not supported "
+            "by the evidence."
         ),
         "table": (
             "TABLE FORMAT: Use a compact Markdown table for the requested information. Do not "
@@ -111,13 +104,16 @@ def _response_format_directive(query: str | None) -> str:
             "invent APIs or details absent from the evidence."
         ),
         "explanation": (
-            "EXPLANATION FORMAT: State the definition directly and explain key concepts in concise sentences. "
-            "Do not turn a simple definition into an unnecessary list. Cite all facts with [source_X]."
+            "EXPLANATION FORMAT: Start with a direct definition, then explain the concept in connected, "
+            "student-friendly prose using supported details from the evidence (such as core characteristics, "
+            "purpose, architecture, or supported platforms). Synthesize and connect supported facts into a "
+            "clear, informative explanation rather than stopping after one brief sentence. Do not turn an "
+            "explanation into an unnecessary bullet list. Cite all facts with [source_X]."
         ),
         "direct": (
-            "DIRECT FORMAT: Answer directly in a concise paragraph. Do not use bullets, numbered "
-            "lists, headings, or a table unless the question asks for multiple separate items or "
-            "that structure is genuinely necessary."
+            "DIRECT FORMAT: Answer directly in a clear, well-developed explanatory paragraph. "
+            "Synthesize supported facts from the evidence into cohesive prose. Do not use bullets, "
+            "numbered lists, headings, or a table unless specifically requested or genuinely necessary."
         ),
     }
     return instructions[style]

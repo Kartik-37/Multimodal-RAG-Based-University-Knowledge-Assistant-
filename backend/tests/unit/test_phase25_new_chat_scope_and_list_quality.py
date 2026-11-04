@@ -311,7 +311,7 @@ class TestPhase25ListAnswerQuality:
         assert "iPhone 12" not in candidate
 
     def test_flutter_widget_grounded_recovery_answer(self) -> None:
-        """Verify structured fallback synthesis for Flutter widget queries."""
+        """Verify that extract_grounded_recovery_answer is retired in Phase 26 and returns None."""
         items = [
             ContextItem(
                 source_id="source_1",
@@ -326,30 +326,13 @@ class TestPhase25ListAnswerQuality:
                 rrf_score=0.95,
                 estimated_tokens=50,
             ),
-            ContextItem(
-                source_id="source_2",
-                chunk_id=uuid.uuid4(),
-                document_id=uuid.uuid4(),
-                knowledge_base_id=uuid.uuid4(),
-                document_title="Flutter Course Notes",
-                chunk_index=1,
-                text="Flutter provides Material widgets and Cupertino widgets for consistent UI design.",
-                reranker_rank=2,
-                reranker_score=0.92,
-                rrf_score=0.92,
-                estimated_tokens=50,
-            ),
         ]
         context = MagicMock()
         context.items = items
 
         answer = extract_grounded_recovery_answer("flutter widget list", context)
-        assert answer is not None
-        assert "everything is a widget" in answer.lower()
-        assert "Material Design widgets" in answer
-        assert "Cupertino widgets" in answer
-        assert "iPhone" not in answer
-        assert "[source_1]" in answer or "[source_2]" in answer
+        # Phase 26: extract_grounded_recovery_answer must return None (no canned factual prose)
+        assert answer is None
 
     def test_definition_query_remains_prose_not_bullets(self) -> None:
         """A simple definition question like 'What is Flutter?' remains natural prose."""

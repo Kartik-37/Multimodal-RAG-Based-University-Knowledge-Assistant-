@@ -1,0 +1,65 @@
+[
+  {
+    "query": "What is Flutter?",
+    "answer": "- It's an app SDK [source_1]\n- Builds high-performance, high-fidelity apps\n- For iOS, Android, web from single codebase\n- Supports six platforms (list them)\n- Goal is natural feel across platforms while embracing differences\n\nI need to cite only the sources that provide the facts [source_1]. gives the core definition and platform list, so I'll cite [source_1] for that. The \"high-performance, high-fidelity\" phrasing comes from [source_1]. The six platforms are explicitly listed in [source_1]. The part about \"embracing differences in scrolling behaviors...\" is also from [source_1].",
+    "citations": [
+      {
+        "source_id": "source_1",
+        "document_name": "1-Flutter-Intro.pdf",
+        "page_number": 18
+      }
+    ],
+    "grounding_status": "PARTIALLY_SUPPORTED",
+    "is_grounded": false,
+    "latency_breakdown": {
+      "query_processing_ms": 1.34,
+      "retrieval_ms": 2476.94,
+      "reranking_ms": 20023.99,
+      "context_assembly_ms": 0.29,
+      "llm_generation_ms": 92656.35,
+      "grounding_validation_ms": 14.92,
+      "total_pipeline_ms": 115174.09
+    },
+    "llm_invoked": true,
+    "generation_mode": "primary_llm",
+    "model": "qwen3:4b"
+  },
+  {
+    "query": "What is a Flutter widget?",
+    "answer": "I could not synthesize a complete and verified answer from the available course evidence. Please try rephrasing your question or checking your course materials.",
+    "citations": [],
+    "grounding_status": "UNVERIFIABLE",
+    "is_grounded": false,
+    "latency_breakdown": {
+      "query_processing_ms": 3.15,
+      "retrieval_ms": 403.21,
+      "reranking_ms": 1037.42,
+      "context_assembly_ms": 0.14,
+      "llm_generation_ms": 158377.14,
+      "grounding_validation_ms": 2.96,
+      "total_pipeline_ms": 159824.3
+    },
+    "llm_invoked": true,
+    "generation_mode": "generation_failed",
+    "model": "qwen3:4b"
+  },
+  {
+    "query": "List the Flutter widget concepts mentioned in my notes",
+    "answer": "I need to be careful here. The evidence says \"everything is a widget\" but doesn't enumerate specific widget concepts. The user might be expecting me to list things like Text, Button, etc., but those aren't mentioned in the provided evidence. The evidence only discusses the foundational concept that all UI elements are widgets.\n\nSo based on the evidence, I can only state that the concept mentioned is that everything in Flutter is a widget (including the app itself), but I can't list specific widget types because they aren't in the evidence. The evidence doesn't provide a catalog of widget concepts - it just explains the unifying widget model.\n\nI should respond by saying that the evidence mentions the concept that \"everything is a widget\" but doesn't list specific widget concepts. The user asked for a list, but the evidence doesn't contain that list.\n\nWait, the instructions say: \"If the retrieved evidence does not contain enough information to answer the question, state plainly: 'Based on the provided documents, there is not enough information to answer this question.'\"",
+    "citations": [],
+    "grounding_status": "UNVERIFIABLE",
+    "is_grounded": false,
+    "latency_breakdown": {
+      "query_processing_ms": 1.18,
+      "retrieval_ms": 852.5,
+      "reranking_ms": 937.78,
+      "context_assembly_ms": 0.14,
+      "llm_generation_ms": 68250.18,
+      "grounding_validation_ms": 3.26,
+      "total_pipeline_ms": 70045.56
+    },
+    "llm_invoked": true,
+    "generation_mode": "primary_llm",
+    "model": "qwen3:4b"
+  }
+]
