@@ -4,6 +4,36 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-11-04
 
+**PHASE 28 -- BCA ACADEMIC PROJECT REPORT GENERATION, UNIVERSITY TEMPLATE RECONCILIATION, AND PAGINATION AUDITING (COMPLETED & VERIFIED)**
+
+### Summary of Accomplishments & Deliverables
+
+1. **Strict University Formatting Authority (`Project Report-Part-1.docx` & `Project Report-Part-2.docx`):**
+   - Implemented exact Kaushalya The Skill University (KSU) academic layout: Times New Roman typography, A4 geometry, 1.25" left margin, 1.0" top/bottom/right margins, 1.5 line spacing, and justified body paragraphs.
+   - Chapter headings formatted with chapter number on top, right-aligned, 16 pt bold uppercase, with exactly three line spaces after chapter name (`Pt(36)`). Section headings (14 pt bold title case) with 1 line space before; subsection headings (12 pt bold/italic title case).
+   - Figure captions placed below figures, centered, 10 pt; table captions placed above tables, centered, 10 pt.
+   - Front matter pagination: Sections 1–4 unnumbered (Cover, University Certificate, Company Certificate, Company Profile); preliminary pages (Acknowledgement through List of Tables) numbered in lower-case Roman numerals starting at `v`; main report (Chapter 1 Introduction through References) numbered in Arabic numerals starting at `1`, right-aligned 12 pt.
+   - Header applied starting on Chapter 1 Introduction page: right-aligned `Industry Apprenticeship/Minor Project Report` in 12 pt Times New Roman.
+   - Abstract strictly bounded to 217 words (well below the 350-word maximum), italic, 1.5 line spacing.
+
+2. **Complete Deliverables in `docs/project-report/`:**
+   - `RAG_Assistant_Project_Report_Draft.docx`: Fully formatted, editable Microsoft Word report document.
+   - `RAG_Assistant_Project_Report_Draft.pdf`: High-fidelity PDF exported via Word COM automation (`16.0`) with identical 46-page pagination.
+   - `REPORT_CONTENT_AND_VERIFICATION_NOTES.md`: Comprehensive audit notes detailing Git commit (`deaceec`), inspected artifacts, verified test suites, metadata placeholders, and institutional Turnitin similarity policy.
+   - `docs/project-report/assets/`: 8 academic 300-DPI diagrams, 9 genuine application snapshots, and authentic KSU university logo.
+   - `docs/project-report/rendered_pages/`: 46 high-resolution rendered proof images (`page_01.png` to `page_46.png`) for visual inspection.
+
+3. **Academic Truthfulness & Scope Integrity:**
+   - Formal project title preserved: *Multimodal RAG-Based University Knowledge Assistant*.
+   - Truthfulness gate enforced: Documented current verified implementation as visual PDF evidence + multi-format text RAG (PDF, DOCX, TXT, Markdown, CSV).
+   - Audio/video scraping and direct CLIP pixel embeddings explicitly identified as future roadmap scope.
+   - In-house academic development accurately stated for company certificate/profile with explicit placeholders for student/guide confirmation.
+   - Similarity target `<8%` documented with clear instruction that institutional Turnitin/iThenticate access is required and results must never be fabricated.
+
+---
+
+## Prior authoritative phase -- 2026-11-04
+
 **PHASE 27 -- GENERALIZED ACADEMIC RAG ANSWER PIPELINE, RELEVANCE GATING, SINGLE RETRY BUDGET, AND CITATION DEDUPLICATION (COMPLETED & VERIFIED)**
 
 ### Summary of Accomplishments & Architectural Solutions
