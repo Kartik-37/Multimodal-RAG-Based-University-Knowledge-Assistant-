@@ -88,6 +88,10 @@ class LLMGenerationRequest(BaseModel):
         le=300.0,
         description="Timeout in seconds for provider generation requests.",
     )
+    allow_retry: bool = Field(
+        default=True,
+        description="Whether internal retry is permitted on invalid/deliberation outputs.",
+    )
 
 
 class LLMGenerationResponse(BaseModel):

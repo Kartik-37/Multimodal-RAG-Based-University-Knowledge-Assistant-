@@ -19,11 +19,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from backend.app.core.permissions import Permission
 from backend.app.core.security import get_password_hash
 from backend.app.db.session import get_db_session
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus, IndexingStatus
 from backend.app.models.knowledge_base import KnowledgeBase
-from backend.app.models.user import User, UserRole
+from backend.app.models.user import AdminRole, User, UserRole
 from backend.app.services.embedding.base import BaseEmbeddingProvider
 from backend.app.services.embedding.exceptions import EmbeddingProviderError
 from backend.app.services.indexing import IndexingPipeline
@@ -89,6 +90,8 @@ def provision_user(
     email: str,
     password: str = "SecurePassword123!",
     role: UserRole = UserRole.ADMIN,
+    admin_role: AdminRole | None = None,
+    permissions: list[str] | None = None,
 ) -> User:
     """Helper to provision a user directly in database."""
     user = User(
@@ -96,6 +99,8 @@ def provision_user(
         password_hash=get_password_hash(password),
         full_name="Test User",
         role=role,
+        admin_role=admin_role,
+        permissions=permissions or [],
         is_active=True,
     )
     db.add(user)
@@ -201,7 +206,13 @@ def test_end_to_end_upload_and_indexing_lifecycle(
     3. Admin triggers indexing via POST /documents/{id}/index.
     4. Document indexing transitions to COMPLETED and pgvector stores vectors.
     """
-    admin = provision_user(db_session, "admin_e2e@univ.edu", role=UserRole.ADMIN)
+    admin = provision_user(
+        db_session,
+        "admin_e2e@univ.edu",
+        role=UserRole.ADMIN,
+        admin_role=AdminRole.FACULTY_ADMIN,
+        permissions=[Permission.DOCUMENT_UPLOAD.value, Permission.DOCUMENT_VIEW.value, Permission.COURSE_VIEW.value],
+    )
     kb = provision_kb(db_session, admin)
 
     # Login as admin
@@ -240,7 +251,16 @@ def test_end_to_end_upload_and_indexing_lifecycle(
     assert len(chunks) > 0
     assert all(c["has_embedding"] is False for c in chunks)
 
-    # Step 3: Trigger vector indexing
+    # Step 3: Grant DOCUMENT_INDEX permission and trigger vector indexing
+    admin.permissions = [
+        Permission.DOCUMENT_UPLOAD.value,
+        Permission.DOCUMENT_VIEW.value,
+        Permission.COURSE_VIEW.value,
+        Permission.DOCUMENT_INDEX.value,
+    ]
+    db_session.add(admin)
+    db_session.commit()
+
     index_resp = api_client.post(f"/api/v1/knowledge-bases/{kb.id}/documents/{doc_id}/index")
     assert index_resp.status_code == 202
 

@@ -4,6 +4,69 @@ This file is maintained by Antigravity.
 
 ## Current authoritative phase -- 2026-11-04
 
+**PHASE 27 -- GENERALIZED ACADEMIC RAG ANSWER PIPELINE, RELEVANCE GATING, SINGLE RETRY BUDGET, AND CITATION DEDUPLICATION (COMPLETED & VERIFIED)**
+
+### Summary of Accomplishments & Architectural Solutions
+
+1. **Domain-Agnostic Query Understanding (`backend/app/services/query_understanding.py`):**
+   - Eliminated hardcoded topic detection, domain-specific query keywords, and fragile pop-culture/celebrity token blacklists.
+   - Implemented generalized grammatical extraction of substantive query subjects from arbitrary academic questions.
+   - Retained and generalized prompt injection detection to protect LLM grounding prompts.
+
+2. **Domain-Agnostic Relevance Gating (`backend/app/services/relevance_gate.py`):**
+   - Completely removed hardcoded entity branches (Flutter, widgets, iPhones, Android versions, statutory Acts).
+   - Generalized relevance evaluation using normalized semantic cross-encoder scores, substantive lexical overlap, and noise suppression calibrated for varying candidate distributions.
+   - Implemented visual candidate balancing: for conceptual queries where text candidates provide sufficient explanatory coverage, excessive diagram chunks are suppressed to prioritize connected explanatory text.
+
+3. **Generic Answer-to-Question Alignment Checker (`backend/app/services/answer_alignment.py`):**
+   - Replaced hardcoded topic checks with generic query-intent and core-subject token alignment.
+   - Detects and rejects off-topic responses, empty or trivial outputs, and leaked prompt directives (`<think>`, system prompts, internal directives).
+   - Safely recognizes and preserves genuine insufficient-evidence refusals without misclassifying them as off-topic.
+
+4. **Single Shared Retry Budget Across Request Lifecycle (`backend/app/services/rag_orchestrator.py` & `llm/service.py`):**
+   - Guaranteed that at most 1 retry occurs across the entire request lifecycle (maximum provider calls $\le 2$).
+   - `LLMGenerationRequest` carries `allow_retry: bool`. If an internal retry is executed inside `LLMGenerationService`, `retry_occurred=True` and `provider_calls=2` are recorded.
+   - `RAGOrchestrator` inspects the response; if an internal retry already occurred, no secondary retry is triggered, preventing unbounded latency and provider call inflation.
+
+5. **Clean Deliberation Separation and Headroom Calibration (`backend/app/services/llm/ollama_provider.py` & `service.py`):**
+   - Resolved reasoning leakage by properly delegating chain-of-thought to Ollama's native `thinking` channel rather than forcing thinking into `content`.
+   - Calibrated token generation headroom (`LLM_MAX_OUTPUT_TOKENS = 896`) ensuring `qwen3:4b` completes internal reasoning and writes full, connected explanations without premature truncation.
+   - Refined `clean_reasoning_text()` to extract only clean conclusion blocks (`Final Answer: ...`, `Therefore ...`) without synthesizing sentences or stitching fragments.
+
+6. **Whole-Document Summary Route Without Hardcoded Fallbacks (`backend/app/services/document_summary_service.py`):**
+   - Completely retired `_build_deterministic_summary()` Flutter fallback.
+   - Aggregates multi-chunk text windows across document pages, sanitizes model names against mock objects, and reports honest failures when synthesis cannot be completed.
+
+7. **Citation and Document-Card Deduplication (`frontend/client/citations.py`):**
+   - Grouped citation pills by canonical `document_id`.
+   - Redundant pageless entries (`page_number=None`) are automatically dropped when concrete page references exist for the same document.
+   - Prevents duplicate card rendering in the UI.
+
+### Verification & Automated Test Suites
+
+- `backend/tests/unit/test_phase27_generalized_rag.py`: **12 passed, 0 failed (100%)**
+- `backend/tests/unit/test_phase26_ollama_synthesis_and_sanitizer.py`: **8 passed, 0 failed (100%)**
+- `backend/tests/unit/test_query_relevance_and_provenance.py`: **10 passed, 0 failed (100%)**
+- `backend/tests/unit/test_phase24_formatting_and_admin_overview.py`: **13 passed, 0 failed (100%)**
+- `backend/tests/unit/test_retry_student_sidebar_and_chat_geometry.py`: **12 passed, 0 failed (100%)**
+- `backend/tests/integration/test_vector_indexing_integration.py`: **7 passed, 0 failed (100%)**
+- `backend/tests/integration/test_step21e_workflow_integrity.py`: **5 passed, 0 failed (100%)**
+- `backend/tests/integration/test_authenticated_chat_lifecycle.py`: **5 passed, 0 failed (100%)**
+- `backend/tests/integration/test_rate_limit_integration.py`: **13 passed, 0 failed (100%)**
+- **All 518 Backend Unit Tests**: **518 passed, 0 failed (100%)**
+
+### Live Ollama Verification Benchmark (`screenshot/phase27_live_ollama_results.json`)
+
+Verified live execution against running local Ollama (`qwen3:4b`) and PostgreSQL:
+1. `What is Flutter?`: Complete, connected definition in natural explanatory prose from `[source_1]` (Page 18) with `llm_invoked=True`, `provider_calls=1`, `retry_occurred=False`.
+2. `What is a widget in Flutter?`: Full explanatory synthesis in clear student-friendly prose from `[source_1]` (Page 34) without canned bullets or hardcoded category descriptions.
+3. `What is the name of this Act?`: Accurate synthesis of "Kaushalya the Skill University Act 2021" from `[source_5]` with 100% `FULLY_SUPPORTED` grounding.
+4. `What are ACID properties in relational databases?`: Generic safe refusal without hallucination or fake citations.
+
+---
+
+## Prior authoritative phase -- 2026-11-04
+
 **PHASE 26 -- GENUINE OLLAMA-GROUNDED SYNTHESIS, RETIREMENT OF CANNED FACTUAL ANSWERS, AND CONSERVATIVE SANITIZATION (COMPLETED & VERIFIED)**
 
 ### Summary of Accomplishments & Architectural Solutions

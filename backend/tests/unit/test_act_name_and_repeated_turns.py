@@ -66,10 +66,8 @@ def test_extract_act_name_statutory_patterns():
 
     for q in test_queries:
         ans = extract_grounded_recovery_answer(q, context)
-        assert ans is not None, f"Failed to extract for query: {q}"
-        assert "Kaushalya" in ans
-        assert "Skill University Act 2021" in ans
-        assert "[source_2]" in ans
+        # In Phase 26/27, canned factual answers are retired so Ollama performs genuine synthesis
+        assert ans is None
 
 
 def test_extract_act_name_does_not_trigger_on_unrelated_queries():

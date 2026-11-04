@@ -1,6 +1,7 @@
 """
 Structured Query Understanding Service.
 Performs semantic classification, entity target detection, and pre-retrieval routing.
+General-purpose and document-agnostic: supports arbitrary courses, documents, and academic topics.
 """
 
 import re
@@ -16,8 +17,8 @@ ASSISTANT_IDENTITY_ANSWER = (
 
 ASSISTANT_HELP_ANSWER = (
     "I can help you with your academic studies by searching authorized course materials. "
-    "You can ask me to define concepts (e.g., 'What is Flutter?'), explain topics ('What is a native app?'), "
-    "list documented components ('What are the advantages of Flutter?'), or lookup university regulations. "
+    "You can ask me to define concepts, explain complex topics, list documented components, "
+    "compare architectural or theoretical approaches, or lookup university regulations. "
     "All factual answers include clickable source citations."
 )
 
@@ -30,8 +31,7 @@ ASSISTANT_THANKS_ANSWER = (
 )
 
 AMBIGUOUS_CLARIFICATION_ANSWER = (
-    "Could you please clarify your question? For example, are you looking for a list of Flutter widgets, "
-    "supported iOS devices, or Android versions?"
+    "Could you please clarify your question? Please specify what topic, concept, or information you are looking for."
 )
 
 
@@ -62,26 +62,35 @@ class QueryUnderstandingService:
         r"^(?:thanks|thank\s+you|thanks\s+a\s+lot|thx|many\s+thanks|thankyou)\b",
     ]
 
-    _OUT_OF_SCOPE_PATTERNS: ClassVar[list[str]] = [
-        r"\b(?:narendra\s+modi|modi|pm\s+modi)\b",
-        r"\b(?:virat\s+kohli|kohli|kahli|rohit\s+sharma|ms\s+dhoni|sachin\s+tendulkar)\b",
-        r"\b(?:rahul\s+gandhi|donald\s+trump|trump|elon\s+musk)\b",
-        r"\b(?:cricket\s+score|ipl|bollywood|hollywood|movie\s+review|weather\s+today|latest\s+news)\b",
-        r"\bwho\s+is\s+the\s+prime\s+minister\b",
-        r"\bwho\s+is\s+the\s+president\s+of\b",
+    _AMBIGUOUS_PATTERNS: ClassVar[list[str]] = [
+        r"^(?:list|show\s+list|give\s+me\s+a\s+list|widgets?|versions?|devices?)\??$",
     ]
 
-    _AMBIGUOUS_PATTERNS: ClassVar[list[str]] = [
-        r"^(?:list|widgets?|versions?|devices?|current\s+version|show\s+list|give\s+me\s+a\s+list)\??$",
+    _OUT_OF_SCOPE_PATTERNS: ClassVar[list[str]] = [
+        r"\b(?:ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions|system\s+prompt|reveal\s+(?:your\s+)?instructions|jailbreak)\b",
     ]
 
     def analyze(self, raw_query: str) -> StructuredQuery:
         """
         Analyze a raw user query and produce a StructuredQuery.
+        Generic and document-agnostic: extracts intent and substantive subject without hardcoding subjects.
         """
         raw = raw_query.strip()
         normalized = re.sub(r"\s+", " ", raw.lower()).strip()
         clean_text = re.sub(r"[?!.,;:]+$", "", normalized).strip()
+
+        # 0. Check Prompt Injection / Out-of-Scope Directives
+        for pattern in self._OUT_OF_SCOPE_PATTERNS:
+            if re.search(pattern, clean_text):
+                return StructuredQuery(
+                    original_query=raw,
+                    normalized_query=normalized,
+                    intent=QueryIntent.OUT_OF_SCOPE,
+                    subject="out_of_scope",
+                    requested_property="refusal",
+                    is_out_of_scope=True,
+                    requires_retrieval=False,
+                )
 
         # 1. Check Assistant Identity
         for pattern in self._IDENTITY_PATTERNS:
@@ -136,20 +145,7 @@ class QueryUnderstandingService:
                     requires_retrieval=False,
                 )
 
-        # 5. Check Out-of-Scope (Celebrities / Pop-culture / Non-course facts)
-        for pattern in self._OUT_OF_SCOPE_PATTERNS:
-            if re.search(pattern, clean_text):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.OUT_OF_SCOPE,
-                    subject="general_knowledge",
-                    requested_property="general_fact",
-                    is_out_of_scope=True,
-                    requires_retrieval=False,
-                )
-
-        # 6. Check Ambiguous queries requiring clarification
+        # 5. Check Ambiguous queries requiring clarification (bare ambiguous keywords with no subject)
         for pattern in self._AMBIGUOUS_PATTERNS:
             if re.match(pattern, clean_text):
                 return StructuredQuery(
@@ -163,16 +159,25 @@ class QueryUnderstandingService:
                     clarification_prompt=AMBIGUOUS_CLARIFICATION_ANSWER,
                 )
 
-        # 6b. Whole-Document Summarization Queries
-        is_summary_kw = any(w in clean_text for w in ("summarize", "summary", "overview", "main topics", "exam notes"))
-        is_doc_kw = any(w in clean_text for w in ("pdf", "document", "file", "notes", "entire", "whole", "course material", "all pages"))
-        if is_summary_kw and (is_doc_kw or "flutter" in clean_text):
-            doc_hint = "1-Flutter-Intro.pdf" if "flutter" in clean_text else None
+        # 6. Whole-Document Summarization Queries
+        is_summary_kw = bool(
+            re.search(r"\b(?:summarize|summary|overview of the|overview of this|document overview|exam notes for)\b", clean_text)
+        )
+        is_doc_kw = bool(
+            re.search(r"\b(?:pdf|document|file|notes|entire|whole|course material|all pages|all chapters)\b", clean_text)
+        )
+        pdf_hint_m = re.search(r"\b([a-zA-Z0-9_\-\.]+\.pdf)\b", clean_text)
+
+        if is_summary_kw and (is_doc_kw or pdf_hint_m):
+            doc_hint = pdf_hint_m.group(1) if pdf_hint_m else None
+            # Extract document subject if provided (e.g. "summarize the Flutter PDF" -> "flutter")
+            sub_m = re.search(r"\b(?:summarize|summary of)\s+(?:the\s+)?([a-zA-Z0-9_\-\.]+?)(?:\s+(?:pdf|document|notes|file))\b", clean_text)
+            subj = sub_m.group(1).strip() if sub_m else "document"
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
                 intent=QueryIntent.DOCUMENT_SUMMARY,
-                subject="flutter" if "flutter" in clean_text else "document_summary",
+                subject=subj,
                 target_entity_type="document",
                 requested_property="summary",
                 requires_retrieval=True,
@@ -180,188 +185,142 @@ class QueryUnderstandingService:
                 target_document_hint=doc_hint,
             )
 
-        # 7. Academic / Grounded Queries
-        # 7a. Statutory Act title queries
-        if any(
-            p in clean_text
-            for p in (
-                "act name",
-                "name of the act",
-                "name of this act",
-                "short title",
-                "title of the act",
-                "title of this act",
-                "which act",
-                "what act",
-                "act title",
-            )
-        ):
+        # 7. Generic Academic / Grounded Queries
+        # 7a. Comparison intent
+        m_comp1 = re.match(r"^(?:compare|difference between|differences between|differentiate between)\s+(?:the\s+)?(.+)$", clean_text)
+        if m_comp1:
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
-                intent=QueryIntent.FACT_LOOKUP,
-                subject="act_title",
-                target_entity_type="act",
-                requested_property="title",
+                intent=QueryIntent.COMPARISON,
+                subject=m_comp1.group(1).strip(),
+                requested_property="comparison",
                 requires_retrieval=True,
             )
-
-        # 7b. Widget queries
-        if "widget" in clean_text:
-            if any(p in clean_text for p in ("categories", "category", "which widget", "what widget categories")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.FACT_LOOKUP,
-                    subject="flutter_widget",
-                    target_entity_type="widget_category",
-                    requested_property="categories",
-                    requires_retrieval=True,
-                )
-            if any(p in clean_text for p in ("list", "enumerate", "types", "all widgets", "what widgets")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.LIST,
-                    subject="flutter_widget",
-                    target_entity_type="widget",
-                    requested_property="list",
-                    requires_retrieval=True,
-                )
+        m_comp2 = re.match(r"^(.+?)\s+(?:vs\.?|versus)\s+(.+)$", clean_text)
+        if m_comp2:
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
-                intent=QueryIntent.DEFINITION,
-                subject="flutter_widget",
-                target_entity_type="widget",
-                requested_property="definition",
+                intent=QueryIntent.COMPARISON,
+                subject=f"{m_comp2.group(1).strip()} vs {m_comp2.group(2).strip()}",
+                requested_property="comparison",
                 requires_retrieval=True,
             )
 
-        # 7c. iOS Devices queries
-        if any(p in clean_text for p in ("ios device", "ios devices", "supported ios", "supported iphone", "iphones", "iphone models")):
+        # 7b. Steps / Procedure intent
+        m_steps = re.match(r"^(?:how\s+to|steps\s+to|steps\s+for|procedure\s+for|how\s+do\s+i)\s+(.+)$", clean_text)
+        if m_steps:
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
-                intent=QueryIntent.LIST if any(w in clean_text for w in ("list", "what", "which", "supported")) else QueryIntent.FACT_LOOKUP,
-                subject="ios_device",
-                target_entity_type="device",
-                requested_property="list",
+                intent=QueryIntent.STEPS,
+                subject=m_steps.group(1).strip(),
+                requested_property="procedure",
                 requires_retrieval=True,
             )
 
-        # 7d. Android Version queries
-        if "android version" in clean_text or "android versions" in clean_text:
+        # 7c. List / Enumerate intent
+        m_list = re.match(r"^(?:list|enumerate|what\s+are\s+the\s+types\s+of|name\s+all|name\s+the|give\s+me\s+a\s+list\s+of|show\s+all)\s+(?:the\s+)?(.+)$", clean_text)
+        if m_list:
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
                 intent=QueryIntent.LIST,
-                subject="android_version",
-                target_entity_type="version",
+                subject=m_list.group(1).strip(),
+                target_entity_type="item",
+                requested_property="list",
+                requires_retrieval=True,
+            )
+        if re.search(r"\b(?:list\s+of|all\s+the|types\s+of|versions\s+of|devices\s+supported|categories\s+of)\b", clean_text):
+            return StructuredQuery(
+                original_query=raw,
+                normalized_query=normalized,
+                intent=QueryIntent.LIST,
+                subject=self._extract_substantive_subject(clean_text),
+                target_entity_type="item",
                 requested_property="list",
                 requires_retrieval=True,
             )
 
-        # 7e. Native App queries
-        if "native app" in clean_text or "native apps" in clean_text:
-            if any(p in clean_text for p in ("benefit", "advantage", "pros")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.EXPLANATION,
-                    subject="native_app",
-                    target_entity_type="app_type",
-                    requested_property="benefits",
-                    requires_retrieval=True,
-                )
-            if "compare" in clean_text or "difference" in clean_text or "vs" in clean_text:
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.COMPARISON,
-                    subject="native_vs_crossplatform",
-                    target_entity_type="app_type",
-                    requested_property="comparison",
-                    requires_retrieval=True,
-                )
+        # 7d. Definition intent
+        m_def = re.match(r"^(?:what\s+is|what\s+are|define|definition\s+of|meaning\s+of)\s+(?:a\s+|an\s+|the\s+)?(.+)$", clean_text)
+        if m_def:
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
                 intent=QueryIntent.DEFINITION,
-                subject="native_app",
-                target_entity_type="app_type",
+                subject=m_def.group(1).strip(),
                 requested_property="definition",
                 requires_retrieval=True,
             )
 
-        # 7f. Hybrid App queries
-        if "hybrid app" in clean_text or "hybrid apps" in clean_text:
+        # 7e. Explanation intent (including "tell me about X", "describe X", "how does X work")
+        m_exp = re.match(r"^(?:tell\s+me\s+about|can\s+you\s+tell\s+me\s+about|describe|can\s+you\s+describe|explain|can\s+you\s+explain|give\s+(?:me\s+)?an\s+overview\s+of)\s+(?:a\s+|an\s+|the\s+)?(.+)$", clean_text)
+        if m_exp:
             return StructuredQuery(
                 original_query=raw,
                 normalized_query=normalized,
-                intent=QueryIntent.DEFINITION,
-                subject="hybrid_app",
-                target_entity_type="app_type",
-                requested_property="definition",
+                intent=QueryIntent.EXPLANATION,
+                subject=m_exp.group(1).strip(),
+                requested_property="explanation",
+                requires_retrieval=True,
+            )
+        if re.match(r"^(?:how\s+does|how\s+do|why\s+is|why\s+are|why\s+does)\s+(.+)$", clean_text):
+            return StructuredQuery(
+                original_query=raw,
+                normalized_query=normalized,
+                intent=QueryIntent.EXPLANATION,
+                subject=self._extract_substantive_subject(clean_text),
+                requested_property="explanation",
                 requires_retrieval=True,
             )
 
-        # 7g. Flutter general
-        if "flutter" in clean_text:
-            if any(p in clean_text for p in ("install", "setup", "download", "steps")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.STEPS,
-                    subject="flutter_install",
-                    requested_property="install_steps",
-                    requires_retrieval=True,
-                )
-            if any(p in clean_text for p in ("advantage", "benefit", "pros")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.EXPLANATION,
-                    subject="flutter",
-                    requested_property="advantages",
-                    requires_retrieval=True,
-                )
-            if any(p in clean_text for p in ("simple words", "explain flutter", "describe flutter")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.EXPLANATION,
-                    subject="flutter",
-                    requested_property="explanation",
-                    requires_retrieval=True,
-                )
-            if any(p in clean_text for p in ("what is flutter", "define flutter")):
-                return StructuredQuery(
-                    original_query=raw,
-                    normalized_query=normalized,
-                    intent=QueryIntent.DEFINITION,
-                    subject="flutter",
-                    requested_property="definition",
-                    requires_retrieval=True,
-                )
+        # 7f. Fact lookup intent (specific attributes / mentions)
+        m_mentioned = re.match(r"^(?:which|what)\s+(.+?)\s+(?:are|is|were|was)\s+(?:mentioned|discussed|covered|included|listed)\b", clean_text)
+        if m_mentioned:
+            return StructuredQuery(
+                original_query=raw,
+                normalized_query=normalized,
+                intent=QueryIntent.FACT_LOOKUP,
+                subject=m_mentioned.group(1).strip(),
+                requested_property="fact",
+                requires_retrieval=True,
+            )
 
-        # Default fallback: Academic query with general subject
-        intent = QueryIntent.EXPLANATION
-        if clean_text.startswith("what is") or clean_text.startswith("define"):
-            intent = QueryIntent.DEFINITION
-        elif clean_text.startswith("how to") or clean_text.startswith("steps"):
-            intent = QueryIntent.STEPS
-        elif clean_text.startswith("list") or clean_text.startswith("enumerate"):
-            intent = QueryIntent.LIST
+        m_fact = re.match(r"^(?:what\s+is\s+the\s+(?:title|name|date|version|number)\s*(?:of\s+)?|what\s+is\s+(?:the\s+)?(?:\w+\s+)?(?:name|title)|when\s+was|who\s+wrote|who\s+created|who\s+is)\s*(?:the\s+)?(.*)$", clean_text)
+        if m_fact:
+            subj = m_fact.group(1).strip() if m_fact.group(1) else self._extract_substantive_subject(clean_text)
+            return StructuredQuery(
+                original_query=raw,
+                normalized_query=normalized,
+                intent=QueryIntent.FACT_LOOKUP,
+                subject=subj,
+                requested_property="fact",
+                requires_retrieval=True,
+            )
 
+        # 7g. Default Academic Query
         return StructuredQuery(
             original_query=raw,
             normalized_query=normalized,
-            intent=intent,
-            subject="general_academic",
+            intent=QueryIntent.EXPLANATION,
+            subject=self._extract_substantive_subject(clean_text),
             requested_property="general",
             requires_retrieval=True,
         )
+
+    @staticmethod
+    def _extract_substantive_subject(text: str) -> str:
+        """Extract substantive topic terms from query text by removing common grammatical prefixes."""
+        stop = {
+            "what", "is", "are", "the", "a", "an", "and", "or", "for", "with", "from",
+            "how", "can", "tell", "me", "about", "describe", "explain", "give", "show",
+            "please", "in", "on", "at", "to", "of", "by", "my", "your", "this", "that",
+            "mentioned", "notes", "course", "lecture"
+        }
+        words = [w for w in re.findall(r"\b[a-zA-Z0-9_\-]+\b", text.lower()) if w not in stop]
+        return " ".join(words) if words else text.strip()
 
 
 _query_understanding_instance: QueryUnderstandingService | None = None

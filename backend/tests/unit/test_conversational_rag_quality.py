@@ -456,7 +456,7 @@ def test_query_aware_system_instruction_adds_format_without_changing_default_con
 
     instruction = builder.build_system_instruction("What is Flutter?")
     assert "EXPLANATION FORMAT" in instruction
-    assert "Do not turn a simple definition into an unnecessary list" in instruction
+    assert "Do not turn an explanation into an unnecessary bullet list" in instruction
 
 
 def test_same_conversation_with_only_user_turn_reloads_after_generation_finishes():

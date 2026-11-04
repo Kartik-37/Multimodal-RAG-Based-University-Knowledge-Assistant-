@@ -2,6 +2,7 @@
 Answer-to-Question Alignment Checker.
 Validates that generated or recovered answers address the actual user question,
 preserve the requested entity type, and do not introduce unrelated topics.
+Domain-agnostic and generalized across arbitrary academic subjects.
 """
 
 import logging
@@ -12,12 +13,59 @@ from backend.app.schemas.query_understanding import QueryIntent, StructuredQuery
 
 logger = logging.getLogger(__name__)
 
+STOP_WORDS = {
+    "a", "an", "the", "and", "or", "but", "if", "because", "as", "what", "which",
+    "this", "that", "these", "those", "then", "just", "so", "than", "such",
+    "both", "through", "about", "for", "is", "of", "while", "during", "to",
+    "from", "in", "out", "on", "off", "again", "further", "then", "once",
+    "here", "there", "when", "where", "why", "how", "all", "any", "both",
+    "each", "few", "more", "most", "other", "some", "such", "no", "nor",
+    "not", "only", "own", "same", "too", "very", "can", "will", "don",
+    "should", "now", "are", "were", "was", "be", "been", "being", "have",
+    "has", "had", "having", "do", "does", "did", "doing", "would", "could",
+    "tell", "explain", "describe", "give", "list", "please", "notes", "course",
+    "lecture", "slide", "slides", "document", "file"
+}
+
+SAFE_REFUSAL_PHRASES = (
+    "could not find any relevant information",
+    "could not find sufficient verified evidence",
+    "does not provide sufficient information",
+    "not mentioned in the provided",
+    "no relevant information",
+    "please ask a question related to",
+    "unable to find",
+    "insufficient evidence",
+    "i cannot answer",
+)
+
+LEAKED_DIRECTIVE_MARKERS = (
+    "<think>",
+    "</think>",
+    "system prompt",
+    "internal instructions",
+    "internal directives",
+    "instruction to assistant",
+    "the user is asking for",
+    "my role is to",
+)
+
 
 class AnswerAlignmentChecker:
     """
     Validates semantic alignment between candidate responses and the original StructuredQuery.
-    Detects topic drift, entity confusion (e.g. phones returned for widgets), and cross-domain leaks.
+    Detects topic drift, empty responses, leaked prompt directives, and cross-domain leaks.
     """
+
+    def _extract_content_tokens(self, text: str) -> set[str]:
+        words = re.findall(r"\b[a-zA-Z0-9_\-]{3,}\b", text.lower())
+        return {w for w in words if w not in STOP_WORDS}
+
+    def _matches_token(self, token: str, text: str) -> bool:
+        stem = token.rstrip("s").rstrip("es")
+        if len(stem) >= 3 and stem in text:
+            return True
+        return token in text
 
     def check_alignment(
         self,
@@ -28,45 +76,45 @@ class AnswerAlignmentChecker:
         Check if candidate answer aligns with the StructuredQuery.
         Returns (is_aligned, reason_code).
         """
-        ans_lower = (answer or "").lower().strip()
-        target_entity = (structured_query.target_entity_type or "").lower()
-        subject = (structured_query.subject or "").lower()
+        raw = (answer or "").strip()
+        ans_lower = raw.lower()
 
-        # Refusal answers are always safe from alignment perspective
-        if any(
-            p in ans_lower
-            for p in (
-                "could not find any relevant information",
-                "could not find sufficient verified evidence",
-                "please ask a question related to",
-            )
-        ):
+        # 1. Empty or trivial answer check
+        if len(raw) < 5 or not re.search(r"[a-zA-Z0-9]", raw):
+            return False, "MISALIGNED_EMPTY_ANSWER"
+
+        # 2. Leaked reasoning or system prompt directives
+        if any(marker in ans_lower for marker in LEAKED_DIRECTIVE_MARKERS):
+            return False, "MISALIGNED_LEAKED_INTERNAL_DIRECTIVES"
+
+        # 3. Refusal answers are always safe from an alignment perspective
+        if any(p in ans_lower for p in SAFE_REFUSAL_PHRASES):
             return True, "ALIGNED_SAFE_REFUSAL"
 
-        # 1. Widget queries
-        if target_entity in ("widget", "widget_category") or "widget" in subject:
-            # Answer must not claim iPhones or iOS compatibility models are widgets
-            if any(p in ans_lower for p in ("iphone 16", "iphone 15", "iphone 14", "ios 26 compatibility")):
-                return False, "MISALIGNED_IPHONES_IN_WIDGET_ANSWER"
-            # Answer must not dump Android versions as widgets
-            if any(p in ans_lower for p in ("cupcake", "donut", "eclair", "froyo", "gingerbread", "honeycomb")):
-                return False, "MISALIGNED_ANDROID_VERSIONS_IN_WIDGET_ANSWER"
+        # 4. Conversational / Identity queries: should not quote citations or document fragments
+        if structured_query.is_conversational:
+            if re.search(r"\[source_\d+\]", raw) or re.search(r"\bpage\s+\d+\b", ans_lower):
+                return False, "MISALIGNED_CITATIONS_IN_CONVERSATIONAL"
+            return True, "ALIGNED_CONVERSATIONAL"
 
-        # 2. Conversational / Identity queries
-        if structured_query.is_conversational or subject == "assistant":
-            # Answer must not leak Act statutory formula or company watermarks
-            if any(p in ans_lower for p in ("this act may be called", "kaushalya", "akash technolabs")):
-                return False, "MISALIGNED_ACT_OR_WATERMARK_IN_CONVERSATIONAL"
+        # 5. Generic substantive subject alignment
+        subject_raw = (structured_query.subject or "").lower()
+        subject_tokens = self._extract_content_tokens(subject_raw) - {"general", "all"}
+        query_tokens = self._extract_content_tokens(structured_query.normalized_query)
 
-        # 3. iOS Device queries
-        if target_entity == "device" or subject == "ios_device":
-            if "everything is a widget" in ans_lower and not any(p in ans_lower for p in ("iphone", "ios", "device", "model")):
-                return False, "MISALIGNED_WIDGET_IN_DEVICE_ANSWER"
+        core_tokens = subject_tokens or query_tokens
 
-        # 4. Act Title queries
-        if target_entity == "act" or subject == "act_title":
-            if any(p in ans_lower for p in ("flutter is an app sdk", "everything is a widget")):
-                return False, "MISALIGNED_FLUTTER_IN_ACT_ANSWER"
+        if core_tokens:
+            has_alignment = any(
+                self._matches_token(token, ans_lower)
+                for token in core_tokens
+            )
+            if not has_alignment:
+                logger.warning(
+                    "AnswerAlignmentChecker flagged off-topic answer: core_tokens=%s not found in answer",
+                    core_tokens,
+                )
+                return False, "MISALIGNED_OFF_TOPIC_RESPONSE"
 
         return True, "ALIGNED"
 
@@ -79,4 +127,3 @@ def get_answer_alignment_checker() -> AnswerAlignmentChecker:
     if _answer_alignment_checker_instance is None:
         _answer_alignment_checker_instance = AnswerAlignmentChecker()
     return _answer_alignment_checker_instance
-

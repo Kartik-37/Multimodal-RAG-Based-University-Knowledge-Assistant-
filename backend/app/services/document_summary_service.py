@@ -5,6 +5,7 @@ Provides comprehensive, structured academic summaries across entire multi-page d
 instead of sparse top-k chunk retrieval. Partitions documents into logical page windows,
 synthesizes thematic section overviews, and coordinates with local LLMs (qwen3:4b)
 to produce executive course summaries with full-document page coverage and verified citations.
+Domain-agnostic and generalized across arbitrary academic subjects.
 """
 
 import logging
@@ -60,7 +61,7 @@ class DocumentSummaryService:
 
         # 1. Check target_document_hint or query subject
         hint = (structured_query.target_document_hint or structured_query.subject or "").lower()
-        if hint and hint != "general" and hint != "document_summary":
+        if hint and hint not in ("general", "document_summary", "all"):
             stmt = select(Document).filter(
                 Document.knowledge_base_id.in_(kb_ids),
                 Document.is_active.is_(True),
@@ -70,12 +71,19 @@ class DocumentSummaryService:
                 if hint in cand.original_filename.lower():
                     return cand
 
-        # 2. Default to first active document in the KB
+        # 2. Check active documents in the KB
         stmt = select(Document).filter(
             Document.knowledge_base_id.in_(kb_ids),
             Document.is_active.is_(True),
         ).order_by(Document.created_at.asc())
-        return db.scalars(stmt).first()
+        active_docs = db.scalars(stmt).all()
+
+        # If exactly one active document exists in scope, summarize it
+        if len(active_docs) == 1:
+            return active_docs[0]
+
+        # If multiple documents exist and no specific document was hinted, do not guess
+        return None
 
     async def generate_document_summary(
         self,
@@ -86,7 +94,7 @@ class DocumentSummaryService:
         query_processing_ms: float = 0.0,
     ) -> ChatQueryResponse:
         """
-        Synthesize a whole-document academic summary across all chunks of the document.
+        Synthesize a whole-document academic summary across all chunks of the document using the LLM.
         """
         t0 = time.perf_counter()
 
@@ -99,15 +107,21 @@ class DocumentSummaryService:
 
         if not chunks:
             refusal = f"I could not find any text content in '{target_doc.original_filename}' to summarize."
-            return self._build_empty_response(target_doc, raw_query, refusal, query_processing_ms)
+            return self._build_empty_response(
+                target_doc=target_doc,
+                raw_query=raw_query,
+                answer=refusal,
+                query_processing_ms=query_processing_ms,
+                generation_mode="empty_document_refusal",
+            )
 
         pages = sorted(list(set(c.page_number for c in chunks if c.page_number is not None)))
         min_page = pages[0] if pages else 1
         max_page = pages[-1] if pages else 1
         total_chunks = len(chunks)
 
-        # 2. Partition chunks into 3 to 4 logical sections/windows
-        num_windows = 4 if len(chunks) >= 12 else max(1, math.ceil(len(chunks) / 5))
+        # 2. Partition chunks into logical windows for full-document representation
+        num_windows = 4 if len(chunks) >= 12 else max(1, math.ceil(len(chunks) / 4))
         chunk_window_size = math.ceil(len(chunks) / num_windows)
         windows: list[dict[str, Any]] = []
 
@@ -118,9 +132,19 @@ class DocumentSummaryService:
             w_pages = [c.page_number for c in w_chunks if c.page_number is not None]
             w_min = min(w_pages) if w_pages else 1
             w_max = max(w_pages) if w_pages else 1
-            # Pick the most substantial chunk text from this window
+
             substantive_chunk = max(w_chunks, key=lambda c: len((c.text or "").strip()))
             source_tag = f"source_{len(windows) + 1}"
+
+            # Aggregate window text across all chunks in window up to reasonable token budget
+            window_parts = [
+                f"[Page {c.page_number or 'N/A'}]: {c.text.strip()}"
+                for c in w_chunks if c.text and c.text.strip()
+            ]
+            combined_window_text = "\n".join(window_parts)
+            if len(combined_window_text) > 2500:
+                combined_window_text = combined_window_text[:2500] + "... [section truncated]"
+
             windows.append({
                 "source_tag": source_tag,
                 "window_index": w_idx + 1,
@@ -128,7 +152,7 @@ class DocumentSummaryService:
                 "page_end": w_max,
                 "rep_page": substantive_chunk.page_number or w_min,
                 "rep_chunk": substantive_chunk,
-                "text_sample": (substantive_chunk.text or "").strip()[:600],
+                "text_sample": combined_window_text,
             })
 
         # 3. Construct clean LLM Prompt
@@ -171,22 +195,33 @@ class DocumentSummaryService:
                 timeout_seconds=180.0,
             )
             cleaned = _sanitize_llm_answer(resp.content, query=raw_query)
-            if cleaned and len(cleaned.split()) >= 30:
+            if cleaned and len(cleaned.split()) >= 10:
                 llm_answer = cleaned
         except Exception as exc:
-            logger.warning("Hierarchical summary LLM generation failed: %s; using deterministic synthesis", exc)
+            logger.warning("Hierarchical summary LLM generation failed: %s", exc)
             llm_invoked = False
-            gen_mode = "hierarchical_fallback"
+            gen_mode = "generation_failed"
 
-        # 4. If LLM generation failed or was insufficient, build clean deterministic synthesis
+        # 4. If LLM generation failed or was insufficient, return honest failure instead of canned template
         if not llm_answer:
-            llm_answer = self._build_deterministic_summary(target_doc, windows, min_page, max_page, total_chunks)
+            failure_msg = (
+                f"I could not synthesize a complete summary for '{target_doc.original_filename}' at this time. "
+                "Please try querying specific topics or asking questions about specific sections of the document."
+            )
+            return self._build_empty_response(
+                target_doc=target_doc,
+                raw_query=raw_query,
+                answer=failure_msg,
+                query_processing_ms=query_processing_ms,
+                generation_mode="generation_failed",
+            )
 
         total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
 
         # 5. Build citations matching window source tags
         citations: list[CitationItem] = []
         for w in windows:
+            snippet_text = w["text_sample"][:180] + "..."
             citations.append(
                 CitationItem(
                     source_id=w["source_tag"],
@@ -196,7 +231,7 @@ class DocumentSummaryService:
                     chunk_id=str(w["rep_chunk"].id),
                     page_number=w["rep_page"],
                     relevance_score=0.95,
-                    snippet=w["text_sample"][:180] + "...",
+                    snippet=snippet_text,
                     source_modality="text",
                 )
             )
@@ -230,6 +265,10 @@ class DocumentSummaryService:
             total_pipeline_ms=round(query_processing_ms + total_ms, 2),
         )
 
+        model_name = getattr(self.provider, "model_name", "qwen3:4b")
+        if not isinstance(model_name, str):
+            model_name = "qwen3:4b"
+
         return ChatQueryResponse(
             query=raw_query,
             processed_query=structured_query.normalized_query,
@@ -239,12 +278,12 @@ class DocumentSummaryService:
             citations=citations,
             grounding=grounding_summary,
             latency=latency_breakdown,
-            model=getattr(self.provider, "model_name", "qwen3:4b"),
+            model=model_name,
             metadata={
                 "generation_mode": gen_mode,
                 "llm_invoked": llm_invoked,
                 "provider": "ollama" if llm_invoked else "system",
-                "model": getattr(self.provider, "model_name", "qwen3:4b"),
+                "model": model_name,
                 "pages_covered": f"{min_page}-{max_page}",
                 "chunks_analyzed": total_chunks,
                 "target_document_id": str(target_doc.id),
@@ -254,57 +293,13 @@ class DocumentSummaryService:
             },
         )
 
-    def _build_deterministic_summary(
-        self,
-        target_doc: Document,
-        windows: list[dict[str, Any]],
-        min_page: int,
-        max_page: int,
-        total_chunks: int,
-    ) -> str:
-        """Construct a high-quality deterministic structured academic summary if LLM times out."""
-        is_flutter = "flutter" in target_doc.original_filename.lower()
-        if is_flutter:
-            w_tags = [w["source_tag"] for w in windows]
-            t1 = f"[{w_tags[0]}]" if len(w_tags) > 0 else "[source_1]"
-            t2 = f"[{w_tags[1]}]" if len(w_tags) > 1 else "[source_2]"
-            t3 = f"[{w_tags[2]}]" if len(w_tags) > 2 else "[source_3]"
-            t4 = f"[{w_tags[3]}]" if len(w_tags) > 3 else "[source_4]"
-
-            return (
-                f"**{target_doc.original_filename}** covers Flutter application development, mobile architectural patterns, "
-                f"and cross-platform software engineering {t1}.\n\n"
-                f"### Mobile Architecture & Framework Foundations\n"
-                f"Reviews mobile computing history, native iOS and Android development characteristics, "
-                f"and the evolution of hybrid frameworks across the initial lecture modules (Pages 1–17) {t1}.\n\n"
-                f"### Flutter SDK & Cross-Platform Capabilities\n"
-                f"Introduces Flutter as Google's open-source UI software development kit for building high-performance, "
-                f"high-fidelity applications for iOS, Android, web, and desktop environments from a single Dart codebase (Pages 18–28) {t2} {t3}.\n\n"
-                f"### Widget Architecture & Developer Tooling\n"
-                f"Examines Flutter's core principle where layout, styles, and controls are represented uniformly as widgets. "
-                f"Contrasts Material and Cupertino design libraries, developer tooling such as Hot Reload, and project initialization workflows (Pages 29–37) {t4}."
-            )
-
-        # Generic technical document summary
-        sections = []
-        for w in windows:
-            sections.append(
-                f"- **Section {w['window_index']}** (Pages {w['page_start']}–{w['page_end']}) [{w['source_tag']}]: "
-                f"Covers key technical topics and documented specifications."
-            )
-        sec_text = "\n".join(sections)
-        return (
-            f"**{target_doc.original_filename}** contains academic material spanning pages {min_page} to {max_page} [{windows[0]['source_tag']}].\n\n"
-            f"### Key Topics Covered\n"
-            f"{sec_text}"
-        )
-
     def _build_empty_response(
         self,
         target_doc: Document,
         raw_query: str,
         answer: str,
         query_processing_ms: float,
+        generation_mode: str = "empty_document_refusal",
     ) -> ChatQueryResponse:
         grounding_summary = GroundingSummaryDTO(
             is_grounded=True,
@@ -336,7 +331,7 @@ class DocumentSummaryService:
             latency=latency_breakdown,
             model="document_summary_service",
             metadata={
-                "generation_mode": "empty_document_refusal",
+                "generation_mode": generation_mode,
                 "llm_invoked": False,
                 "provider": "system",
                 "model": "document_summary_service",

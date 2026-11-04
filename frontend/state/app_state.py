@@ -683,6 +683,7 @@ class AppState:
         """Clear conversation history, reset scope to ALL_COURSES, and reset active conversation."""
         if self._active_conversation_id and self.is_generating:
             self.stop_generating(self._active_conversation_id)
+        self._is_generating = False
         self._active_conversation_id = None
         self._chat_history.clear()
         self._selected_citation = None

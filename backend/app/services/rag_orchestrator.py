@@ -39,7 +39,7 @@ from backend.app.schemas.grounding_validation import (
     GroundingValidationRequest,
     GroundingValidationResult,
 )
-from backend.app.schemas.llm import LLMGenerationRequest
+from backend.app.schemas.llm import LLMGenerationRequest, LLMGenerationResponse
 from backend.app.schemas.telemetry import (
     RAGPipelineTelemetry,
     RAGStageTelemetry,
@@ -512,7 +512,7 @@ class RAGOrchestrator:
             llm_res = await self.llm_service.generate_grounded_answer(llm_req)
 
             # -------------------------------------------------------------
-            # 5b. Answer-to-Question Alignment Validation
+            # 5b. Answer-to-Question Alignment Validation & Shared Retry Budget
             # -------------------------------------------------------------
             is_aligned, align_reason = self.answer_alignment_checker.check_alignment(
                 structured_query=structured_query,
@@ -520,12 +520,17 @@ class RAGOrchestrator:
             )
             if not is_aligned:
                 logger.warning("Answer alignment failed (%s) for query: %s", align_reason, raw_query)
-                if assembled_context.total_items > 0:
+                meta = llm_res.metadata or {}
+                calls_made = meta.get("provider_calls", 1)
+                retry_already_done = meta.get("retry_occurred", False) or calls_made >= 2
+
+                if assembled_context.total_items > 0 and not retry_already_done:
                     try:
                         retry_req = LLMGenerationRequest(
                             query=processed_query + f" (Synthesize only facts about {structured_query.subject})",
                             original_query=raw_query,
                             context=assembled_context,
+                            allow_retry=False,  # Single shared budget: never retry internally during orchestrator retry
                         )
                         retry_res = await self.llm_service.generate_grounded_answer(retry_req)
                         retry_aligned, _ = self.answer_alignment_checker.check_alignment(
@@ -534,8 +539,10 @@ class RAGOrchestrator:
                         )
                         if retry_aligned:
                             llm_res = retry_res
-                            if llm_res.metadata:
+                            if llm_res.metadata is not None:
                                 llm_res.metadata["generation_mode"] = "llm_retry"
+                                llm_res.metadata["provider_calls"] = calls_made + 1
+                                llm_res.metadata["retry_occurred"] = True
                         else:
                             llm_res = LLMGenerationResponse(
                                 answer=INSUFFICIENT_COURSE_EVIDENCE_ANSWER,
@@ -546,17 +553,40 @@ class RAGOrchestrator:
                                 sources_available=[it.source_id for it in assembled_context.items],
                                 sources_referenced=[],
                                 is_empty_context=True,
-                                prompt_tokens=0,
+                                prompt_tokens=llm_res.prompt_tokens,
                                 output_tokens=len(INSUFFICIENT_COURSE_EVIDENCE_ANSWER.split()),
                                 latency_ms=0.0,
                                 metadata={
                                     "generation_mode": "insufficient_evidence_refusal",
                                     "llm_invoked": True,
+                                    "provider_calls": calls_made + 1,
+                                    "retry_occurred": True,
                                     "reason": "alignment_failure",
                                 },
                             )
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        logger.warning("Orchestrator retry encountered error: %s", err)
+                else:
+                    llm_res = LLMGenerationResponse(
+                        answer=INSUFFICIENT_COURSE_EVIDENCE_ANSWER,
+                        query=processed_query,
+                        original_query=raw_query,
+                        provider=llm_res.provider,
+                        model=llm_res.model,
+                        sources_available=[it.source_id for it in assembled_context.items],
+                        sources_referenced=[],
+                        is_empty_context=True,
+                        prompt_tokens=llm_res.prompt_tokens,
+                        output_tokens=len(INSUFFICIENT_COURSE_EVIDENCE_ANSWER.split()),
+                        latency_ms=0.0,
+                        metadata={
+                            "generation_mode": "insufficient_evidence_refusal",
+                            "llm_invoked": True,
+                            "provider_calls": calls_made,
+                            "retry_occurred": retry_already_done,
+                            "reason": "alignment_failure",
+                        },
+                    )
 
             llm_generation_ms = round((time.perf_counter() - stage_t0) * 1000.0, 2)
 
@@ -728,6 +758,8 @@ class RAGOrchestrator:
                     "model": llm_res.model,
                     "prompt_tokens": llm_res.prompt_tokens,
                     "output_tokens": llm_res.output_tokens,
+                    "provider_calls": llm_res.metadata.get("provider_calls", 1) if llm_res.metadata else 1,
+                    "retry_occurred": llm_res.metadata.get("retry_occurred", False) if llm_res.metadata else False,
                     "relevance_summary": {
                         "retrieved_count": len(hybrid_res.results),
                         "reranked_count": len(reranked_items),

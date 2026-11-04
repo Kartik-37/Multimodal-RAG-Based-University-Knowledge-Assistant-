@@ -194,48 +194,77 @@ def group_citations_by_document(
 
     Guarantees:
     - Stable canonical document identification: documents with distinct non-empty
-      document_id are never merged even if their filenames match.
+      document_id are unified with matching filenames and never duplicated.
     - Preserves document discovery order from the citation list.
+    - When real page numbers (e.g. Page 18, Page 34) exist for a document, redundant
+      page_number=None ("View Document") pills are dropped.
     - Multiple citations to the same document and same page number are collapsed into
       a single GroupedPageReference containing all associated indices, snippets, and citations.
-    - If a source has no page number (page_number is None), it is preserved as None
-      without fabricating a page number.
-    - Inline citation indices and underlying evidence snippets are fully preserved.
+    - Card title uses the genuine original document filename rather than generic labels like 'Document'.
+    - Never renders a separate generic 'Document' card alongside the actual PDF card.
     """
     if not citations:
         return []
 
     doc_groups_map: dict[Any, dict[str, Any]] = {}
     doc_order: list[Any] = []
+    filename_to_key: dict[str, Any] = {}
 
     for idx, cit in enumerate(citations, start=1):
-        if cit.document_id:
-            doc_key = ("id", cit.document_id)
-        elif cit.knowledge_base_id and cit.document_name:
-            doc_key = ("kb_name", cit.knowledge_base_id, cit.document_name)
-        elif cit.document_name:
-            doc_key = ("name", cit.document_name)
+        doc_id_str = str(cit.document_id).strip() if cit.document_id else None
+        clean_name = (cit.document_name or "").strip()
+        is_generic_name = clean_name.lower() in ("", "document", "unknown", "file", "none")
+
+        doc_key: Any = None
+
+        # 1. Match by document_id
+        if doc_id_str:
+            doc_key = ("id", doc_id_str)
+        # 2. Match by known filename if already registered
+        elif not is_generic_name and clean_name.lower() in filename_to_key:
+            doc_key = filename_to_key[clean_name.lower()]
+        # 3. Match by KB + filename
+        elif cit.knowledge_base_id and not is_generic_name:
+            doc_key = ("kb_name", str(cit.knowledge_base_id), clean_name.lower())
+        # 4. Match by filename
+        elif not is_generic_name:
+            doc_key = ("name", clean_name.lower())
         else:
-            doc_key = ("fallback", id(cit))
+            # Check if there is only one existing group so far; if so, attach to it
+            if len(doc_order) == 1:
+                doc_key = doc_order[0]
+            else:
+                doc_key = ("fallback", id(cit))
 
         if doc_key not in doc_groups_map:
             doc_order.append(doc_key)
             doc_groups_map[doc_key] = {
-                "document_id": cit.document_id,
-                "document_name": cit.document_name,
+                "document_id": doc_id_str,
+                "document_name": clean_name if not is_generic_name else "Document",
                 "course_name": cit.course_name,
-                "knowledge_base_id": cit.knowledge_base_id,
+                "knowledge_base_id": str(cit.knowledge_base_id) if cit.knowledge_base_id else None,
                 "citations": [],
                 "page_order": [],
                 "page_map": {},
             }
+            if not is_generic_name:
+                filename_to_key[clean_name.lower()] = doc_key
 
         group_acc = doc_groups_map[doc_key]
         group_acc["citations"].append(cit)
+
+        # Upgrade document_id if this citation has it and group lacked it
+        if doc_id_str and not group_acc["document_id"]:
+            group_acc["document_id"] = doc_id_str
+        # Upgrade document_name if this citation has a real name and group had generic name
+        if not is_generic_name and group_acc["document_name"].lower() in ("document", "unknown", ""):
+            group_acc["document_name"] = clean_name
+            filename_to_key[clean_name.lower()] = doc_key
+
         if cit.course_name and not group_acc["course_name"]:
             group_acc["course_name"] = cit.course_name
         if cit.knowledge_base_id and not group_acc["knowledge_base_id"]:
-            group_acc["knowledge_base_id"] = cit.knowledge_base_id
+            group_acc["knowledge_base_id"] = str(cit.knowledge_base_id)
 
         page_key = cit.page_number
         if page_key not in group_acc["page_map"]:
@@ -257,8 +286,14 @@ def group_citations_by_document(
     result: list[DocumentCitationGroup] = []
     for doc_key in doc_order:
         acc = doc_groups_map[doc_key]
+        # Check if real page numbers exist in this document group
+        has_real_pages = any(p is not None for p in acc["page_order"])
+
         pages: list[GroupedPageReference] = []
         for p_key in acc["page_order"]:
+            # If real page pills exist, drop the redundant page_number=None pill
+            if p_key is None and has_real_pages:
+                continue
             p_data = acc["page_map"][p_key]
             pages.append(
                 GroupedPageReference(
@@ -269,6 +304,20 @@ def group_citations_by_document(
                     citations=tuple(p_data["citations"]),
                 )
             )
+
+        # Fallback if all pages were None and somehow got dropped (not possible with logic above)
+        if not pages and acc["page_order"]:
+            first_p = acc["page_map"][acc["page_order"][0]]
+            pages.append(
+                GroupedPageReference(
+                    page_number=first_p["page_number"],
+                    citation=first_p["citation"],
+                    citation_indices=tuple(first_p["citation_indices"]),
+                    snippets=tuple(first_p["snippets"]),
+                    citations=tuple(first_p["citations"]),
+                )
+            )
+
         result.append(
             DocumentCitationGroup(
                 document_id=acc["document_id"],

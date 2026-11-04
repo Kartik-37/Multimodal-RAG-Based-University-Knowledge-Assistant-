@@ -10,7 +10,7 @@ Validates:
 """
 
 import re
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -106,8 +106,14 @@ class TestPhase24NaturalSummaryScaffolding:
         assert "opening overview paragraph" in directive.lower()
         assert "content-specific headings" in directive.lower()
 
-    def test_deterministic_summary_starts_directly_without_overview_heading_or_coverage_footer(self) -> None:
-        svc = DocumentSummaryService(provider=MagicMock())
+    @pytest.mark.asyncio
+    async def test_document_summary_service_uses_llm_without_generic_overview_heading(self) -> None:
+        mock_provider = MagicMock()
+        mock_provider.generate = AsyncMock(return_value=MagicMock(
+            content="**flutter_lecture_notes.pdf** covers cross-platform mobile development [source_1].\n\n### Core Architecture\nFlutter uses Dart [source_2].",
+            model="qwen3:4b",
+        ))
+        svc = DocumentSummaryService(provider=mock_provider)
         doc = Document(
             id=uuid4(),
             knowledge_base_id=uuid4(),
@@ -118,57 +124,44 @@ class TestPhase24NaturalSummaryScaffolding:
             storage_key="docs/flutter.pdf",
             content_hash="mockcontenthash123",
         )
-        windows = [
-            {
-                "window_index": 1,
-                "source_tag": "source_1",
-                "rep_page": 1,
-                "page_start": 1,
-                "page_end": 17,
-                "text_sample": "Mobile architecture history",
-            },
-            {
-                "window_index": 2,
-                "source_tag": "source_2",
-                "rep_page": 18,
-                "page_start": 18,
-                "page_end": 20,
-                "text_sample": "Flutter SDK definition",
-            },
-            {
-                "window_index": 3,
-                "source_tag": "source_3",
-                "rep_page": 21,
-                "page_start": 21,
-                "page_end": 28,
-                "text_sample": "Industry adoption",
-            },
-            {
-                "window_index": 4,
-                "source_tag": "source_4",
-                "rep_page": 29,
-                "page_start": 29,
-                "page_end": 37,
-                "text_sample": "Widget ecosystem",
-            },
-        ]
-        summary = svc._build_deterministic_summary(doc, windows, 1, 37, 4)
+        mock_chunk = MagicMock()
+        mock_chunk.id = uuid4()
+        mock_chunk.text = "Flutter is a UI toolkit for building natively compiled applications."
+        mock_chunk.page_number = 1
+        mock_chunk.chunk_index = 0
+
+        mock_db = MagicMock()
+        mock_db.scalars.return_value.all.return_value = [mock_chunk]
+
+        from backend.app.schemas.query_understanding import QueryIntent, StructuredQuery
+        sq = StructuredQuery(
+            original_query="Summarize this document",
+            normalized_query="summarize this document",
+            detected_language="english",
+            intent=QueryIntent.DOCUMENT_SUMMARY,
+            subject="flutter_lecture_notes.pdf",
+            requires_document_summary=True,
+        )
+
+        res = await svc.generate_document_summary(
+            db=mock_db,
+            target_doc=doc,
+            structured_query=sq,
+            raw_query="Summarize this document",
+        )
 
         # 1. No generic "### Document Overview" title
-        assert "### Document Overview" not in summary
-        assert not summary.startswith("###")
+        assert "### Document Overview" not in res.answer
+        assert not res.answer.startswith("###")
 
         # 2. No raw coverage footer in prose
-        assert "*Coverage: Pages" not in summary
-        assert "chunks analyzed" not in summary
+        assert "*Coverage: Pages" not in res.answer
+        assert "chunks analyzed" not in res.answer
 
         # 3. Begins directly with useful overview
-        assert summary.startswith("**flutter_lecture_notes.pdf** covers Flutter application development")
-
-        # 4. Content-specific headings are used
-        assert "### Mobile Architecture & Framework Foundations" in summary
-        assert "### Flutter SDK & Cross-Platform Capabilities" in summary
-        assert "### Widget Architecture & Developer Tooling" in summary
+        assert res.answer.startswith("**flutter_lecture_notes.pdf** covers cross-platform mobile development")
+        assert res.metadata["llm_invoked"] is True
+        assert res.metadata["generation_mode"] == "hierarchical_summary"
 
 
 class TestPhase24CleanCitationPresentation:

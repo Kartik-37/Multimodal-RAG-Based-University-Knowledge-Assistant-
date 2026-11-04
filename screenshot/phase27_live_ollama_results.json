@@ -1,0 +1,112 @@
+[
+  {
+    "course": "MSC (Flutter)",
+    "query": "What is Flutter?",
+    "expectation": "Complete definition in connected prose, no truncated phrases",
+    "answer": "Flutter is an app SDK for building high-performance, high-fidelity apps for iOS, Android, and web from a single codebase [source_1]. This approach allows developers to write code that runs across six platforms—iOS, Android, the web, Windows, macOS, and Linux—while delivering apps that feel natural on each platform [source_1]. The framework emphasizes enabling developers to create responsive applications that embrace differences in scrolling behaviors, typography, and icons across platforms to achieve a consistent yet platform-appropriate user experience [source_1].",
+    "citations": [
+      {
+        "source_id": "source_1",
+        "document_name": "1-Flutter-Intro.pdf",
+        "page_number": 18
+      }
+    ],
+    "grounding_status": "PARTIALLY_SUPPORTED",
+    "is_grounded": false,
+    "model": "qwen3:4b",
+    "latency_breakdown": {
+      "query_processing_ms": 1.56,
+      "retrieval_ms": 481.29,
+      "reranking_ms": 26328.35,
+      "context_assembly_ms": 0.31,
+      "llm_generation_ms": 90024.53,
+      "grounding_validation_ms": 3.72,
+      "total_pipeline_ms": 116840.08
+    },
+    "llm_invoked": true,
+    "generation_mode": "primary_llm",
+    "provider_calls": 1,
+    "retry_occurred": false
+  },
+  {
+    "course": "MSC (Flutter)",
+    "query": "What is a widget in Flutter?",
+    "expectation": "Genuine explanatory synthesis from evidence, not pre-composed canned bullets",
+    "answer": "In Flutter, a widget is a fundamental building block that represents any part of the user interface, with the entire application itself being structured as a widget. Every element in a Flutter app’s UI—whether a button, text field, or complex layout—is implemented as a widget, and this consistent object model ensures uniform behavior across the framework. Widgets function similarly to views in Android development or UIViews in iOS, providing a unified way to construct interfaces without platform-specific complications [source_1]. This foundational concept enables Flutter’s declarative approach to UI design, where developers define what the UI should look like rather than how it should behave [source_1].",
+    "citations": [
+      {
+        "source_id": "source_1",
+        "document_name": "1-Flutter-Intro.pdf",
+        "page_number": 34
+      }
+    ],
+    "grounding_status": "UNVERIFIABLE",
+    "is_grounded": false,
+    "model": "qwen3:4b",
+    "latency_breakdown": {
+      "query_processing_ms": 4.42,
+      "retrieval_ms": 698.68,
+      "reranking_ms": 275.61,
+      "context_assembly_ms": 0.32,
+      "llm_generation_ms": 93744.77,
+      "grounding_validation_ms": 7.5,
+      "total_pipeline_ms": 94731.59
+    },
+    "llm_invoked": true,
+    "generation_mode": "primary_llm",
+    "provider_calls": 1,
+    "retry_occurred": false
+  },
+  {
+    "course": "BCA (KSU Act)",
+    "query": "What is the name of this Act?",
+    "expectation": "Genuine LLM synthesis of Kaushalya The Skill University Act, 2021",
+    "answer": "The name of this Act is \"Kaushalya the Skill University Act 2021\" [source_5].",
+    "citations": [
+      {
+        "source_id": "source_5",
+        "document_name": "KSU-Act-English.pdf",
+        "page_number": 1
+      }
+    ],
+    "grounding_status": "FULLY_SUPPORTED",
+    "is_grounded": true,
+    "model": "qwen3:4b",
+    "latency_breakdown": {
+      "query_processing_ms": 0.13,
+      "retrieval_ms": 436.37,
+      "reranking_ms": 2830.58,
+      "context_assembly_ms": 1.74,
+      "llm_generation_ms": 180119.09,
+      "grounding_validation_ms": 4.58,
+      "total_pipeline_ms": 183392.8
+    },
+    "llm_invoked": true,
+    "generation_mode": "llm_retry",
+    "provider_calls": 2,
+    "retry_occurred": true
+  },
+  {
+    "course": "BCA (KSU Act)",
+    "query": "What are ACID properties in relational databases?",
+    "expectation": "Generic safe refusal (not mentioned in course materials), no hallucination",
+    "answer": "I could not find any relevant information in the authorized course materials to answer your question. As an academic assistant, I can only provide answers verified against authorized course documents and lecture notes. Please ask a question related to your enrolled courses or course materials.",
+    "citations": [],
+    "grounding_status": "UNVERIFIABLE",
+    "is_grounded": false,
+    "model": "qwen3:4b",
+    "latency_breakdown": {
+      "query_processing_ms": 0.13,
+      "retrieval_ms": 403.82,
+      "reranking_ms": 2516.94,
+      "context_assembly_ms": 0.37,
+      "llm_generation_ms": 0.09,
+      "grounding_validation_ms": 2.3,
+      "total_pipeline_ms": 2924.05
+    },
+    "llm_invoked": false,
+    "generation_mode": "insufficient_evidence_refusal",
+    "provider_calls": 0,
+    "retry_occurred": false
+  }
+]

@@ -134,8 +134,8 @@ def test_out_of_scope_query_fast_path_bypasses_llm():
 
 def test_extract_grounded_recovery_answer_statutory_exact():
     """
-    Verify narrowly scoped deterministic exact extraction for statutory Act title (Phase 22).
-    General academic questions are synthesized by the primary LLM, not extracted via arbitrary snippets.
+    Verify that extract_grounded_recovery_answer no longer constructs canned factual answers (Phase 26/27).
+    Factual statutory answers are synthesized genuinely by the primary LLM from retrieved context.
     """
     context = ContextAssemblyResult(
         query="What is the Act name?",
@@ -156,9 +156,7 @@ def test_extract_grounded_recovery_answer_statutory_exact():
     )
 
     ans = extract_grounded_recovery_answer("What is the Act name?", context)
-    assert ans is not None
-    assert "Kaushalya" in ans
-    assert "[source_1]" in ans
+    assert ans is None
 
 
 def test_extract_grounded_recovery_answer_returns_none_for_out_of_scope():

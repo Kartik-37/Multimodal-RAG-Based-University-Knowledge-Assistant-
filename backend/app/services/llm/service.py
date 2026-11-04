@@ -192,68 +192,19 @@ def is_invalid_or_incomplete_answer(text: str, query: str = "") -> bool:
 
 
 def clean_reasoning_text(text: str, query: str = "") -> str:
-    """Extract final answer declaration or embedded itemized list from reasoning text if present."""
-    # 1. Check if model extracted an itemized list inside its deliberation of a source
-    list_match = re.search(
-        r"(?:-\s*\[(source_\d+)\]:[^\n]*?(?:lists?|includes?|contains?|shows?|presents?):\s*\n?\s*)([^\n]+(?:\n(?!\s*(?:-\s*\[source_|\n|\bThe user\b|\bTherefore\b))[^\n]+)*)",
-        text,
-        re.IGNORECASE,
-    )
-    if list_match:
-        source_tag = list_match.group(1)
-        raw_items = list_match.group(2).strip()
-        item_parts = [it.strip() for it in re.split(r",\s*(?=[A-Za-z0-9])|\n\s*[-*•]?\s*", raw_items) if it.strip()]
-        clean_items = [
-            it for it in item_parts
-            if not any(it.lower().startswith(p) for p in ("it lists:", "it includes:", "it contains:", "of android", "android all versions", "2008 to 2025")) and len(it) > 1
-        ]
-        # Prevent entity drift: do not return iOS/iPhone lists if query was about widgets
-        if query:
-            q_low = query.lower()
-            if "widget" in q_low and any("iphone" in it.lower() or "ios" in it.lower() for it in clean_items):
-                clean_items = []
-        if len(clean_items) >= 3:
-            formatted = [f"- {it}" for it in clean_items]
-            return f"The items listed in [{source_tag}] are:\n\n" + "\n".join(formatted)
-
-    # 2. Check for explicit conclusion marker
+    """
+    Extract clean final answer conclusion from reasoning or deliberation text if present.
+    Does not synthesize artificial sentences, stitch quotes, or salvage fragments.
+    """
     conclusion_match = re.search(
-        r"(?:So the answer should be:|The answer should be:|The answer is:?|Therefore,?\s*(?:the answer is:?)?)\s*(.+)$",
+        r"(?:So the answer should be:|The answer should be:|The answer is:?|Final\s+Answer:|Conclusion:|In\s+summary,?|Therefore,?\s*(?:the answer is:?)?)\s*(.+)$",
         text,
         re.IGNORECASE | re.DOTALL,
     )
     if conclusion_match:
         cand = conclusion_match.group(1).strip()
-        if not any(re.search(p, cand, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
+        if not any(re.search(p, cand, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS) and len(cand.split()) >= 5:
             return cand
-
-    # 2b. Extract direct quoted definition from meta-deliberation if present
-    quote_match = re.search(
-        r'(?:states|is|says|provides|write|writes):\s*\"([^\"]{25,})\"',
-        text,
-        re.IGNORECASE,
-    )
-    if quote_match:
-        quoted = quote_match.group(1).strip()
-        if not any(re.search(p, quoted, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
-            if re.search(r'\[source_\d+\]', quoted, re.IGNORECASE):
-                return quoted
-            source_tag = "source_1"
-            m_tag = re.search(r"\[(source_\d+)\]", text, re.IGNORECASE)
-            if m_tag:
-                source_tag = m_tag.group(1).lower()
-            return f"{quoted} [{source_tag}]."
-
-    # 2c. Extract planned target sentences from reasoning (e.g. Start with: "..." Then add: "...")
-    quotes = re.findall(r'(?:Start with|Then add[^:]*|Answer|Write):\s*"([^"]{20,})"', text, re.IGNORECASE)
-    if quotes:
-        extracted = "\n\n".join(q.strip() for q in quotes if q.strip())
-        if extracted and not any(re.search(p, extracted, re.IGNORECASE) for p in REASONING_LEAK_PATTERNS):
-            m_tag = re.search(r"\[(source_\d+)\]", text, re.IGNORECASE)
-            source_tag = m_tag.group(1).lower() if m_tag else "source_1"
-            if not re.search(r"\[source_\d+\]", extracted, re.IGNORECASE):
-                extracted = f"{extracted} [{source_tag}]."
-            return extracted
 
     return text
 
@@ -818,10 +769,6 @@ def _sanitize_llm_answer(text: str, query: str | None = None) -> str:
                 if any(item_clean.startswith(p) for p in reasoning_prefixes):
                     continue
 
-                if query and ("flutter" in query.lower() or "widget" in query.lower()):
-                    if re.search(r'\b(?:iphone\s+\d+|ios\s+\d+|ipad)\b', item_clean):
-                        continue
-
                 words = set(re.findall(r"\b[a-z]{4,}\b", item_clean))
                 is_dup = False
                 for prev in all_seen_items:
@@ -1010,43 +957,50 @@ class LLMGenerationService:
                 system_instruction=system_instruction,
                 user_prompt=user_prompt,
                 temperature=request.temperature,
-                max_output_tokens=request.max_output_tokens or 512,
+                max_output_tokens=request.max_output_tokens or 896,
                 timeout_seconds=request.timeout_seconds,
             )
             cleaned_content = _sanitize_llm_answer(provider_resp.content, query=request.query)
 
             # 5a. Detect invalid, incomplete, or pure deliberation output and perform bounded single retry
             if is_invalid_or_incomplete_answer(cleaned_content, request.query):
-                retry_instruction = (
-                    system_instruction
-                    + "\n\nRETRY INSTRUCTION: The previous response was incomplete or contained meta-commentary. "
-                    "Synthesize and output ONLY the direct, student-friendly factual answer explaining the concepts from the evidence. "
-                    "Do not include reasoning preambles, analysis of sources, or deflections such as 'the definition is provided in'. "
-                    "If the evidence is insufficient, state that plainly."
-                )
-                try:
-                    provider_calls += 1
-                    retry_occurred = True
-                    retry_resp = await self.provider.generate(
-                        system_instruction=retry_instruction,
-                        user_prompt=user_prompt,
-                        temperature=0.0,
-                        max_output_tokens=min(request.max_output_tokens or 768, 768),
-                        timeout_seconds=request.timeout_seconds or 180.0,
+                if request.allow_retry:
+                    retry_instruction = (
+                        system_instruction
+                        + "\n\nRETRY INSTRUCTION: The previous response was incomplete or contained meta-commentary. "
+                        "Synthesize and output ONLY the direct, student-friendly factual answer explaining the concepts from the evidence. "
+                        "Do not include reasoning preambles, analysis of sources, or deflections such as 'the definition is provided in'. "
+                        "If the evidence is insufficient, state that plainly."
                     )
-                    cleaned_retry = _sanitize_llm_answer(retry_resp.content, query=request.query)
-                    if not is_invalid_or_incomplete_answer(cleaned_retry, request.query):
-                        cleaned_content = cleaned_retry
-                        provider_resp = retry_resp
-                        generation_path = "llm_retry"
-                    else:
+                    try:
+                        provider_calls += 1
+                        retry_occurred = True
+                        retry_resp = await self.provider.generate(
+                            system_instruction=retry_instruction,
+                            user_prompt=user_prompt,
+                            temperature=0.0,
+                            max_output_tokens=min(request.max_output_tokens or 1024, 1024),
+                            timeout_seconds=request.timeout_seconds or 180.0,
+                        )
+                        cleaned_retry = _sanitize_llm_answer(retry_resp.content, query=request.query)
+                        if not is_invalid_or_incomplete_answer(cleaned_retry, request.query):
+                            cleaned_content = cleaned_retry
+                            provider_resp = retry_resp
+                            generation_path = "llm_retry"
+                        else:
+                            cleaned_content = (
+                                "I could not synthesize a complete and verified answer from the available course evidence. "
+                                "Please try rephrasing your question or checking your course materials."
+                            )
+                            generation_path = "generation_failed"
+                    except Exception as retry_err:
+                        logger.warning("LLM generation retry failed: %s", retry_err)
                         cleaned_content = (
                             "I could not synthesize a complete and verified answer from the available course evidence. "
                             "Please try rephrasing your question or checking your course materials."
                         )
                         generation_path = "generation_failed"
-                except Exception as retry_err:
-                    logger.warning("LLM generation retry failed: %s", retry_err)
+                else:
                     cleaned_content = (
                         "I could not synthesize a complete and verified answer from the available course evidence. "
                         "Please try rephrasing your question or checking your course materials."

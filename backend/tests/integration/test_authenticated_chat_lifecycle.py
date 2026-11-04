@@ -223,13 +223,13 @@ class TestAuthenticatedChatLifecycle:
             assert msg1.id == msg2.id
 
     def test_grounded_recovery_answer_for_android_versions_and_flutter(self) -> None:
-        """Verify that extract_grounded_recovery_answer correctly extracts from Flutter and Android chunks."""
+        """Verify that extract_grounded_recovery_answer returns None (canned answers retired in Phase 26/27)."""
         from backend.app.services.llm.service import extract_grounded_recovery_answer
         from backend.app.schemas.context_assembly import ContextAssemblyResult, ContextItem
 
         flutter_doc_id = uuid.uuid4()
 
-        # Test 1: Android versions infographic extraction from Page 6
+        # Test 1: Android versions query does not return canned extraction
         android_chunk_text = (
             "[Visual Content Type]: Diagram\n"
             "[Visual Summary]: A list of Android versions from 2008 to 2025.\n"
@@ -268,13 +268,9 @@ class TestAuthenticatedChatLifecycle:
             ],
         )
         rec_android = extract_grounded_recovery_answer("list of android version", mock_context_android)
-        assert rec_android is not None
-        assert "Cupcake" in rec_android
-        assert "Donut" in rec_android
-        assert "Eclair" in rec_android
-        assert "[source_1]" in rec_android
+        assert rec_android is None
 
-        # Test 2: Flutter definition from Page 18
+        # Test 2: Flutter definition does not return canned extraction
         flutter_chunk_text = (
             "What is Flutter?\n"
             "▪ Flutter is an app SDK for building high-performance, high-fidelity apps for iOS, Android, "
@@ -310,9 +306,7 @@ class TestAuthenticatedChatLifecycle:
             ],
         )
         rec_flutter = extract_grounded_recovery_answer("What is Flutter?", mock_context_flutter)
-        assert rec_flutter is not None
-        assert "Flutter is an app SDK" in rec_flutter
-        assert "[source_1]" in rec_flutter
+        assert rec_flutter is None
 
     def test_sole_empty_conversation_delete_rejection_and_multiple_deletion(self) -> None:
         """Verify Case B sole empty conversation deletion rejection and multiple conversation deletion."""
